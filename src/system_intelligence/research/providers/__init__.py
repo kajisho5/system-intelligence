@@ -17,6 +17,10 @@ from system_intelligence.research.providers.go_proxy import (
     GoProxyUpdateError,
     GoProxyUpdateProvider,
 )
+from system_intelligence.research.providers.maven_central import (
+    MavenCentralUpdateError,
+    MavenCentralUpdateProvider,
+)
 from system_intelligence.research.providers.npm import NpmUpdateError, NpmUpdateProvider
 from system_intelligence.research.providers.osv import OSVLookupError, OSVVulnerabilityProvider
 from system_intelligence.research.providers.pypi import PyPIUpdateError, PyPIUpdateProvider
@@ -26,6 +30,8 @@ __all__ = [
     "CratesIoUpdateProvider",
     "GoProxyUpdateError",
     "GoProxyUpdateProvider",
+    "MavenCentralUpdateError",
+    "MavenCentralUpdateProvider",
     "NpmUpdateError",
     "NpmUpdateProvider",
     "OSVLookupError",

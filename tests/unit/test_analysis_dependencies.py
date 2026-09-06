@@ -24,6 +24,49 @@ def test_extract_pyproject_dependencies(tmp_path: Path) -> None:
     assert pydantic.evidence
 
 
+def test_extract_requirements_txt_dependencies(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "# a full-line comment\n"
+        "\n"
+        "requests==2.31.0\n"
+        "pydantic>=2.6,<3  # inline comment\n"
+        "-r other-requirements.txt\n"
+        "-e .\n"
+        "--index-url https://example.com/simple\n"
+        "git+https://github.com/example/pkg.git\n",
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="requirements.txt", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    names = {d.name for d in dependencies}
+    assert names == {"requests", "pydantic"}
+    requests_dep = next(d for d in dependencies if d.name == "requests")
+    assert requests_dep.version_constraint == "==2.31.0"
+    assert requests_dep.ecosystem == "pypi"
+    pydantic = next(d for d in dependencies if d.name == "pydantic")
+    assert pydantic.version_constraint == ">=2.6,<3"
+
+
+def test_extract_requirements_txt_dependencies_hash_pin_continuation_skipped(
+    tmp_path: Path,
+) -> None:
+    """A `--hash=...` continuation line (used with `--require-hashes`)
+    starts with `-` like any other pip option flag and must not be
+    mistaken for a second, unparseable requirement."""
+    (tmp_path / "requirements.txt").write_text(
+        "requests==2.31.0 \\\n    --hash=sha256:abc123\n", encoding="utf-8"
+    )
+    manifests = [PackageManifest(path="requirements.txt", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert len(dependencies) == 1
+    assert dependencies[0].name == "requests"
+    assert dependencies[0].version_constraint == "==2.31.0"
+
+
 def test_extract_package_json_dependencies(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(
         '{"dependencies": {"react": "^18.0.0"}, "devDependencies": {"eslint": "^9.0.0"}}',
