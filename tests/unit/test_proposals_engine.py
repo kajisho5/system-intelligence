@@ -348,16 +348,18 @@ def test_change_plan_for_component_update_none_for_non_actionable_verdict(tmp_pa
 
 
 def test_change_plan_for_component_update_none_for_unsupported_ecosystem(tmp_path: Path) -> None:
+    # rubygems/Gemfile is still genuinely unsupported: Gemfile's executable-
+    # Ruby format has no formal grammar a patcher could safely target.
     identity = ComponentIdentity(
-        component_kind=ComponentKind.PACKAGE, name="left-pad", distribution_source="cargo"
+        component_kind=ComponentKind.PACKAGE, name="rails", distribution_source="rubygems"
     )
     current = ComponentState(
         identity=identity,
         version="1.2.3",
         version_confidence=Confidence.HIGH,
-        evidence=[_manifest_evidence("Cargo.toml", "left-pad")],
+        evidence=[_manifest_evidence("Gemfile", "rails")],
     )
-    available = AvailableState(identity=identity, provider="cargo", version="2.0.0")
+    available = AvailableState(identity=identity, provider="rubygems", version="2.0.0")
     diff = StateDiff(identity=identity, from_state=current, to_state=available)
     assessment = ImpactAssessment(
         state_diff=diff,
@@ -420,6 +422,104 @@ def test_change_plan_for_component_update_success_for_npm(tmp_path: Path) -> Non
 
 def test_change_plan_for_component_update_npm_none_for_range_constraint(tmp_path: Path) -> None:
     assessment = _npm_pin_assessment(tmp_path, version_confidence=Confidence.UNKNOWN)
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def _cargo_pin_assessment(
+    root: Path,
+    *,
+    name: str = "serde",
+    from_version: str = "1.0.219",
+    to_version: str = "1.0.220",
+    manifest_path: str = "Cargo.toml",
+    manifest_text: str | None = None,
+    version_confidence: Confidence = Confidence.HIGH,
+    verdict: UpdateVerdict = UpdateVerdict.UPDATE_RECOMMENDED,
+    write_manifest: bool = True,
+) -> ImpactAssessment:
+    if write_manifest:
+        text = manifest_text or (
+            f'[package]\nname = "demo"\n\n[dependencies]\n{name} = "={from_version}"\n'
+        )
+        (root / manifest_path).write_text(text, encoding="utf-8")
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name=name, distribution_source="cargo"
+    )
+    current = ComponentState(
+        identity=identity,
+        version=from_version,
+        version_confidence=version_confidence,
+        evidence=[_manifest_evidence(manifest_path, name)],
+    )
+    available = AvailableState(identity=identity, provider="cargo", version=to_version)
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    return ImpactAssessment(
+        state_diff=diff,
+        verdict=verdict,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+
+def test_change_plan_for_component_update_success_for_cargo_simple_string_form(
+    tmp_path: Path,
+) -> None:
+    assessment = _cargo_pin_assessment(tmp_path)
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.branch_name == "si/update-serde-to-1.0.220"
+    assert plan.commit_message == "Update serde to 1.0.220"
+    assert plan.files == {
+        "Cargo.toml": '[package]\nname = "demo"\n\n[dependencies]\nserde = "=1.0.220"\n'
+    }
+    assert plan.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+
+
+def test_change_plan_for_component_update_cargo_none_for_bare_version_range(
+    tmp_path: Path,
+) -> None:
+    """A bare Cargo version (no `=`) is a caret range, never confirmed as an
+    exact pin by build_current_state -- version_confidence stays UNKNOWN."""
+    assessment = _cargo_pin_assessment(tmp_path, version_confidence=Confidence.UNKNOWN)
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_cargo_none_for_table_form(tmp_path: Path) -> None:
+    """The table form is deliberately never rewritten -- only the simple
+    string form is a safe, unambiguous regex target."""
+    manifest_text = (
+        '[package]\nname = "demo"\n\n[dependencies]\n'
+        'serde = { version = "=1.0.219", features = ["derive"] }\n'
+    )
+    assessment = _cargo_pin_assessment(tmp_path, manifest_text=manifest_text)
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_cargo_none_when_manifest_text_has_drifted(
+    tmp_path: Path,
+) -> None:
+    assessment = _cargo_pin_assessment(tmp_path)
+    # The manifest changed since the assessment ran -- the exact pinned
+    # text this needs to match no longer exists.
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\n\n[dependencies]\nserde = "1.1"\n', encoding="utf-8"
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_cargo_none_when_ambiguous_duplicate(
+    tmp_path: Path,
+) -> None:
+    assessment = _cargo_pin_assessment(tmp_path, write_manifest=False)
+    (tmp_path / "Cargo.toml").write_text(
+        '[dependencies]\nserde = "=1.0.219"\n\n[dev-dependencies]\nserde = "=1.0.219"\n',
+        encoding="utf-8",
+    )
+
     assert change_plan_for_component_update(assessment, tmp_path) is None
 
 

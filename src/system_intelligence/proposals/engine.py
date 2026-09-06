@@ -18,15 +18,19 @@ verified it (e.g. a human, or a later semantic-analysis phase).
 
 `change_plan_for_component_update` closes the one Proposal shape this
 project can currently turn into an executable `execution.plan.ChangePlan`
-without guessing at intent: a `pypi` or `npm` dependency whose *currently
-declared* constraint is an exact pin (`Confidence.HIGH`/`VERIFIED` on the
-current `ComponentState`, per `analysis.update_intelligence.
-build_current_state`'s own `_EXACT_PIN_RE`). A range constraint
-(`>=1.2,<2.0`, `^1.2.3`, `1.x`) is deliberately never rewritten here —
-which number to bump is genuinely ambiguous, not a fact this module can
-determine. Every other Proposal kind (creation/adoption/integration, and
-any range-constrained update) still has no automatic path to a ChangePlan
-— the actual code change is a job for an external implementer (a human, or
+without guessing at intent: a `pypi`, `npm`, or `cargo` dependency whose
+*currently declared* constraint is an exact pin
+(`Confidence.HIGH`/`VERIFIED` on the current `ComponentState`, per
+`analysis.update_intelligence.build_current_state`'s own `_EXACT_PIN_RE`).
+A range constraint (`>=1.2,<2.0`, `^1.2.3`, `1.x`) is deliberately never
+rewritten here — which number to bump is genuinely ambiguous, not a fact
+this module can determine. A Cargo dependency using its *table* form
+(`name = { version = "=1.2.3" }`) is likewise never rewritten — only the
+simple string form (`name = "=1.2.3"`) is (see
+`_CARGO_TOML_PIN_RE_TEMPLATE`). Every other Proposal kind
+(creation/adoption/integration, and any range-constrained or
+unsupported-form update) still has no automatic path to a ChangePlan —
+the actual code change is a job for an external implementer (a human, or
 an agent such as Claude Code), never this module (ADR-007: no model vendor
 or agent harness hard-coded here).
 """
@@ -169,6 +173,21 @@ _PYPROJECT_PIN_RE_TEMPLATE = r'(["\'])({name})\s*(==?)\s*{version}\s*\1'
 #: replacement can preserve the original quoting/whitespace exactly and
 #: only the version itself changes.
 _PACKAGE_JSON_PIN_RE_TEMPLATE = r'("{name}"\s*:\s*")({version})(")'
+
+#: Matches Cargo.toml's *simple string form* only (`name = "=1.2.3"`),
+#: capturing everything up to and including the opening quote (group 1) so
+#: a replacement can preserve the original name/whitespace/quote-style
+#: exactly. Cargo's own exact-pin operator (`=`, inside the quotes,
+#: distinct from TOML's own `=` assignment operator right before the
+#: quote) is always present in the matched text -- `build_current_state`
+#: only ever derives a `from_version` for `cargo` when the constraint
+#: itself started with `=` (`_BARE_CONSTRAINT_IS_EXACT_PIN` deliberately
+#: excludes cargo). Cargo's *table* form (`name = { version = "=1.2.3" }`,
+#: or a `[dependencies.name]` dotted-table section) never matches this --
+#: deliberately, since a value nested inside a table isn't a name-adjacent
+#: literal this regex could locate without also matching unrelated
+#: same-named keys elsewhere in the file.
+_CARGO_TOML_PIN_RE_TEMPLATE = r'({name}\s*=\s*)(["\'])=\s*{version}\s*\2'
 
 
 def _is_high_quality_candidate(assessment: CandidateAssessment) -> bool:
@@ -398,20 +417,47 @@ def _patch_package_json_pin(text: str, name: str, from_version: str, to_version:
     return text[: match.start()] + replacement + text[match.end() :]
 
 
+def _patch_cargo_toml_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
+    """Rewrite one exact-pinned dependency's version in raw Cargo.toml text.
+
+    Matches only Cargo's simple string form (`name = "=1.2.3"`) pinned
+    with its own `=` exact-pin operator -- the only form
+    `build_current_state` ever derives an exact `from_version` from for
+    `cargo` (a bare version means a caret range, per
+    `_BARE_CONSTRAINT_IS_EXACT_PIN`'s own docstring). The table form
+    (`name = { version = "=1.2.3" }`) or a `[dependencies.name]`
+    dotted-table section never matches -- returned `None`, same as any
+    other case this can't safely rewrite -- since a nested `version` key
+    isn't a name-adjacent literal this regex could locate without risking
+    a match against an unrelated same-named key elsewhere in the file.
+    """
+    pattern = re.compile(
+        _CARGO_TOML_PIN_RE_TEMPLATE.format(name=re.escape(name), version=re.escape(from_version))
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    prefix, quote = match.group(1), match.group(2)
+    replacement = f"{prefix}{quote}={to_version}{quote}"
+    return text[: match.start()] + replacement + text[match.end() :]
+
+
 def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -> ChangePlan | None:
     """Build an executable `ChangePlan` for a component-update `ImpactAssessment`.
 
-    Deterministic, no LLM: succeeds only for a `pypi` or `npm` dependency
-    whose *current* constraint was confirmed as an exact pin
+    Deterministic, no LLM: succeeds only for a `pypi`, `npm`, or `cargo`
+    dependency whose *current* constraint was confirmed as an exact pin
     (`Confidence.HIGH`/`VERIFIED` on `from_state`, per
     `build_current_state`) and whose declaring manifest still contains
     that exact text on disk. Returns `None` — never a best-effort or
     partial plan — for every other case: a non-actionable verdict (mirrors
-    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm` (other
-    manifests aren't supported yet — see this module's docstring), a
-    range constraint, missing manifest evidence, an unreadable manifest
-    file, or manifest text that no longer matches what the assessment
-    observed.
+    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm`/`cargo`
+    (other manifests aren't supported yet — see this module's docstring),
+    a Cargo dependency using its table form rather than the simple string
+    form (see `_CARGO_TOML_PIN_RE_TEMPLATE`), a range constraint, missing
+    manifest evidence, an unreadable manifest file, or manifest text that
+    no longer matches what the assessment observed.
 
     A caller that gets `None` back still has the `Proposal` from
     `propose_component_update` (unaffected by this function) describing
@@ -425,7 +471,13 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
     identity = diff.identity
     from_state, to_state = diff.from_state, diff.to_state
 
-    if identity.distribution_source not in ("pypi", "npm"):
+    patchers = {
+        "pypi": _patch_pyproject_pin,
+        "npm": _patch_package_json_pin,
+        "cargo": _patch_cargo_toml_pin,
+    }
+    patcher = patchers.get(identity.distribution_source or "")
+    if patcher is None:
         return None
     if from_state.version_confidence not in (Confidence.HIGH, Confidence.VERIFIED):
         return None
@@ -441,9 +493,6 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
     except OSError:
         return None
 
-    patcher = (
-        _patch_pyproject_pin if identity.distribution_source == "pypi" else _patch_package_json_pin
-    )
     patched_text = patcher(original_text, identity.name, from_state.version, to_state.version)
     if patched_text is None:
         return None

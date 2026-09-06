@@ -62,7 +62,7 @@ read-only into a temp directory first):
 | `si schema` | Export JSON Schema files for the canonical snapshot format (no target) |
 | `si diff <from> <to>` | Diff two canonical snapshot directories |
 | `si research <query>` | Search for existing solutions — `--provider github` (default) or `--provider mcp-registry` (network) |
-| `si check-updates <target>` | Component Update Intelligence: current vs. available state for pypi/npm/cargo/go dependencies (network); `--check-vulnerabilities` also looks up known vulnerabilities (OSV.dev) for each resolved version; `--plan-out DIR` writes a ready-to-run `ChangePlan` for a pypi or npm exact-pin bump, no hand-written JSON needed |
+| `si check-updates <target>` | Component Update Intelligence: current vs. available state for pypi/npm/cargo/go dependencies (network); `--check-vulnerabilities` also looks up known vulnerabilities (OSV.dev) for each resolved version; `--plan-out DIR` writes a ready-to-run `ChangePlan` for a pypi/npm exact-pin bump or a Cargo.toml simple-string-form one, no hand-written JSON needed |
 | `si improve <target>` | Findings → ranked Recommendations |
 | `si propose <problem>` | Adopt/integrate/create decision → a Proposal; `--target-kind skill\|agent\|mcp_server\|...` shapes test/documentation guidance and the declared interface to that kind; `--target <path> --handoff-out FILE` exports a self-contained packet (Proposal + the `ChangePlan` file schema) for a human or an external implementer (e.g. Claude Code) to turn into an executable plan — SI itself never authors that diff |
 | `si plan <intent-or-text>` | Preview which capabilities a request would run |
