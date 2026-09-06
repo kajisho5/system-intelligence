@@ -25,6 +25,13 @@ from system_intelligence.core.ids import stable_id
 #: `.txt` variants are included alongside the existing `.md`/`.rst`
 #: entries for the same reason multiple extensions were already listed
 #: per type: each is a real, common convention, not a guess.
+#: `CODE_OF_CONDUCT.md` is one of GitHub's own "community health file"
+#: conventions (github.com/.github/community-health-files), the same
+#: family `CONTRIBUTING.md`/`SECURITY.md` are already drawn from --
+#: recorded when present the same as `SECURITY.md` (never turned into a
+#: mandatory `documentation_gap` finding when absent; see
+#: `analysis/documentation.py::_EXPECTED_DOCUMENT_TYPES`, which
+#: deliberately does not include it either).
 _ROOT_DOCUMENTS: dict[str, str] = {
     "README.md": "README",
     "README.rst": "README",
@@ -35,6 +42,7 @@ _ROOT_DOCUMENTS: dict[str, str] = {
     "LICENSE.txt": "LICENSE",
     "CONTRIBUTING.md": "CONTRIBUTING",
     "SECURITY.md": "SECURITY",
+    "CODE_OF_CONDUCT.md": "CODE_OF_CONDUCT",
 }
 
 
