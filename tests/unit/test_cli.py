@@ -732,6 +732,14 @@ def test_execute_command_record_appends_to_snapshot(tmp_path: Path) -> None:
     assert len(recorded_approvals) == 1
     assert recorded_approvals[0]["actor"] == "human:test"
 
+    recorded_audit_log = json.loads((snapshot_dir / "audit_log.json").read_text(encoding="utf-8"))
+    assert len(recorded_audit_log) == 1
+    assert recorded_audit_log[0]["result"] == "allowed"
+    # the actual approving actor, not fabricated
+    assert recorded_audit_log[0]["actor"] == "human:test"
+    assert recorded_audit_log[0]["action"] == "create_local_branch_and_commit"
+    assert recorded_audit_log[0]["correlation_id"] == recorded[0]["commit_sha"]
+
 
 def test_execute_command_denied_does_not_record_a_fabricated_approval(tmp_path: Path) -> None:
     _init_repo(tmp_path)
@@ -748,6 +756,14 @@ def test_execute_command_denied_does_not_record_a_fabricated_approval(tmp_path: 
     recorded = json.loads((snapshot_dir / "executions.json").read_text(encoding="utf-8"))
     assert recorded[0]["applied"] is False
     assert not (snapshot_dir / "approvals.json").exists()
+
+    # A denied decision is still audited (with a generated correlation id,
+    # since there is no commit to correlate it with) -- audit trail is not
+    # conditional on the action having succeeded.
+    recorded_audit_log = json.loads((snapshot_dir / "audit_log.json").read_text(encoding="utf-8"))
+    assert recorded_audit_log[0]["result"] == "denied"
+    assert recorded_audit_log[0]["actor"] == "system:cli"
+    assert recorded_audit_log[0]["correlation_id"].startswith("correlation-")
 
 
 def test_propose_command_record_appends_to_snapshot(tmp_path: Path) -> None:

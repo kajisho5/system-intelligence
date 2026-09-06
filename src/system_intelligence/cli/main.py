@@ -49,6 +49,7 @@ from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
 from system_intelligence.execution import ChangePlan, LocalGitError, apply_plan
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
+from system_intelligence.policy import audit_log_entry
 from system_intelligence.proposals import propose_component_update, propose_solution
 from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import (
@@ -872,6 +873,18 @@ def execute(
         # writes no approvals.json entry.
         for approval in approvals:
             _append_json_record(record, "approvals.json", approval)
+        _append_json_record(
+            record,
+            "audit_log.json",
+            audit_log_entry(
+                result.decision,
+                action="create_local_branch_and_commit",
+                target=target,
+                intent=plan.description or plan.commit_message,
+                actor=approvals[0].actor if approvals else "system:cli",
+                correlation_id=result.commit_sha,
+            ),
+        )
 
     if not result.applied:
         typer.echo(f"\nDenied: {result.decision.reason}")

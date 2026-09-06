@@ -120,3 +120,37 @@ def test_snapshot_round_trip_preserves_proposals_and_executions(tmp_path: Path) 
     assert restored.proposals[0].problem == "Need a thing"
     assert len(restored.executions) == 1
     assert restored.executions[0].applied is True
+
+
+def test_snapshot_round_trip_preserves_audit_log(tmp_path: Path) -> None:
+    from system_intelligence.core.governance import AuditLogEntry
+
+    entry = AuditLogEntry(
+        actor="system:cli",
+        intent="ship a fix",
+        policy="within default maximum",
+        target=".",
+        action="create_local_branch_and_commit",
+        result="allowed",
+        correlation_id="abc123",
+    )
+    snapshot = Snapshot(target=_target(), audit_log=[entry])
+
+    out_dir = tmp_path / snapshot.id
+    snapshot.write_to_directory(out_dir)
+
+    assert (out_dir / "audit_log.json").exists()
+    restored = Snapshot.read_from_directory(out_dir, target=_target())
+    assert len(restored.audit_log) == 1
+    assert restored.audit_log[0].correlation_id == "abc123"
+    assert restored.audit_log[0].result == "allowed"
+
+
+def test_snapshot_audit_log_defaults_to_empty(tmp_path: Path) -> None:
+    snapshot = Snapshot(target=_target())
+
+    out_dir = tmp_path / snapshot.id
+    snapshot.write_to_directory(out_dir)
+    restored = Snapshot.read_from_directory(out_dir, target=_target())
+
+    assert restored.audit_log == []

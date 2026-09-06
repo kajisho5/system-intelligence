@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from system_intelligence.core.enums import (
     DEFAULT_MAX_PERMISSION_LEVEL,
     FORBIDDEN_BY_DEFAULT_ACTIONS,
     PermissionLevel,
 )
-from system_intelligence.core.governance import Approval
+from system_intelligence.core.governance import Approval, AuditLogEntry
 
 
 @dataclass(frozen=True)
@@ -86,3 +87,41 @@ def evaluate(
         f"for action={action!r} target={target!r}."
     )
     return PolicyDecision(allowed=False, reason=reason, required_level=required_level)
+
+
+def audit_log_entry(
+    decision: PolicyDecision,
+    *,
+    action: str,
+    target: str,
+    intent: str,
+    actor: str = "system:cli",
+    evidence_ids: list[str] | None = None,
+    correlation_id: str | None = None,
+) -> AuditLogEntry:
+    """Build the audit trail record for one `evaluate()` decision (08-governance.md).
+
+    Pure, like `evaluate` — no I/O, no persistence of its own; a caller
+    that wants this kept appends it wherever it records other results
+    (e.g. `Snapshot.audit_log`). `decision.reason` becomes `policy` (the
+    exact rule that decided the outcome, already human-readable);
+    `result` is `"allowed"`/`"denied"`, taken directly from `decision.
+    allowed`, never inferred separately. `actor` defaults to
+    `"system:cli"` — an explicit, honest label for "no human approval was
+    asserted for this decision," never a fabricated human identity; pass
+    the actual approving `Approval.actor` when one exists. `evidence_ids`
+    defaults to empty (not fabricated) when the caller has no real
+    Evidence ids to cite. `correlation_id` defaults to a fresh id when the
+    caller has no existing id (e.g. a Proposal's) to correlate this
+    decision with.
+    """
+    return AuditLogEntry(
+        actor=actor,
+        intent=intent,
+        policy=decision.reason,
+        target=target,
+        evidence_ids=list(evidence_ids) if evidence_ids else [],
+        action=action,
+        result="allowed" if decision.allowed else "denied",
+        correlation_id=correlation_id or f"correlation-{uuid4().hex[:12]}",
+    )

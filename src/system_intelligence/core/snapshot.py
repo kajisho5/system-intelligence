@@ -14,6 +14,7 @@ Mirrors the file layout from docs/design/docs/12-storage-and-state.md:
       approvals.json
       verification.json
       executions.json
+      audit_log.json
 
 `Snapshot` is the in-memory/serialization model; `write_to_directory` /
 `read_from_directory` implement that on-disk layout so HTML reports,
@@ -47,7 +48,7 @@ from system_intelligence.core.entities import (
 from system_intelligence.core.enums import ComponentKind, TargetKind
 from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.findings import Finding
-from system_intelligence.core.governance import Approval
+from system_intelligence.core.governance import Approval, AuditLogEntry
 from system_intelligence.core.proposals import Proposal
 from system_intelligence.core.recommendations import Recommendation
 from system_intelligence.core.relationships import Relationship
@@ -83,6 +84,7 @@ _FILES: dict[str, str] = {
     "approvals": "approvals.json",
     "verification": "verification.json",
     "executions": "executions.json",
+    "audit_log": "audit_log.json",
 }
 
 
@@ -117,6 +119,7 @@ class Snapshot(BaseModel):
     approvals: list[Approval] = Field(default_factory=list)
     verification: list[Verification] = Field(default_factory=list)
     executions: list[ExecutionRecord] = Field(default_factory=list)
+    audit_log: list[AuditLogEntry] = Field(default_factory=list)
 
     def manifest(self) -> SnapshotManifest:
         return SnapshotManifest(
@@ -202,4 +205,5 @@ class Snapshot(BaseModel):
             approvals=_load(_FILES["approvals"], Approval),  # type: ignore[arg-type]
             verification=_load(_FILES["verification"], Verification),  # type: ignore[arg-type]
             executions=_load(_FILES["executions"], ExecutionRecord),  # type: ignore[arg-type]
+            audit_log=_load(_FILES["audit_log"], AuditLogEntry),  # type: ignore[arg-type]
         )
