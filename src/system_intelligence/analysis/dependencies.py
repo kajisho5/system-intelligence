@@ -90,18 +90,41 @@ _EXTRACTORS = {
 }
 
 
+def extract_dependencies_by_manifest(
+    root: Path, manifests: list[PackageManifest]
+) -> dict[str, list[Dependency]]:
+    """Like `extract_dependencies`, but keyed by each manifest's own directory.
+
+    The directory is relative to `root` ("." for a manifest at the repo
+    root). This lets a caller attribute each `Dependency` to whichever
+    Component's own files live in that directory (e.g. a Skill whose
+    directory contains its own `package.json`) instead of collapsing every
+    manifest in the repository onto one Component — while still only using
+    information the manifest itself already provides (its own path), never
+    a guess about which Component "probably" owns it.
+    """
+    by_directory: dict[str, list[Dependency]] = {}
+    for manifest in manifests:
+        extractor = _EXTRACTORS.get(Path(manifest.path).name)
+        if extractor is None:
+            continue
+        dependencies = extractor(root / manifest.path, manifest.path)
+        if not dependencies:
+            continue
+        directory = str(Path(manifest.path).parent)
+        by_directory.setdefault(directory, []).extend(dependencies)
+    return by_directory
+
+
 def extract_dependencies(root: Path, manifests: list[PackageManifest]) -> list[Dependency]:
     """Parse every manifest System Intelligence knows how to read.
 
     Manifests without a registered extractor (Cargo.toml, go.mod, pom.xml,
     build.gradle, Gemfile) are still reported by `structure.scan_structure`
     as evidence of the ecosystem, but their dependency lists are not parsed
-    yet.
+    yet. Flattens `extract_dependencies_by_manifest` — kept for callers that
+    only need the combined list (e.g. a whole-repository dependency count),
+    not per-Component attribution.
     """
-    dependencies: list[Dependency] = []
-    for manifest in manifests:
-        extractor = _EXTRACTORS.get(Path(manifest.path).name)
-        if extractor is None:
-            continue
-        dependencies.extend(extractor(root / manifest.path, manifest.path))
-    return dependencies
+    by_directory = extract_dependencies_by_manifest(root, manifests)
+    return [dependency for dependencies in by_directory.values() for dependency in dependencies]

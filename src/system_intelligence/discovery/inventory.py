@@ -8,12 +8,15 @@ detectors — callers (the CLI) depend on this module, not on each detector.
 
 `CIJob` has no dedicated file in the canonical snapshot layout (only
 `components`, `capabilities`, `relationships`, `findings`,
-`recommendations`, `research`, `approvals`, and `verification` do — see
-`core.snapshot`), so Phase 2 surfaces detected CI jobs alongside the
-Snapshot rather than inventing an unsanctioned snapshot file for them.
-Representing CI jobs as first-class, persisted entities is left for the
-analysis phase, once it's clear whether they belong in a relationship
-(`tested_by`/`deployed_by`) or need their own canonical file.
+`recommendations`, `research`, `approvals`, `verification`, `executions`,
+`audit_log`, and `adrs` do — see `core.snapshot`), so Phase 2 surfaces
+detected CI jobs alongside the Snapshot rather than inventing an
+unsanctioned snapshot file for them. Representing CI jobs as first-class,
+persisted entities is left for the analysis phase, once it's clear
+whether they belong in a relationship (`tested_by`/`deployed_by`) or need
+their own canonical file. Detected ADRs, unlike CI jobs, get their own
+`Snapshot.adrs` field directly (see `discovery.adr`) since they need no
+further analysis-phase transformation before being worth persisting.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from pathlib import Path
 from system_intelligence.core.entities import CIJob, Component, Repository
 from system_intelligence.core.ids import stable_id
 from system_intelligence.core.snapshot import Snapshot
+from system_intelligence.discovery.adr import detect_adrs
 from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
@@ -42,9 +46,9 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     """Run every Phase 2 discovery detector against a local path.
 
     Returns a `Snapshot` with `components` populated (the repository itself,
-    any detected Skills, and a Document per detected root doc) plus the
-    detected `CIJob` list. `findings`/`recommendations`/etc. stay empty —
-    those belong to later phases.
+    any detected Skills, and a Document per detected root doc) and `adrs`
+    populated, plus the detected `CIJob` list. `findings`/`recommendations`/
+    etc. stay empty — those belong to later phases.
     """
     target = resolve_local_target(locator)
     root = Path(target.locator)
@@ -54,6 +58,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     ci_jobs = detect_ci_jobs(root)
     documents = detect_root_documents(root)
     skills = detect_skills(root)
+    adrs = detect_adrs(root)
 
     repository = Repository(
         id=stable_id("repository", "root"),
@@ -68,7 +73,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
 
     components: list[Component] = [repository, *skills, *documents]
 
-    snapshot = Snapshot(target=target, components=components)
+    snapshot = Snapshot(target=target, components=components, adrs=adrs)
     return DiscoveryResult(
         snapshot=snapshot, ci_jobs=ci_jobs, package_manifests=structure.package_manifests
     )

@@ -1,9 +1,11 @@
 """CI and top-level documentation detection (R2).
 
 Phase 2 scope: GitHub Actions workflows and well-known root documents
-(README, LICENSE, CONTRIBUTING, SECURITY). Deeper documentation/ADR audits
-belong to the analysis phase (docs/design/docs/05-analysis-engine.md,
-"Documentation" detector family).
+(README, LICENSE, CONTRIBUTING, SECURITY). ADR-specific detection lives in
+`discovery.adr` instead (a different filename convention, found at any
+depth, not just the repository root). Deeper documentation content audits
+(README completeness, etc.) belong to the analysis phase
+(docs/design/docs/05-analysis-engine.md, "Documentation" detector family).
 """
 
 from __future__ import annotations

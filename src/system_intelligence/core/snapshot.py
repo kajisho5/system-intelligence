@@ -9,9 +9,13 @@ Mirrors the file layout from docs/design/docs/12-storage-and-state.md:
       relationships.json
       findings.json
       recommendations.json
+      proposals.json
       research.json
       approvals.json
       verification.json
+      executions.json
+      audit_log.json
+      adrs.json
 
 `Snapshot` is the in-memory/serialization model; `write_to_directory` /
 `read_from_directory` implement that on-disk layout so HTML reports,
@@ -27,10 +31,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializeAsAny
 
 from system_intelligence.core.capability import Capability
 from system_intelligence.core.entities import (
+    ADR,
     Agent,
     Component,
     Document,
@@ -43,8 +48,10 @@ from system_intelligence.core.entities import (
     Workflow,
 )
 from system_intelligence.core.enums import ComponentKind, TargetKind
+from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.findings import Finding
-from system_intelligence.core.governance import Approval
+from system_intelligence.core.governance import Approval, AuditLogEntry
+from system_intelligence.core.proposals import Proposal
 from system_intelligence.core.recommendations import Recommendation
 from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.research import ResearchResult
@@ -74,9 +81,13 @@ _FILES: dict[str, str] = {
     "relationships": "relationships.json",
     "findings": "findings.json",
     "recommendations": "recommendations.json",
+    "proposals": "proposals.json",
     "research": "research.json",
     "approvals": "approvals.json",
     "verification": "verification.json",
+    "executions": "executions.json",
+    "audit_log": "audit_log.json",
+    "adrs": "adrs.json",
 }
 
 
@@ -92,14 +103,27 @@ class Snapshot(BaseModel):
     target: Target
     tool_version: str = _SNAPSHOT_VERSION
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    components: list[Component] = Field(default_factory=list)
+    # `SerializeAsAny`: `write_to_directory` dumps each Component individually
+    # (`item.model_dump(...)`), which is unaffected either way, but a whole-
+    # `Snapshot` dump (`model_dump()`/`model_dump_json()` called directly,
+    # e.g. by an external consumer that wants one JSON blob instead of the
+    # directory layout) would otherwise serialize every item using the base
+    # `Component` schema and silently drop subclass-only fields such as
+    # `Repository.url` or `Skill.is_standard_format` — see
+    # `reporting.dashboard_data.DashboardData.components` for the same fix,
+    # found the same way (a real, verified pydantic v2 default behavior).
+    components: list[SerializeAsAny[Component]] = Field(default_factory=list)
     capabilities: list[Capability] = Field(default_factory=list)
     relationships: list[Relationship] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     recommendations: list[Recommendation] = Field(default_factory=list)
+    proposals: list[Proposal] = Field(default_factory=list)
     research: list[ResearchResult] = Field(default_factory=list)
     approvals: list[Approval] = Field(default_factory=list)
     verification: list[Verification] = Field(default_factory=list)
+    executions: list[ExecutionRecord] = Field(default_factory=list)
+    audit_log: list[AuditLogEntry] = Field(default_factory=list)
+    adrs: list[ADR] = Field(default_factory=list)
 
     def manifest(self) -> SnapshotManifest:
         return SnapshotManifest(
@@ -180,7 +204,11 @@ class Snapshot(BaseModel):
             relationships=_load(_FILES["relationships"], Relationship),  # type: ignore[arg-type]
             findings=_load(_FILES["findings"], Finding),  # type: ignore[arg-type]
             recommendations=_load(_FILES["recommendations"], Recommendation),  # type: ignore[arg-type]
+            proposals=_load(_FILES["proposals"], Proposal),  # type: ignore[arg-type]
             research=_load(_FILES["research"], ResearchResult),  # type: ignore[arg-type]
             approvals=_load(_FILES["approvals"], Approval),  # type: ignore[arg-type]
             verification=_load(_FILES["verification"], Verification),  # type: ignore[arg-type]
+            executions=_load(_FILES["executions"], ExecutionRecord),  # type: ignore[arg-type]
+            audit_log=_load(_FILES["audit_log"], AuditLogEntry),  # type: ignore[arg-type]
+            adrs=_load(_FILES["adrs"], ADR),  # type: ignore[arg-type]
         )

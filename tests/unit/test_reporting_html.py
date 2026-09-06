@@ -22,7 +22,8 @@ def test_generate_html_report_is_valid_shell() -> None:
     assert html.startswith("<!doctype html>")
     assert "<title>" in html
     assert "my-repo" in html
-    assert "Not yet available" in html  # Recommendations placeholder
+    assert "No recommendations were generated for this snapshot." in html
+    assert "Not computed for this report" in html  # research / proposed-changes placeholders
 
 
 def test_generate_html_report_escapes_untrusted_content() -> None:

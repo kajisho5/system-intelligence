@@ -16,6 +16,14 @@ class Verification(BaseModel):
     change_id: str | None = None
     before_snapshot_id: str | None = None
     after_snapshot_id: str | None = None
+    component_id: str | None = Field(
+        default=None,
+        description=(
+            "Id of the Component this check is about, when the caller supplies one — e.g. a "
+            "conformance/test command run against one Skill/Component discovered in a target. "
+            "None means no such association was given, never that none exists."
+        ),
+    )
     tests_run: list[str] = Field(default_factory=list)
     tests_passed: bool | None = None
     regressions_found: list[str] = Field(default_factory=list)

@@ -1,30 +1,77 @@
 """`si` command-line entry point.
 
-`si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`, and
-`si diff` are implemented. The remaining commands from
-docs/design/docs/13-cli-and-ux.md (`research`, `design`, `improve`,
-`propose`, `execute`, `verify`, `watch`) are registered as explicit
-placeholders so `si --help` documents the intended surface without
-claiming functionality that does not exist yet.
+`si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`,
+`si diff`, `si research`, `si improve`, `si propose`, `si plan`, `si
+execute`, `si verify`, `si check-updates`, and `si dashboard` are
+implemented. `si plan` is not in docs/design/docs/13-cli-and-ux.md's
+original command list; it exposes the Phase 7 capability-selection
+planner (docs/design/docs/10-plugin-skill-system.md, "Dynamic selection")
+so the capability set a request would run is visible before anything
+executes. `si execute` is dry-run by default — it only ever prints
+`ChangePlan.preview_lines()` unless `--approve` is passed, and even then
+`execution.local_git.apply_plan` still requires a matching `Approval`
+record for anything above the default read-only-ish permission ceiling;
+it never pushes to any remote and can never perform a
+`core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS` action. `si check-updates` is
+Component Update Intelligence (`analysis/update_intelligence.py`) —
+also not in docs/13's original list, network-touching like `si research`.
+`si dashboard` renders the interactive System Intelligence Console
+(`reporting/dashboard_data.py` + `reporting/dashboard_html.py`) from one
+or more snapshots. The remaining commands from docs/13 (`design`, `watch`)
+are registered as explicit placeholders so `si --help` documents the
+intended surface without claiming functionality that does not exist yet.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Protocol, TypeVar
 
 import typer
+from pydantic import BaseModel
 
 from system_intelligence import __version__
 from system_intelligence.analysis import analyze_local_repository
+from system_intelligence.analysis.trust import infer_trust_levels
+from system_intelligence.analysis.update_intelligence import check_dependency_updates
 from system_intelligence.core.entities import Repository
-from system_intelligence.core.enums import ComponentKind, Severity
+from system_intelligence.core.enums import ComponentKind, PermissionLevel, Severity
+from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.findings import Finding
+from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
-from system_intelligence.reporting import diff_snapshots, generate_html_report
+from system_intelligence.execution import ChangePlan, LocalGitError, apply_plan
+from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
+from system_intelligence.policy import audit_log_entry
+from system_intelligence.proposals import propose_component_update, propose_solution
+from system_intelligence.recommendations import generate_recommendations
+from system_intelligence.reporting import (
+    build_dashboard_data,
+    diff_snapshots,
+    generate_dashboard_html,
+    generate_html_report,
+)
+from system_intelligence.research import (
+    UNSCORABLE_DIMENSIONS,
+    ComponentUpdateProvider,
+    GitHubResearchError,
+    GitHubResearchProvider,
+    MCPRegistryError,
+    MCPRegistryResearchProvider,
+    NpmUpdateProvider,
+    PyPIUpdateProvider,
+    ResearchCache,
+    ResearchProvider,
+    rank_candidates,
+)
+from system_intelligence.verification import VerificationError, run_verification
 
 app = typer.Typer(
     name="si",
@@ -35,12 +82,7 @@ app = typer.Typer(
 )
 
 _PLANNED_COMMANDS = {
-    "research": "External solution discovery. Planned for Phase 5.",
     "design": "Architecture/design proposal generation. Planned for Phase 6.",
-    "improve": "Generate an improvement plan. Planned for Phase 6.",
-    "propose": "Create a concrete change proposal. Planned for Phase 6.",
-    "execute": "Perform an approved change. Planned for Phase 8 (human-approved execution).",
-    "verify": "Validate a change and compare before/after state. Planned for Phase 8.",
     "watch": "Repeat diagnosis on an interval and detect drift. Planned for Phase 8.",
 }
 
@@ -177,7 +219,9 @@ def report(target: str = _TARGET_ARGUMENT, out: Path = _REPORT_OUT_OPTION) -> No
         raise typer.Exit(code=1) from exc
 
     result = analyze_local_repository(discovery)
-    snapshot = result.snapshot
+    snapshot = result.snapshot.model_copy(
+        update={"recommendations": generate_recommendations(result.snapshot.findings)}
+    )
 
     out.mkdir(parents=True, exist_ok=True)
     report_path = out / "report.html"
@@ -229,6 +273,726 @@ def diff_command(from_dir: Path = _FROM_DIR_ARGUMENT, to_dir: Path = _TO_DIR_ARG
     )
     _section("Findings introduced", [f.statement for f in result.added_findings])
     _section("Findings resolved", [f.statement for f in result.resolved_findings])
+
+
+_DASHBOARD_OUT_OPTION = typer.Option(
+    Path("si-dashboard"), "--out", help="Directory to write the dashboard and snapshot into."
+)
+_DASHBOARD_COMPARE_OPTION = typer.Option(
+    None,
+    "--compare-with",
+    help="An earlier canonical snapshot directory (from --out on another command) to diff "
+    "against for the Changes screen. Also the accumulator directory to read: any "
+    "Proposal/ExecutionRecord/Verification/Approval/ResearchResult recorded into it via "
+    "--record on other commands is merged into the rendered snapshot, deduplicated by id.",
+)
+_DASHBOARD_CHECK_UPDATES_OPTION = typer.Option(
+    False,
+    "--check-updates",
+    help="Also run Component Update Intelligence (network requests to pypi/npm) and include it.",
+)
+
+
+@app.command()
+def dashboard(
+    target: str = _TARGET_ARGUMENT,
+    out: Path = _DASHBOARD_OUT_OPTION,
+    compare_with: Path | None = _DASHBOARD_COMPARE_OPTION,
+    check_updates: bool = _DASHBOARD_CHECK_UPDATES_OPTION,
+) -> None:
+    """Generate the interactive System Intelligence Console for a local target.
+
+    Runs discovery and analysis, then writes a self-contained `dashboard.html`
+    (no CDN, viewable offline via file://) plus the canonical JSON snapshot
+    into `--out`. This is read-heavy by design: nothing it renders can merge,
+    delete, force-push, or write to any remote. `--compare-with` both
+    populates the Changes screen (diffed against that earlier snapshot's
+    components/findings) and supplies the Proposals/Executions/
+    Verifications/Approvals/Research screens: a fresh scan never carries
+    those forward on its own, so without `--compare-with` pointed at
+    whatever directory `--record` on other commands has been accumulating
+    into, those screens are correctly empty rather than showing stale data.
+    `--check-updates` adds a network request per pypi/npm dependency
+    (skipped by default, unlike `si report`/`si diagnose`, which never
+    touch the network at all).
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    snapshot = result.snapshot.model_copy(
+        update={"recommendations": generate_recommendations(result.snapshot.findings)}
+    )
+
+    previous_snapshot = None
+    if compare_with is not None:
+        if not (compare_with / "manifest.json").is_file():
+            typer.echo(f"error: {compare_with} has no manifest.json", err=True)
+            raise typer.Exit(code=1)
+        previous_snapshot = Snapshot.read_from_directory(compare_with)
+        # The Changes diff below compares this fresh `snapshot` against the
+        # untouched `previous_snapshot` — merging accumulated audit-trail
+        # records here never affects that, since diff_snapshots only looks
+        # at components/capabilities/dependencies/findings.
+        merged_research = _merge_by_id(snapshot.research, previous_snapshot.research)
+        snapshot = snapshot.model_copy(
+            update={
+                "proposals": _merge_by_id(snapshot.proposals, previous_snapshot.proposals),
+                "executions": _merge_by_id(snapshot.executions, previous_snapshot.executions),
+                "verification": _merge_by_id(snapshot.verification, previous_snapshot.verification),
+                "approvals": _merge_by_id(snapshot.approvals, previous_snapshot.approvals),
+                "research": merged_research,
+                # A fresh scan never has research to derive Component.trust_level
+                # from (si diagnose alone never populates it) — re-derive now
+                # that --compare-with may have brought some in.
+                "components": infer_trust_levels(snapshot.components, merged_research),
+            }
+        )
+
+    update_check = None
+    if check_updates:
+        update_check = check_dependency_updates(
+            snapshot.components, _update_providers(), snapshot.relationships
+        )
+
+    data = build_dashboard_data(
+        snapshot, previous_snapshot=previous_snapshot, update_check=update_check
+    )
+
+    out.mkdir(parents=True, exist_ok=True)
+    dashboard_path = out / "dashboard.html"
+    dashboard_path.write_text(generate_dashboard_html(data), encoding="utf-8")
+    snapshot_dir = out / snapshot.id
+    snapshot.write_to_directory(snapshot_dir)
+
+    typer.echo(f"Dashboard written to {dashboard_path}")
+    typer.echo(f"Snapshot written to {snapshot_dir}")
+
+
+_QUERY_ARGUMENT = typer.Argument(..., help="Search query, e.g. 'python markdown parser'.")
+_RESEARCH_LIMIT_OPTION = typer.Option(10, "--limit", help="Maximum candidates to return.")
+_NO_CACHE_OPTION = typer.Option(False, "--no-cache", help="Bypass the research cache.")
+_CACHE_DIR_OPTION = typer.Option(
+    Path(".si") / "research-cache", "--cache-dir", help="Directory for the research cache."
+)
+_RESEARCH_RECORD_OPTION = typer.Option(
+    None,
+    "--record",
+    help=(
+        "An existing canonical snapshot directory (from --out on another command) to append "
+        "these results to, so 'si dashboard' can show them later."
+    ),
+)
+_RESEARCH_PROVIDER_OPTION = typer.Option(
+    "github",
+    "--provider",
+    help=(
+        "Which read-only source to search: 'github' (repositories; license/activity/star "
+        "signals available) or 'mcp-registry' (the official MCP server registry; that "
+        "registry's own schema carries no license/maintenance field, so those stay unknown "
+        "for every result — being listed there proves namespace ownership, not quality)."
+    ),
+)
+
+_ACTIVITY_LABEL = {True: "active", False: "stale", None: "unknown"}
+_RESEARCH_PROVIDER_ERRORS: tuple[type[Exception], ...] = (GitHubResearchError, MCPRegistryError)
+
+
+def _research_provider(provider_name: str) -> ResearchProvider:
+    if provider_name == "github":
+        return GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
+    if provider_name == "mcp-registry":
+        return MCPRegistryResearchProvider()
+    typer.echo(
+        f"error: unknown --provider {provider_name!r} (expected 'github' or 'mcp-registry')",
+        err=True,
+    )
+    raise typer.Exit(code=1)
+
+
+@app.command()
+def research(
+    query: str = _QUERY_ARGUMENT,
+    limit: int = _RESEARCH_LIMIT_OPTION,
+    no_cache: bool = _NO_CACHE_OPTION,
+    cache_dir: Path = _CACHE_DIR_OPTION,
+    record: Path | None = _RESEARCH_RECORD_OPTION,
+    provider_name: str = _RESEARCH_PROVIDER_OPTION,
+) -> None:
+    """Search for existing solutions before proposing something new.
+
+    Read-only — only ever issues GET requests. Candidates are ranked by
+    license presence, recent activity, and archived status; star count is
+    shown for reference only and never used to rank (ADR-009). Several
+    scoring dimensions (functional fit, security posture, ...) cannot be
+    determined from either provider's response and are reported as unknown
+    rather than guessed — for `--provider mcp-registry` this includes
+    license and activity themselves, since that registry's schema doesn't
+    carry them at all.
+    """
+    provider = _research_provider(provider_name)
+    cache = ResearchCache(directory=cache_dir)
+
+    results = None if no_cache else cache.get(provider.name, query)
+    from_cache = results is not None
+    if results is None:
+        try:
+            results = provider.search(query, limit=limit)
+        except _RESEARCH_PROVIDER_ERRORS as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        cache.set(provider.name, query, results)
+
+    if not results:
+        typer.echo(f"No candidates found for {query!r}.")
+        return
+
+    if record is not None:
+        for result in results:
+            _append_json_record(record, "research.json", result)
+
+    cache_note = " (cached)" if from_cache else ""
+    typer.echo(f"Found {len(results)} candidate(s) for {query!r} via {provider.name}{cache_note}:")
+
+    for assessment in rank_candidates(results):
+        r = assessment.result
+        license_str = r.license or "unknown"
+        activity = _ACTIVITY_LABEL[assessment.is_recently_active]
+        archived = "archived" if assessment.is_archived else "not archived"
+        stars = "unknown" if assessment.stargazer_count is None else str(assessment.stargazer_count)
+        typer.echo(f"\n- {r.identifier}")
+        typer.echo(f"    source: {r.source}")
+        typer.echo(f"    license: {license_str} ({assessment.license_confidence.value})")
+        typer.echo(f"    activity: {activity}, {archived}, stars: {stars} (informational only)")
+
+    typer.echo(
+        f"\n{len(UNSCORABLE_DIMENSIONS)} dimension(s) could not be assessed from this data "
+        f"and are excluded from ranking: {', '.join(UNSCORABLE_DIMENSIONS)}."
+    )
+
+
+def _update_providers() -> dict[str, ComponentUpdateProvider]:
+    # Constructed fresh per call (like `research()`'s GitHubResearchProvider)
+    # rather than as a module-level singleton, so each invocation's HTTP
+    # layer can be independently injected/tested.
+    return {"pypi": PyPIUpdateProvider(), "npm": NpmUpdateProvider()}
+
+
+_CHECK_UPDATES_PROPOSE_OPTION = typer.Option(
+    False,
+    "--propose",
+    help="Also print a component_update Proposal for each actionable verdict.",
+)
+_CHECK_UPDATES_RECORD_OPTION = typer.Option(
+    None,
+    "--record",
+    help=(
+        "An existing canonical snapshot directory (from --out on another command) to append "
+        "generated Proposals to, so 'si dashboard' can show them later."
+    ),
+)
+
+
+@app.command(name="check-updates")
+def check_updates(
+    target: str = _TARGET_ARGUMENT,
+    propose: bool = _CHECK_UPDATES_PROPOSE_OPTION,
+    record: Path | None = _CHECK_UPDATES_RECORD_OPTION,
+) -> None:
+    """Component Update Intelligence: current vs. available state for every dependency.
+
+    Read-only, but unlike `si diagnose` this makes network requests (one GET
+    per pypi/npm dependency, to the public registries) — closer in kind to
+    `si research`. Dependencies in an ecosystem with no configured provider
+    (anything but pypi/npm today) are skipped, not reported as unknown.
+
+    Never concludes `UPDATE_RECOMMENDED` from a version number alone: see
+    `analysis.update_intelligence` and `core.enums.UpdateVerdict` — that
+    verdict requires capability/dependency/interface impact to have
+    actually been evaluated, which today's providers rarely can for an
+    arbitrary third-party package. `REVIEW_REQUIRED` is the common, honest
+    outcome, not a shortcoming of this command. `--propose` (closing
+    "... -> Impact -> Recommendation -> Proposal") never produces a
+    Proposal for a NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN verdict —
+    there is nothing to propose in those cases.
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    providers = _update_providers()
+    check = check_dependency_updates(
+        result.snapshot.components, providers, result.snapshot.relationships
+    )
+
+    if not check.assessments and not check.unavailable:
+        typer.echo(
+            "No dependencies found in an ecosystem with a configured update "
+            f"provider ({', '.join(sorted(providers))})."
+        )
+        return
+
+    for assessment in check.assessments:
+        diff = assessment.state_diff
+        typer.echo(f"\n- {diff.identity.name} ({diff.identity.distribution_source})")
+        typer.echo(f"    current: {diff.from_state.version or 'unknown'}")
+        typer.echo(f"    available: {diff.to_state.version or 'unknown'}")
+        typer.echo(
+            f"    verdict: {assessment.verdict.value} ({assessment.verdict_confidence.value})"
+        )
+        typer.echo(f"    why: {assessment.verdict_rationale}")
+        if assessment.affected_entity_ids:
+            typer.echo(f"    affects: {', '.join(assessment.affected_entity_ids)}")
+        if assessment.unknown_dimensions:
+            typer.echo(f"    unresolved dimensions: {', '.join(assessment.unknown_dimensions)}")
+
+    if check.unavailable:
+        typer.echo(
+            f"\n{len(check.unavailable)} lookup(s) could not be completed (source unavailable):"
+        )
+        for failure in check.unavailable:
+            typer.echo(f"  - {failure.ecosystem}:{failure.name}: {failure.message}")
+
+    if propose or record is not None:
+        proposals = [
+            p for p in (propose_component_update(a) for a in check.assessments) if p is not None
+        ]
+        if propose:
+            if not proposals:
+                typer.echo("\nNo actionable verdict produced a Proposal.")
+            for proposal in proposals:
+                typer.echo(f"\nProposal ({proposal.kind}): {proposal.problem}")
+                typer.echo(f"    required permission: {proposal.required_permission_level.name}")
+        if record is not None:
+            for proposal in proposals:
+                _append_json_record(record, "proposals.json", proposal)
+
+
+@app.command()
+def improve(target: str = _TARGET_ARGUMENT) -> None:
+    """Generate a ranked improvement plan: discovery, analysis, then recommendations.
+
+    Every recommendation traces back to a Finding's own evidence — this
+    does not invent anything Phase 3's analyzers didn't already find.
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    recommendations = generate_recommendations(result.snapshot.findings)
+
+    if not recommendations:
+        typer.echo("No recommendations — no findings to act on.")
+        return
+
+    typer.echo(f"{len(recommendations)} recommendation(s), highest priority first:\n")
+    for rec in recommendations:
+        typer.echo(f"- {rec.objective}")
+        typer.echo(f"    why: {rec.rationale}")
+        typer.echo(f"    effort: {rec.estimated_effort}, risk: {rec.risk}")
+        typer.echo(f"    confidence: {rec.confidence.value}")
+
+
+_PROBLEM_ARGUMENT = typer.Argument(..., help="The need or problem statement, in plain language.")
+_REQUIREMENT_OPTION = typer.Option(
+    [], "--requirement", help="A requirement the solution must satisfy. Repeatable."
+)
+_RESEARCH_QUERY_OPTION = typer.Option(
+    None, "--research-query", help="If given, search GitHub for candidates before deciding."
+)
+_CONFIRM_FIT_OPTION = typer.Option(
+    False,
+    "--confirm-fit",
+    help=(
+        "Assert that a human (or other process) has already verified the best "
+        "candidate's functional fit. Never set this from research data alone."
+    ),
+)
+_PROPOSAL_OUT_OPTION = typer.Option(
+    None, "--out", help="File to write the proposal as JSON. Skipped if omitted."
+)
+_PROPOSAL_RECORD_OPTION = typer.Option(
+    None,
+    "--record",
+    help=(
+        "An existing canonical snapshot directory (from --out on another command) to append "
+        "this Proposal to, so 'si dashboard' can show it later."
+    ),
+)
+
+
+@app.command()
+def propose(
+    problem: str = _PROBLEM_ARGUMENT,
+    requirement: list[str] = _REQUIREMENT_OPTION,
+    research_query: str | None = _RESEARCH_QUERY_OPTION,
+    confirm_fit: bool = _CONFIRM_FIT_OPTION,
+    out: Path | None = _PROPOSAL_OUT_OPTION,
+    record: Path | None = _PROPOSAL_RECORD_OPTION,
+) -> None:
+    """Produce a concrete proposal: adopt, integrate, or create (docs/07-improvement-engine.md).
+
+    Without `--research-query`, no external solution is searched for and
+    the result is always a creation proposal. `--confirm-fit` must reflect
+    an actual verification you (or another process) performed — this
+    command never infers functional fit from research metadata alone.
+    """
+    research_results = []
+    if research_query:
+        provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
+        try:
+            research_results = provider.search(research_query)
+        except GitHubResearchError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+    proposal = propose_solution(
+        problem,
+        requirements=requirement,
+        research_results=research_results,
+        functional_fit_confirmed=confirm_fit,
+    )
+
+    typer.echo(f"Proposal kind: {proposal.kind}")
+    typer.echo(f"Problem: {proposal.problem}")
+    if proposal.requirements:
+        typer.echo(f"Requirements: {', '.join(proposal.requirements)}")
+    if proposal.proposed_component_name:
+        typer.echo(f"Proposed component: {proposal.proposed_component_name}")
+    if proposal.alternatives_considered:
+        typer.echo(f"Alternatives considered: {', '.join(proposal.alternatives_considered)}")
+    if proposal.why_existing_solutions_insufficient:
+        typer.echo(f"Why not sufficient as-is: {proposal.why_existing_solutions_insufficient}")
+    typer.echo(f"Required permission level: {proposal.required_permission_level.name}")
+
+    if out is not None:
+        out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
+        typer.echo(f"\nProposal written to {out}")
+
+    if record is not None:
+        _append_json_record(record, "proposals.json", proposal)
+
+
+_REQUEST_ARGUMENT = typer.Argument(
+    None,
+    help=(
+        "A known intent name (see 'si plan --list') or free text, e.g. 'Diagnose this repository.'"
+    ),
+)
+_LIST_INTENTS_OPTION = typer.Option(
+    False, "--list", help="List known intent names and exit, ignoring REQUEST."
+)
+
+
+@app.command()
+def plan(
+    request: str | None = _REQUEST_ARGUMENT, list_intents: bool = _LIST_INTENTS_OPTION
+) -> None:
+    """Show which capabilities a request would run, without running any of them.
+
+    docs/design/docs/10-plugin-skill-system.md: "Given an intent, select
+    the minimum capability set required. ... It should not blindly
+    activate every installed capability." This command makes that
+    selection visible and auditable before anything executes.
+    """
+    if list_intents:
+        for name in sorted(INTENTS):
+            typer.echo(name)
+        return
+
+    if request is None:
+        typer.echo("error: REQUEST is required unless --list is given.", err=True)
+        raise typer.Exit(code=1)
+
+    if request in INTENTS:
+        intent = request
+    else:
+        intent = classify_intent(request)
+        typer.echo(f"Classified {request!r} as intent {intent!r}.")
+
+    capability_ids = resolve_intent(intent)
+    typer.echo(f"\nIntent {intent!r} would run {len(capability_ids)} capabilit(y/ies):")
+    for capability_id in capability_ids:
+        typer.echo(f"  - {capability_id}: {CAPABILITIES[capability_id].description}")
+
+
+class _Identifiable(Protocol):
+    id: str
+
+
+_T = TypeVar("_T", bound=_Identifiable)
+
+
+def _merge_by_id(current: list[_T], accumulated: list[_T]) -> list[_T]:
+    """Combine two lists of the same record type, deduplicated by `.id`.
+
+    Used to fold a `--record`-accumulated snapshot directory's Proposals/
+    ExecutionRecords/Verifications/Approvals/ResearchResults into a freshly
+    scanned Snapshot for `si dashboard`. `current` wins on an id collision.
+    """
+    merged: dict[str, _T] = {record.id: record for record in accumulated}
+    merged.update({record.id: record for record in current})
+    return list(merged.values())
+
+
+def _append_json_record(directory: Path, filename: str, record: BaseModel) -> None:
+    """Append `record` to a JSON list file, creating it if needed.
+
+    Used only to attach `ExecutionRecord`/`Verification` results to an
+    existing canonical snapshot directory (`--record`) so a later
+    `si dashboard` invocation on that same directory can show them —
+    otherwise both live only for the lifetime of one CLI invocation.
+    """
+    path = directory / filename
+    existing: list[object] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    existing.append(record.model_dump(mode="json"))
+    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+_PLAN_FILE_ARGUMENT = typer.Argument(
+    ...,
+    help=(
+        "JSON file describing the ChangePlan: branch_name, commit_message, "
+        "files (path -> content), and optionally description."
+    ),
+)
+_EXECUTE_TARGET_ARGUMENT = typer.Argument(".", help="Local repository to apply the plan to.")
+_APPROVE_OPTION = typer.Option(
+    False,
+    "--approve",
+    help="Actually apply the plan. Without this flag, only a dry-run preview is printed.",
+)
+_APPROVAL_FILE_OPTION = typer.Option(
+    None,
+    "--approval-file",
+    help="JSON file with an Approval record (or a list of them) authorizing this action.",
+)
+_EXECUTE_RECORD_OPTION = typer.Option(
+    None,
+    "--record",
+    help=(
+        "An existing canonical snapshot directory (from --out on another command) to append "
+        "this run's ExecutionRecord (and any Approval actually supplied via --approval-file) "
+        "to, so 'si dashboard' can show them later. Optional — without it, this run's result "
+        "is only ever printed, not persisted."
+    ),
+)
+
+
+@app.command()
+def execute(
+    plan_file: Path = _PLAN_FILE_ARGUMENT,
+    target: str = _EXECUTE_TARGET_ARGUMENT,
+    approve: bool = _APPROVE_OPTION,
+    approval_file: Path | None = _APPROVAL_FILE_OPTION,
+    record: Path | None = _EXECUTE_RECORD_OPTION,
+) -> None:
+    """Preview, or apply, a local ChangePlan (branch + commit) — never a remote change.
+
+    Without `--approve` this only prints what would happen
+    (`ChangePlan.preview_lines()`) and touches nothing. With `--approve`,
+    `execution.local_git.apply_plan` still requires a matching `Approval`
+    record via `--approval-file` unless the plan's required permission
+    level is within the default maximum — human approval is never
+    bypassed. This never pushes to a remote and never performs a
+    `core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS` action.
+    """
+    try:
+        raw_plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        typer.echo(f"error: could not read plan file: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        plan_kwargs: dict[str, object] = {
+            "branch_name": raw_plan["branch_name"],
+            "commit_message": raw_plan["commit_message"],
+            "files": raw_plan["files"],
+            "description": raw_plan.get("description", ""),
+            "evidence_summary": raw_plan.get("evidence_summary", []),
+        }
+        if "required_permission_level" in raw_plan:
+            plan_kwargs["required_permission_level"] = PermissionLevel[
+                raw_plan["required_permission_level"]
+            ]
+        plan = ChangePlan(**plan_kwargs)  # type: ignore[arg-type]
+    except (KeyError, TypeError) as exc:
+        typer.echo(f"error: invalid plan file: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("Plan preview:")
+    for line in plan.preview_lines():
+        typer.echo(f"  - {line}")
+
+    if not approve:
+        typer.echo("\nDry run only (pass --approve to apply). Nothing was changed.")
+        return
+
+    approvals: list[Approval] = []
+    if approval_file is not None:
+        try:
+            raw_approvals = json.loads(approval_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            typer.echo(f"error: could not read approval file: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        raw_list = raw_approvals if isinstance(raw_approvals, list) else [raw_approvals]
+        approvals = [Approval.model_validate(item) for item in raw_list]
+
+    try:
+        result = apply_plan(plan, Path(target), approvals=approvals)
+    except LocalGitError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if record is not None:
+        _append_json_record(
+            record,
+            "executions.json",
+            ExecutionRecord(
+                action="create_local_branch_and_commit",
+                target=target,
+                plan_description=plan.description,
+                branch_name=result.branch_name,
+                commit_sha=result.commit_sha,
+                files_written=result.files_written,
+                applied=result.applied,
+                decision_reason=result.decision.reason,
+            ),
+        )
+        # Records the Approval(s) actually supplied via --approval-file, not
+        # a fabricated one — an execution denied for lack of an approval
+        # writes no approvals.json entry.
+        for approval in approvals:
+            _append_json_record(record, "approvals.json", approval)
+        _append_json_record(
+            record,
+            "audit_log.json",
+            audit_log_entry(
+                result.decision,
+                action="create_local_branch_and_commit",
+                target=target,
+                intent=plan.description or plan.commit_message,
+                actor=approvals[0].actor if approvals else "system:cli",
+                correlation_id=result.commit_sha,
+            ),
+        )
+
+    if not result.applied:
+        typer.echo(f"\nDenied: {result.decision.reason}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"\nApplied: branch {result.branch_name!r}, commit {result.commit_sha}")
+    typer.echo(f"Files written: {', '.join(result.files_written)}")
+
+
+_VERIFY_COMMAND_ARGUMENT = typer.Argument(
+    ..., help="Test command to run, e.g. 'pytest -q'. Parsed shell-style, so quoting works."
+)
+_VERIFY_TARGET_OPTION = typer.Option(".", "--target", help="Repository to run the command in.")
+_VERIFY_RECORD_OPTION = typer.Option(
+    None,
+    "--record",
+    help=(
+        "An existing canonical snapshot directory (from --out on another command) to append "
+        "this run's Verification to, so 'si dashboard' can show it later."
+    ),
+)
+_VERIFY_COMPONENT_OPTION = typer.Option(
+    None,
+    "--component",
+    help=(
+        "A Component id from an existing snapshot's components.json this check is about "
+        "(e.g. one Skill's own conformance/test command) — attaches it to the recorded "
+        "Verification so 'si dashboard' can show it on that Component's detail view. Omit "
+        "when the check isn't about one specific discovered Component."
+    ),
+)
+_VERIFY_BEFORE_SNAPSHOT_OPTION = typer.Option(
+    None,
+    "--before-snapshot",
+    help="A canonical snapshot directory captured before the change, for regression "
+    "detection (findings present after the change but not before). Must be given "
+    "together with --after-snapshot.",
+)
+_VERIFY_AFTER_SNAPSHOT_OPTION = typer.Option(
+    None,
+    "--after-snapshot",
+    help="A canonical snapshot directory captured after the change, for regression "
+    "detection. Must be given together with --before-snapshot.",
+)
+
+
+def _load_verification_snapshot(directory: Path) -> Snapshot:
+    if not (directory / "manifest.json").is_file():
+        typer.echo(f"error: {directory} has no manifest.json", err=True)
+        raise typer.Exit(code=1)
+    return Snapshot.read_from_directory(directory)
+
+
+@app.command()
+def verify(
+    command: str = _VERIFY_COMMAND_ARGUMENT,
+    target: str = _VERIFY_TARGET_OPTION,
+    record: Path | None = _VERIFY_RECORD_OPTION,
+    component: str | None = _VERIFY_COMPONENT_OPTION,
+    before_snapshot: Path | None = _VERIFY_BEFORE_SNAPSHOT_OPTION,
+    after_snapshot: Path | None = _VERIFY_AFTER_SNAPSHOT_OPTION,
+) -> None:
+    """Run a test command locally and report the result (R10).
+
+    Pass/fail is taken directly from the command's own exit code — never
+    inferred or assumed. Passing both --before-snapshot and --after-snapshot
+    (two canonical snapshot directories, e.g. from 'si diagnose --out'
+    before and after applying a change) additionally computes
+    regressions_found from their diff's added findings — never guessed
+    from the command's own pass/fail alone. Exits non-zero if the command
+    failed or a regression was found.
+    """
+    if (before_snapshot is None) != (after_snapshot is None):
+        typer.echo("error: --before-snapshot and --after-snapshot must be given together", err=True)
+        raise typer.Exit(code=1)
+
+    before_snap = (
+        _load_verification_snapshot(before_snapshot) if before_snapshot is not None else None
+    )
+    after_snap = _load_verification_snapshot(after_snapshot) if after_snapshot is not None else None
+
+    try:
+        verification = run_verification(
+            Path(target),
+            shlex.split(command),
+            component_id=component,
+            before_snapshot=before_snap,
+            after_snapshot=after_snap,
+        )
+    except VerificationError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if record is not None:
+        _append_json_record(record, "verification.json", verification)
+
+    status = "PASSED" if verification.tests_passed else "FAILED"
+    typer.echo(f"Command: {verification.tests_run[0]}")
+    typer.echo(f"Result: {status}")
+    if verification.regressions_found:
+        typer.echo(f"\nRegressions detected ({len(verification.regressions_found)}):")
+        for regression in verification.regressions_found:
+            typer.echo(f"  - {regression}")
+    if verification.evidence:
+        typer.echo(f"\nOutput:\n{verification.evidence[0].observation}")
+
+    if not verification.tests_passed or verification.regressions_found:
+        raise typer.Exit(code=1)
 
 
 @app.command()

@@ -8,7 +8,7 @@ MCP servers, and Tools will extend this once their detectors exist.
 from __future__ import annotations
 
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import Skill
+from system_intelligence.core.entities import Component, Skill
 from system_intelligence.core.enums import CapabilityStatus, Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
@@ -34,6 +34,76 @@ def extract_capabilities(skills: list[Skill]) -> list[Capability]:
             )
         )
     return capabilities
+
+
+def attach_consumers(
+    capabilities: list[Capability], components: list[Component]
+) -> list[Capability]:
+    """Populate `Capability.consumer_ids` from explicit dependency declarations.
+
+    A component is only ever recorded as a consumer of a Capability when one
+    of its own `Dependency` records has a `name` that exactly matches that
+    Capability's `name` — the same "declared identifier equality is a
+    verifiable fact, functional equivalence is not" principle
+    `detect_duplicate_capabilities` already applies to two Capabilities
+    sharing a name, extended here to a Dependency naming the same identifier
+    as a Capability already on record in this Snapshot.
+
+    Never derived from a similar name, a similar description, or any
+    heuristic beyond exact string equality on fields the discovery layer
+    already populated with their own Evidence. A component with no
+    dependency whose name exactly matches a Capability contributes no
+    consumer edge for it — this is an absence of a verifiable declaration,
+    not evidence that the component doesn't consume it, so it must never be
+    read as a negative fact; `consumer_ids` simply stays as it was (empty,
+    unless already set by a caller).
+    """
+    by_name: dict[str, list[Capability]] = {}
+    for capability in capabilities:
+        by_name.setdefault(capability.name, []).append(capability)
+
+    consumer_ids: dict[str, set[str]] = {c.id: set(c.consumer_ids) for c in capabilities}
+    extra_evidence: dict[str, list[Evidence]] = {c.id: [] for c in capabilities}
+
+    for component in components:
+        for dependency in component.dependencies:
+            for capability in by_name.get(dependency.name, []):
+                if component.id in capability.provider_ids:
+                    continue  # a component does not "consume" its own capability
+                if component.id in consumer_ids[capability.id]:
+                    continue
+                consumer_ids[capability.id].add(component.id)
+                extra_evidence[capability.id].extend(dependency.evidence)
+                extra_evidence[capability.id].append(
+                    Evidence(
+                        kind=EvidenceKind.STATIC_REFERENCE,
+                        source=component.id,
+                        observation=(
+                            f"{component.name!r} declares a dependency named "
+                            f"{dependency.name!r}, matching the capability "
+                            f"{capability.name!r} on record in this Snapshot. Whether the "
+                            "dependency actually refers to this capability has not been "
+                            "independently verified."
+                        ),
+                        confidence=Confidence.MEDIUM,
+                    )
+                )
+
+    updated: list[Capability] = []
+    for capability in capabilities:
+        new_ids = sorted(consumer_ids[capability.id])
+        if new_ids == capability.consumer_ids and not extra_evidence[capability.id]:
+            updated.append(capability)
+            continue
+        updated.append(
+            capability.model_copy(
+                update={
+                    "consumer_ids": new_ids,
+                    "evidence": [*capability.evidence, *extra_evidence[capability.id]],
+                }
+            )
+        )
+    return updated
 
 
 def detect_duplicate_capabilities(capabilities: list[Capability]) -> list[Finding]:
