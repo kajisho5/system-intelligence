@@ -36,7 +36,7 @@ from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_do
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
 from system_intelligence.discovery.structure import StructureScanResult, scan_structure
-from system_intelligence.discovery.target import resolve_local_target
+from system_intelligence.discovery.target import resolve_target
 from system_intelligence.intelligence.registry import resolve_dependencies
 from system_intelligence.recommendations.engine import generate_recommendations
 
@@ -136,7 +136,7 @@ def run_capabilities(locator: str, capability_ids: list[str]) -> Snapshot:
     only `documentation_audit` never scans structure, detects Skills, or
     parses dependencies.
     """
-    target = resolve_local_target(locator)
+    target = resolve_target(locator)
     root = Path(target.locator)
     repository = Repository(id=stable_id("repository", "root"), name=target.name, path=".")
     ctx = _OrchestrationContext(root=root, repository=repository)

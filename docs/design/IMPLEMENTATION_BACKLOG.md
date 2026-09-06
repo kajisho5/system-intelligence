@@ -23,7 +23,7 @@ named on each `[x]` line for the actual code, not just the schema.
 ## Epic 3 — Discovery
 - [x] filesystem scanner — `discovery/structure.py`
 - [x] Git scanner — `discovery/git_metadata.py`
-- [ ] GitHub adapter — discovery only resolves local filesystem paths today (`discovery/target.py`); a live GitHub-repository-as-target adapter is not implemented
+- [x] GitHub adapter — `discovery/github_target.py::clone_github_repository`; `owner/repo` shorthand or a `https://github.com/...` URL is shallow-cloned read-only (`git clone --depth 1`) into a temp directory, then resolved exactly like any local path (`discovery/target.py::resolve_target`), so every existing `si` command gained GitHub-target support with no per-command changes
 - [x] Agent Skills detector — `discovery/skills.py`
 - [ ] agent detector — no discovery code ever instantiates `core.entities.Agent`; nothing populates it from a scan
 - [x] package detector — `discovery/structure.py`'s `PACKAGE_MANIFESTS`

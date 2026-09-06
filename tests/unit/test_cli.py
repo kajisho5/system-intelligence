@@ -67,6 +67,40 @@ def test_inspect_command_missing_target_fails_clearly(tmp_path: Path) -> None:
     assert "does not exist" in result.stdout + (result.stderr or "")
 
 
+def test_inspect_command_resolves_a_github_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone_dir = tmp_path / "cloned"
+    clone_dir.mkdir()
+    (clone_dir / "README.md").write_text("# Hi\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "system_intelligence.discovery.target.clone_github_repository", lambda _spec: clone_dir
+    )
+
+    result = runner.invoke(app, ["inspect", "octocat/Hello-World"])
+
+    assert result.exit_code == 0
+    assert "Target: octocat/Hello-World" not in result.stdout  # locator, not name, is printed
+    assert str(clone_dir.resolve()) in result.stdout
+
+
+def test_inspect_command_github_clone_failure_fails_clearly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from system_intelligence.discovery.github_target import GitHubTargetError
+
+    def _fail(_spec: str) -> None:
+        raise GitHubTargetError("failed to clone 'no/such-repo': repository not found")
+
+    monkeypatch.setattr("system_intelligence.discovery.target.clone_github_repository", _fail)
+
+    result = runner.invoke(app, ["inspect", "no/such-repo"])
+
+    assert result.exit_code == 1
+    assert "repository not found" in result.stdout + (result.stderr or "")
+
+
 def test_diagnose_command_reports_findings(tmp_path: Path) -> None:
     # An empty directory: no README/LICENSE/CONTRIBUTING, no CI, no tests.
     result = runner.invoke(app, ["diagnose", str(tmp_path)])

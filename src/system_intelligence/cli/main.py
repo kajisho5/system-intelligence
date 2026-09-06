@@ -102,7 +102,12 @@ for _name, _summary in _PLANNED_COMMANDS.items():
 
 
 _TARGET_ARGUMENT = typer.Argument(
-    ".", help="Local path to inspect. Defaults to the current directory."
+    ".",
+    help=(
+        "Local path, or a GitHub repository as 'owner/repo' or a "
+        "https://github.com/... URL (shallow-cloned read-only). "
+        "Defaults to the current directory."
+    ),
 )
 _OUT_OPTION = typer.Option(
     None, "--out", help="Directory to write the canonical JSON snapshot to. Skipped if omitted."
@@ -115,10 +120,11 @@ def _format_named_list(label: str, items: list[str]) -> str:
 
 @app.command()
 def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> None:
-    """Read-only inventory of a local target (git metadata, structure, Skills, CI, docs).
+    """Read-only inventory of a local or GitHub target (git metadata, structure, Skills, CI, docs).
 
-    Only local filesystem targets are supported so far — GitHub/manifest
-    targets are future work. Nothing is written unless `--out` is given.
+    A GitHub repository is shallow-cloned first (see `_TARGET_ARGUMENT`'s
+    help text); manifest/ecosystem targets remain future work. Nothing is
+    written unless `--out` is given.
     """
     try:
         result = discover_local_repository(target)
