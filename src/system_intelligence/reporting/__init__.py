@@ -26,18 +26,25 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 6):
 The canonical JSON snapshot itself (`core.snapshot.Snapshot`) is the
 machine-readable export this module renders — no second, incompatible
 source of truth is created for the UI.
+
+- `schema.export_json_schemas`: writes one `*.schema.json` file per
+  canonical snapshot file (plus `dashboard_data`), so an external consumer
+  can validate what it reads without depending on this project's own
+  Python types (docs/design/IMPLEMENTATION_BACKLOG.md, Epic 2).
 """
 
 from system_intelligence.reporting.dashboard_data import DashboardData, build_dashboard_data
 from system_intelligence.reporting.dashboard_html import generate_dashboard_html
 from system_intelligence.reporting.diff import SnapshotDiff, diff_snapshots
 from system_intelligence.reporting.html import generate_html_report
+from system_intelligence.reporting.schema import export_json_schemas
 
 __all__ = [
     "DashboardData",
     "SnapshotDiff",
     "build_dashboard_data",
     "diff_snapshots",
+    "export_json_schemas",
     "generate_dashboard_html",
     "generate_html_report",
 ]

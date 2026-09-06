@@ -117,6 +117,19 @@ def test_report_command_missing_target_fails_clearly(tmp_path: Path) -> None:
     assert "does not exist" in result.stdout + (result.stderr or "")
 
 
+def test_schema_command_writes_one_file_per_canonical_snapshot_file(tmp_path: Path) -> None:
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(app, ["schema", "--out", str(out_dir)])
+
+    assert result.exit_code == 0
+    assert (out_dir / "components.schema.json").exists()
+    assert (out_dir / "manifest.schema.json").exists()
+    assert (out_dir / "dashboard_data.schema.json").exists()
+    schema = json.loads((out_dir / "capabilities.schema.json").read_text(encoding="utf-8"))
+    assert schema["type"] == "array"
+
+
 def test_diff_command_reports_added_and_resolved(tmp_path: Path) -> None:
     target_dir = tmp_path / "target"
     target_dir.mkdir()
