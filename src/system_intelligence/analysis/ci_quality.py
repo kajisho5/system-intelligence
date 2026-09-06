@@ -1,9 +1,10 @@
 """Test/CI presence audit (docs/design/docs/05-analysis-engine.md, "Quality").
 
 Phase 3 scope: whether any CI job was detected and whether any test files
-exist under a conventional `tests/` directory. Not in scope: coverage
-percentages, lint/type-check configuration quality, or CI run history —
-those need richer signals than local discovery provides.
+exist under a conventional `tests/` directory, or (Go only) anywhere in
+the tree at all. Not in scope: coverage percentages, lint/type-check
+configuration quality, or CI run history — those need richer signals
+than local discovery provides.
 """
 
 from __future__ import annotations
@@ -14,15 +15,41 @@ from system_intelligence.core.entities import CIJob, Repository
 from system_intelligence.core.enums import Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
+from system_intelligence.discovery.paths import iter_files
 
-_TEST_FILE_PATTERNS = ("test_*.py", "*_test.py", "*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js")
+#: Cargo's own convention: every file under `tests/` is compiled as its
+#: own integration-test crate, so a bare `*.rs` there (unlike a source
+#: file elsewhere) is unambiguously a test file.
+_TEST_FILE_PATTERNS = (
+    "test_*.py",
+    "*_test.py",
+    "*.test.ts",
+    "*.test.js",
+    "*.spec.ts",
+    "*.spec.js",
+    "*.rs",
+)
 
 
-def _has_test_files(root: Path) -> bool:
+def _has_directory_test_files(root: Path) -> bool:
     tests_dir = root / "tests"
     if not tests_dir.is_dir():
         return False
     return any(any(tests_dir.rglob(pattern)) for pattern in _TEST_FILE_PATTERNS)
+
+
+def _has_go_test_files(root: Path) -> bool:
+    """Go's own testing convention colocates `<name>_test.go` directly next
+    to the source file it tests, never under a `tests/` directory at all --
+    so, uniquely among the checks here, this scans the whole tree (still
+    excluding vendor/build directories, via `iter_files`, the same as every
+    other whole-tree scan) rather than one fixed location.
+    """
+    return any(iter_files(root, "*_test.go"))
+
+
+def _has_test_files(root: Path) -> bool:
+    return _has_directory_test_files(root) or _has_go_test_files(root)
 
 
 def audit_ci_and_tests(repository: Repository, root: Path, ci_jobs: list[CIJob]) -> list[Finding]:
