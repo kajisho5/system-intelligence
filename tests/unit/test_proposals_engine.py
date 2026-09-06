@@ -134,6 +134,69 @@ def test_evidence_from_problem_and_candidate_are_combined() -> None:
     assert len(proposal.evidence) == 1 + len(candidate.evidence)
 
 
+def test_target_kind_omitted_keeps_generic_wording() -> None:
+    """Backward compatibility: every existing caller that never passes
+    target_kind must see byte-identical wording to before this existed."""
+    proposal = propose_solution("Need X", requirements=["r"])
+    assert (
+        proposal.test_strategy
+        == "Add tests covering the new/adopted capability's stated requirements."
+    )
+    assert (
+        proposal.documentation_requirements
+        == "Document the capability and how it satisfies each requirement."
+    )
+
+
+def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.SKILL)
+    assert proposal.test_strategy is not None and "SKILL.md" in proposal.test_strategy
+    assert (
+        proposal.documentation_requirements
+        == "Document the capability in the Skill's own SKILL.md."
+    )
+
+
+def test_target_kind_agent_shapes_test_and_documentation_strategy() -> None:
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.AGENT)
+    assert proposal.test_strategy is not None
+    assert "scenario" in proposal.test_strategy
+    assert proposal.documentation_requirements is not None
+    assert "permission" in proposal.documentation_requirements
+
+
+def test_target_kind_applies_to_adoption_proposal() -> None:
+    candidate = _candidate("psf/markdown-it-py")
+    proposal = propose_solution(
+        "Need a markdown renderer",
+        research_results=[candidate],
+        functional_fit_confirmed=True,
+        target_kind=ComponentKind.MCP_SERVER,
+    )
+    assert proposal.kind == "adoption"
+    assert proposal.test_strategy is not None and "schema" in proposal.test_strategy
+
+
+def test_target_kind_applies_to_integration_proposal() -> None:
+    candidate = _candidate("someone/abandoned", license=None, archived=True)
+    proposal = propose_solution(
+        "Need X", research_results=[candidate], target_kind=ComponentKind.WORKFLOW
+    )
+    assert proposal.kind == "integration"
+    assert proposal.test_strategy is not None and "trigger" in proposal.test_strategy
+
+
+def test_target_kind_without_specific_wording_falls_back_to_generic() -> None:
+    """A ComponentKind with no dedicated guidance (e.g. UNKNOWN, PACKAGE,
+    SERVICE) must fall back to the generic wording, not raise or return
+    something blank."""
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.PACKAGE)
+    assert (
+        proposal.test_strategy
+        == "Add tests covering the new/adopted capability's stated requirements."
+    )
+
+
 def _update_assessment(verdict: UpdateVerdict) -> ImpactAssessment:
     identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
     current = ComponentState(identity=identity, version="0.8.2")

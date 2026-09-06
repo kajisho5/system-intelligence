@@ -724,6 +724,15 @@ _PROPOSAL_TARGET_OPTION = typer.Option(
         "Required by --handoff-out."
     ),
 )
+_PROPOSAL_TARGET_KIND_OPTION = typer.Option(
+    None,
+    "--target-kind",
+    help=(
+        "What kind of component this Proposal is for (e.g. 'skill', 'agent', "
+        "'mcp_server', 'package'; see ComponentKind) — shapes test_strategy/"
+        "documentation_requirements to how that kind is actually verified in practice."
+    ),
+)
 
 
 @app.command()
@@ -736,6 +745,7 @@ def propose(
     record: Path | None = _PROPOSAL_RECORD_OPTION,
     target: str | None = _PROPOSAL_TARGET_OPTION,
     handoff_out: Path | None = _PROPOSAL_HANDOFF_OUT_OPTION,
+    target_kind: str | None = _PROPOSAL_TARGET_KIND_OPTION,
 ) -> None:
     """Produce a concrete proposal: adopt, integrate, or create (docs/07-improvement-engine.md).
 
@@ -747,6 +757,17 @@ def propose(
     if handoff_out is not None and target is None:
         typer.echo("error: --handoff-out requires --target.", err=True)
         raise typer.Exit(code=1)
+    parsed_target_kind: ComponentKind | None = None
+    if target_kind is not None:
+        try:
+            parsed_target_kind = ComponentKind(target_kind)
+        except ValueError:
+            valid = ", ".join(sorted(k.value for k in ComponentKind))
+            typer.echo(
+                f"error: unknown --target-kind {target_kind!r} (expected one of: {valid})",
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
     research_results = []
     if research_query:
         provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
@@ -761,6 +782,7 @@ def propose(
         requirements=requirement,
         research_results=research_results,
         functional_fit_confirmed=confirm_fit,
+        target_kind=parsed_target_kind,
     )
 
     typer.echo(f"Proposal kind: {proposal.kind}")
