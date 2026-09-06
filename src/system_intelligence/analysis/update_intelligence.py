@@ -43,9 +43,23 @@ from system_intelligence.research.update_provider import (
 
 #: A constraint with no range operator, wildcard, or whitespace-separated
 #: alternative is treated as pinning an exact, currently-installed version
-#: (e.g. "1.2.3" or "==1.2.3"). Anything else ("^1.2.3", ">=1.0,<2.0") is a
-#: range, not a known installed version.
-_EXACT_PIN_RE = re.compile(r"^==?\s*[0-9][0-9A-Za-z.+_-]*$")
+#: (e.g. the bare "1.2.3" npm convention, or pypi's "==1.2.3"). Anything
+#: else ("^1.2.3", ">=1.0,<2.0", "1.0.0 - 2.0.0") is a range, not a known
+#: installed version. The `==?` prefix is optional so a bare version
+#: matches too; the character class still allows letters so PEP 440
+#: suffixes ("1.2.3rc1", "2.0a1") keep matching as before.
+_EXACT_PIN_RE = re.compile(r"^(?:==?\s*)?[0-9][0-9A-Za-z.+_-]*$")
+
+
+def _has_wildcard_segment(constraint: str) -> bool:
+    """True if any dot-separated segment is npm's wildcard shorthand.
+
+    A segment of exactly "x"/"X" (e.g. "1.x", "1.2.x") or a bare "*" would
+    otherwise slip past `_EXACT_PIN_RE` now that a bare version is allowed
+    to match — these are ranges, not exact pins, so they are rejected
+    explicitly rather than guessed at.
+    """
+    return any(segment.lower() == "x" or segment == "*" for segment in constraint.split("."))
 
 
 def _identity_for(dependency: Dependency) -> ComponentIdentity:
@@ -70,7 +84,7 @@ def build_current_state(dependency: Dependency) -> ComponentState:
     version_confidence = Confidence.VERIFIED if version else Confidence.UNKNOWN
     if not version and dependency.version_constraint:
         constraint = dependency.version_constraint.strip()
-        if _EXACT_PIN_RE.match(constraint):
+        if _EXACT_PIN_RE.match(constraint) and not _has_wildcard_segment(constraint):
             version = constraint.lstrip("=").strip()
             version_confidence = Confidence.HIGH
 

@@ -384,6 +384,36 @@ def test_propose_command_without_research_is_creation(tmp_path: Path) -> None:
     assert written["requirements"] == ["renders CommonMark"]
 
 
+def test_propose_command_handoff_out_writes_packet(tmp_path: Path) -> None:
+    handoff_path = tmp_path / "handoff.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "propose",
+            "Need a markdown renderer",
+            "--target",
+            "/repo/root",
+            "--handoff-out",
+            str(handoff_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f"Handoff packet written to {handoff_path}" in result.stdout
+    packet = json.loads(handoff_path.read_text(encoding="utf-8"))
+    assert packet["target_root"] == "/repo/root"
+    assert packet["proposal"]["kind"] == "creation"
+    assert "change_plan_file_schema" in packet
+
+
+def test_propose_command_handoff_out_without_target_fails_clearly() -> None:
+    result = runner.invoke(app, ["propose", "Need X", "--handoff-out", "handoff.json"])
+
+    assert result.exit_code == 1
+    assert "--handoff-out requires --target" in result.stdout + (result.stderr or "")
+
+
 def test_propose_command_with_research_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1113,6 +1143,40 @@ def test_check_updates_command_plan_out_writes_change_plan(
     )
     assert plan["branch_name"] == "si/update-pydantic-to-2.9.0"
     assert plan["files"] == {"pyproject.toml": expected_content}
+    assert plan["required_permission_level"] == "CREATE_BRANCH_OR_DRAFT_PR"
+
+
+def test_check_updates_command_plan_out_writes_change_plan_for_npm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "package.json").write_text(
+        '{\n  "dependencies": {\n    "left-pad": "1.2.3"\n  }\n}\n', encoding="utf-8"
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        response = {
+            "dist-tags": {"latest": "1.3.0"},
+            "versions": {"1.3.0": {}},
+            "time": {"1.3.0": "2026-01-01T00:00:00.000Z"},
+        }
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.npm._default_http_get", _fake_http_get
+    )
+    plan_out = tmp_path / "plans"
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--plan-out", str(plan_out)])
+
+    assert result.exit_code == 0
+    plan_files = list(plan_out.glob("*.json"))
+    assert len(plan_files) == 1
+    plan = json.loads(plan_files[0].read_text(encoding="utf-8"))
+    expected_content = '{\n  "dependencies": {\n    "left-pad": "1.3.0"\n  }\n}\n'
+    assert plan["branch_name"] == "si/update-left-pad-to-1.3.0"
+    assert plan["files"] == {"package.json": expected_content}
     assert plan["required_permission_level"] == "CREATE_BRANCH_OR_DRAFT_PR"
 
 

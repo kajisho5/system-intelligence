@@ -19,6 +19,12 @@ Merge, close, delete, force-push, visibility, credential, and deployment
 operations are never implemented as automatic actions at all (see
 `core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS`, enforced independently by both
 `Approval`'s validator and `policy.evaluate`).
+
+`handoff.build_handoff_packet` is a third, read-only path for a Proposal
+that has no deterministic `ChangePlan` at all (ADR-007: it hands the
+Proposal to an external implementer instead of guessing a diff) — its
+result still only becomes real work through the same `local_git.apply_plan`
+above, once the implementer hands back a `ChangePlan`.
 """
 
 from system_intelligence.execution.github_pr import (
@@ -27,16 +33,19 @@ from system_intelligence.execution.github_pr import (
     GitHubPRError,
     open_draft_pr_for_plan,
 )
+from system_intelligence.execution.handoff import ChangePlanFile, build_handoff_packet
 from system_intelligence.execution.local_git import ExecutionResult, LocalGitError, apply_plan
 from system_intelligence.execution.plan import ChangePlan
 
 __all__ = [
     "ChangePlan",
+    "ChangePlanFile",
     "DraftPRResult",
     "DraftPullRequest",
     "ExecutionResult",
     "GitHubPRError",
     "LocalGitError",
     "apply_plan",
+    "build_handoff_packet",
     "open_draft_pr_for_plan",
 ]

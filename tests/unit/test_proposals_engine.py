@@ -266,23 +266,105 @@ def test_change_plan_for_component_update_none_for_non_actionable_verdict(tmp_pa
     assert change_plan_for_component_update(assessment, tmp_path) is None
 
 
-def test_change_plan_for_component_update_none_for_npm(tmp_path: Path) -> None:
+def test_change_plan_for_component_update_none_for_unsupported_ecosystem(tmp_path: Path) -> None:
     identity = ComponentIdentity(
-        component_kind=ComponentKind.PACKAGE, name="left-pad", distribution_source="npm"
+        component_kind=ComponentKind.PACKAGE, name="left-pad", distribution_source="cargo"
     )
     current = ComponentState(
         identity=identity,
         version="1.2.3",
         version_confidence=Confidence.HIGH,
-        evidence=[_manifest_evidence("package.json", "left-pad")],
+        evidence=[_manifest_evidence("Cargo.toml", "left-pad")],
     )
-    available = AvailableState(identity=identity, provider="npm", version="2.0.0")
+    available = AvailableState(identity=identity, provider="cargo", version="2.0.0")
     diff = StateDiff(identity=identity, from_state=current, to_state=available)
     assessment = ImpactAssessment(
         state_diff=diff,
         verdict=UpdateVerdict.UPDATE_RECOMMENDED,
         verdict_confidence=Confidence.HIGH,
         verdict_rationale="rationale text",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def _npm_pin_assessment(
+    root: Path,
+    *,
+    name: str = "left-pad",
+    from_version: str = "1.2.3",
+    to_version: str = "2.0.0",
+    manifest_path: str = "package.json",
+    version_confidence: Confidence = Confidence.HIGH,
+    verdict: UpdateVerdict = UpdateVerdict.UPDATE_RECOMMENDED,
+    write_manifest: bool = True,
+) -> ImpactAssessment:
+    if write_manifest:
+        (root / manifest_path).write_text(
+            f'{{\n  "dependencies": {{\n    "{name}": "{from_version}"\n  }}\n}}\n',
+            encoding="utf-8",
+        )
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name=name, distribution_source="npm"
+    )
+    current = ComponentState(
+        identity=identity,
+        version=from_version,
+        version_confidence=version_confidence,
+        evidence=[_manifest_evidence(manifest_path, name)],
+    )
+    available = AvailableState(identity=identity, provider="npm", version=to_version)
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    return ImpactAssessment(
+        state_diff=diff,
+        verdict=verdict,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+
+def test_change_plan_for_component_update_success_for_npm(tmp_path: Path) -> None:
+    assessment = _npm_pin_assessment(tmp_path)
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.branch_name == "si/update-left-pad-to-2.0.0"
+    assert plan.commit_message == "Update left-pad to 2.0.0"
+    assert plan.files == {
+        "package.json": '{\n  "dependencies": {\n    "left-pad": "2.0.0"\n  }\n}\n'
+    }
+    assert plan.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+
+
+def test_change_plan_for_component_update_npm_none_for_range_constraint(tmp_path: Path) -> None:
+    assessment = _npm_pin_assessment(tmp_path, version_confidence=Confidence.UNKNOWN)
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_npm_none_when_manifest_text_has_drifted(
+    tmp_path: Path,
+) -> None:
+    assessment = _npm_pin_assessment(tmp_path)
+    # The manifest changed since the assessment ran (now a caret range) --
+    # the exact pinned text this needs to match no longer exists.
+    (tmp_path / "package.json").write_text(
+        '{\n  "dependencies": {\n    "left-pad": "^1.2.3"\n  }\n}\n', encoding="utf-8"
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_npm_none_when_ambiguous_duplicate(
+    tmp_path: Path,
+) -> None:
+    """The same package pinned identically in both dependencies and
+    devDependencies is ambiguous -- never guess which one to rewrite."""
+    assessment = _npm_pin_assessment(tmp_path, write_manifest=False)
+    (tmp_path / "package.json").write_text(
+        '{\n  "dependencies": {\n    "left-pad": "1.2.3"\n  },\n'
+        '  "devDependencies": {\n    "left-pad": "1.2.3"\n  }\n}\n',
+        encoding="utf-8",
     )
 
     assert change_plan_for_component_update(assessment, tmp_path) is None
