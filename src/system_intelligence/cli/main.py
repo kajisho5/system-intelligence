@@ -1,20 +1,27 @@
 """`si` command-line entry point.
 
 `si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`,
-`si diff`, `si research`, `si improve`, `si propose`, and `si plan` are
-implemented. `si plan` is not in docs/design/docs/13-cli-and-ux.md's
-original command list; it exposes the Phase 7 capability-selection
-planner (docs/design/docs/10-plugin-skill-system.md, "Dynamic selection")
-so the capability set a request would run is visible before anything
-executes. The remaining commands from docs/13 (`design`, `execute`,
-`verify`, `watch`) are registered as explicit placeholders so `si --help`
-documents the intended surface without claiming functionality that does
-not exist yet.
+`si diff`, `si research`, `si improve`, `si propose`, `si plan`, `si
+execute`, and `si verify` are implemented. `si plan` is not in
+docs/design/docs/13-cli-and-ux.md's original command list; it exposes the
+Phase 7 capability-selection planner (docs/design/docs/10-plugin-skill-
+system.md, "Dynamic selection") so the capability set a request would run
+is visible before anything executes. `si execute` is dry-run by default —
+it only ever prints `ChangePlan.preview_lines()` unless `--approve` is
+passed, and even then `execution.local_git.apply_plan` still requires a
+matching `Approval` record for anything above the default read-only-ish
+permission ceiling; it never pushes to any remote and can never perform a
+`core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS` action. The remaining commands
+from docs/13 (`design`, `watch`) are registered as explicit placeholders
+so `si --help` documents the intended surface without claiming
+functionality that does not exist yet.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -25,10 +32,12 @@ import typer
 from system_intelligence import __version__
 from system_intelligence.analysis import analyze_local_repository
 from system_intelligence.core.entities import Repository
-from system_intelligence.core.enums import ComponentKind, Severity
+from system_intelligence.core.enums import ComponentKind, PermissionLevel, Severity
 from system_intelligence.core.findings import Finding
+from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
+from system_intelligence.execution import ChangePlan, LocalGitError, apply_plan
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
 from system_intelligence.proposals import propose_solution
 from system_intelligence.recommendations import generate_recommendations
@@ -40,6 +49,7 @@ from system_intelligence.research import (
     ResearchCache,
     rank_candidates,
 )
+from system_intelligence.verification import VerificationError, run_verification
 
 app = typer.Typer(
     name="si",
@@ -51,8 +61,6 @@ app = typer.Typer(
 
 _PLANNED_COMMANDS = {
     "design": "Architecture/design proposal generation. Planned for Phase 6.",
-    "execute": "Perform an approved change. Planned for Phase 8 (human-approved execution).",
-    "verify": "Validate a change and compare before/after state. Planned for Phase 8.",
     "watch": "Repeat diagnosis on an interval and detect drift. Planned for Phase 8.",
 }
 
@@ -443,6 +451,129 @@ def plan(
     typer.echo(f"\nIntent {intent!r} would run {len(capability_ids)} capabilit(y/ies):")
     for capability_id in capability_ids:
         typer.echo(f"  - {capability_id}: {CAPABILITIES[capability_id].description}")
+
+
+_PLAN_FILE_ARGUMENT = typer.Argument(
+    ...,
+    help=(
+        "JSON file describing the ChangePlan: branch_name, commit_message, "
+        "files (path -> content), and optionally description."
+    ),
+)
+_EXECUTE_TARGET_ARGUMENT = typer.Argument(".", help="Local repository to apply the plan to.")
+_APPROVE_OPTION = typer.Option(
+    False,
+    "--approve",
+    help="Actually apply the plan. Without this flag, only a dry-run preview is printed.",
+)
+_APPROVAL_FILE_OPTION = typer.Option(
+    None,
+    "--approval-file",
+    help="JSON file with an Approval record (or a list of them) authorizing this action.",
+)
+
+
+@app.command()
+def execute(
+    plan_file: Path = _PLAN_FILE_ARGUMENT,
+    target: str = _EXECUTE_TARGET_ARGUMENT,
+    approve: bool = _APPROVE_OPTION,
+    approval_file: Path | None = _APPROVAL_FILE_OPTION,
+) -> None:
+    """Preview, or apply, a local ChangePlan (branch + commit) — never a remote change.
+
+    Without `--approve` this only prints what would happen
+    (`ChangePlan.preview_lines()`) and touches nothing. With `--approve`,
+    `execution.local_git.apply_plan` still requires a matching `Approval`
+    record via `--approval-file` unless the plan's required permission
+    level is within the default maximum — human approval is never
+    bypassed. This never pushes to a remote and never performs a
+    `core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS` action.
+    """
+    try:
+        raw_plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        typer.echo(f"error: could not read plan file: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        plan_kwargs: dict[str, object] = {
+            "branch_name": raw_plan["branch_name"],
+            "commit_message": raw_plan["commit_message"],
+            "files": raw_plan["files"],
+            "description": raw_plan.get("description", ""),
+            "evidence_summary": raw_plan.get("evidence_summary", []),
+        }
+        if "required_permission_level" in raw_plan:
+            plan_kwargs["required_permission_level"] = PermissionLevel[
+                raw_plan["required_permission_level"]
+            ]
+        plan = ChangePlan(**plan_kwargs)  # type: ignore[arg-type]
+    except (KeyError, TypeError) as exc:
+        typer.echo(f"error: invalid plan file: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("Plan preview:")
+    for line in plan.preview_lines():
+        typer.echo(f"  - {line}")
+
+    if not approve:
+        typer.echo("\nDry run only (pass --approve to apply). Nothing was changed.")
+        return
+
+    approvals: list[Approval] = []
+    if approval_file is not None:
+        try:
+            raw_approvals = json.loads(approval_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            typer.echo(f"error: could not read approval file: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        raw_list = raw_approvals if isinstance(raw_approvals, list) else [raw_approvals]
+        approvals = [Approval.model_validate(item) for item in raw_list]
+
+    try:
+        result = apply_plan(plan, Path(target), approvals=approvals)
+    except LocalGitError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not result.applied:
+        typer.echo(f"\nDenied: {result.decision.reason}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"\nApplied: branch {result.branch_name!r}, commit {result.commit_sha}")
+    typer.echo(f"Files written: {', '.join(result.files_written)}")
+
+
+_VERIFY_COMMAND_ARGUMENT = typer.Argument(
+    ..., help="Test command to run, e.g. 'pytest -q'. Parsed shell-style, so quoting works."
+)
+_VERIFY_TARGET_OPTION = typer.Option(".", "--target", help="Repository to run the command in.")
+
+
+@app.command()
+def verify(command: str = _VERIFY_COMMAND_ARGUMENT, target: str = _VERIFY_TARGET_OPTION) -> None:
+    """Run a test command locally and report the result (R10).
+
+    Pass/fail is taken directly from the command's own exit code — never
+    inferred or assumed. This does not yet re-scan or diff snapshots (that
+    needs a stored before-snapshot); it only records whether the given
+    command passed.
+    """
+    try:
+        verification = run_verification(Path(target), shlex.split(command))
+    except VerificationError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    status = "PASSED" if verification.tests_passed else "FAILED"
+    typer.echo(f"Command: {verification.tests_run[0]}")
+    typer.echo(f"Result: {status}")
+    if verification.evidence:
+        typer.echo(f"\nOutput:\n{verification.evidence[0].observation}")
+
+    if not verification.tests_passed:
+        raise typer.Exit(code=1)
 
 
 @app.command()

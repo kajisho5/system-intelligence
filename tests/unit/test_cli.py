@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,15 @@ from system_intelligence import __version__
 from system_intelligence.cli.main import app
 
 runner = CliRunner()
+
+
+def _init_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
+    (path / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=path, check=True)
 
 
 def test_version_command() -> None:
@@ -352,3 +362,115 @@ def test_plan_command_requires_request_without_list() -> None:
 
     assert result.exit_code == 1
     assert "required" in result.stdout + (result.stderr or "")
+
+
+def _write_plan_file(path: Path, **overrides: object) -> Path:
+    plan = {
+        "branch_name": "si/add-license",
+        "commit_message": "Add LICENSE",
+        "files": {"LICENSE": "MIT\n"},
+    }
+    plan.update(overrides)
+    plan_file = path / "plan.json"
+    plan_file.write_text(json.dumps(plan), encoding="utf-8")
+    return plan_file
+
+
+def test_execute_command_dry_run_by_default_touches_nothing(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+
+    result = runner.invoke(app, ["execute", str(plan_file), str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Create local branch 'si/add-license'" in result.stdout
+    assert "Dry run only" in result.stdout
+    assert not (tmp_path / "LICENSE").exists()
+
+
+def test_execute_command_denied_without_approval_file(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+
+    result = runner.invoke(app, ["execute", str(plan_file), str(tmp_path), "--approve"])
+
+    assert result.exit_code == 1
+    assert "Denied" in result.stdout
+    assert not (tmp_path / "LICENSE").exists()
+
+
+def test_execute_command_applies_with_matching_approval(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            {
+                "actor": "human:test",
+                "scope": "repository",
+                "action": "create_local_branch_and_commit",
+                "target": str(tmp_path),
+                "permission_level": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(tmp_path),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Applied: branch 'si/add-license'" in result.stdout
+    assert (tmp_path / "LICENSE").read_text(encoding="utf-8") == "MIT\n"
+
+
+def test_execute_command_invalid_plan_file_fails_clearly(tmp_path: Path) -> None:
+    plan_file = tmp_path / "plan.json"
+    plan_file.write_text(json.dumps({"branch_name": "x"}), encoding="utf-8")
+
+    result = runner.invoke(app, ["execute", str(plan_file), str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "invalid plan file" in result.stdout + (result.stderr or "")
+
+
+def test_execute_command_missing_plan_file_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["execute", str(tmp_path / "nope.json"), str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "error" in result.stdout + (result.stderr or "")
+
+
+def test_verify_command_reports_passing_command(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["verify", "python3 -c print(1)", "--target", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Result: PASSED" in result.stdout
+
+
+def test_verify_command_reports_failing_command(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["verify", "python3 -c 'import sys; sys.exit(1)'", "--target", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "Result: FAILED" in result.stdout
+
+
+def test_verify_command_missing_executable_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["verify", "definitely-not-a-real-executable-xyz", "--target", str(tmp_path)]
+    )
+
+    assert result.exit_code == 1
+    assert "not available on PATH" in result.stdout + (result.stderr or "")

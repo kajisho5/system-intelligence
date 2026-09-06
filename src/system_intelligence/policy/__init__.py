@@ -1,7 +1,17 @@
 """Policy engine: enforces the permission-level/approval boundary.
 
-Not yet implemented. Planned scope: evaluating a requested action against
-`PermissionLevel`, `Approval` records, and `FORBIDDEN_BY_DEFAULT_ACTIONS`
-(docs/design/docs/08-governance.md) before any execution adapter runs. No
-execution adapter may bypass this engine (docs/design/docs/18-extension-points.md).
+Phase 8 scope (docs/design/docs/08-governance.md): `evaluate` decides
+whether a requested action may proceed, given its required
+`PermissionLevel` and whatever `Approval` records the caller supplies.
+Forbidden-by-default actions (merge, close, delete, force-push, ...) are
+always denied regardless of approval. No execution adapter may bypass this
+(docs/design/docs/18-extension-points.md).
+
+Not yet implemented: persisting/looking up Approval records itself (there
+is no store yet — callers must supply the approvals they already have) and
+an audit-log writer for `core.governance.AuditLogEntry`.
 """
+
+from system_intelligence.policy.engine import PolicyDecision, evaluate
+
+__all__ = ["PolicyDecision", "evaluate"]

@@ -1,0 +1,34 @@
+"""ChangePlan: a pure, side-effect-free description of a local change.
+
+Matches the "plan/preview" half of the execution adapter SDK
+(docs/design/docs/18-extension-points.md). Building a `ChangePlan` never
+touches the filesystem or git — only `local_git.apply_plan` does, and only
+after a policy check passes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from system_intelligence.core.enums import PermissionLevel
+
+
+@dataclass(frozen=True)
+class ChangePlan:
+    branch_name: str
+    commit_message: str
+    files: dict[str, str]  # path relative to repo root -> new file content
+    required_permission_level: PermissionLevel = PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+    description: str = ""
+    evidence_summary: list[str] = field(default_factory=list)
+
+    def preview_lines(self) -> list[str]:
+        """Human-readable preview — what `local_git.apply_plan` would do, without doing it."""
+        lines = [
+            f"Create local branch {self.branch_name!r}",
+            f"Write {len(self.files)} file(s): {', '.join(sorted(self.files))}",
+            f"Commit with message: {self.commit_message!r}",
+        ]
+        if self.description:
+            lines.insert(0, self.description)
+        return lines
