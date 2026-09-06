@@ -18,8 +18,8 @@ verified it (e.g. a human, or a later semantic-analysis phase).
 
 `change_plan_for_component_update` closes the one Proposal shape this
 project can currently turn into an executable `execution.plan.ChangePlan`
-without guessing at intent: a `pypi`, `npm`, or `cargo` dependency whose
-*currently declared* constraint is an exact pin
+without guessing at intent: a `pypi`, `npm`, `go`, or `cargo` dependency
+whose *currently declared* constraint is an exact pin
 (`Confidence.HIGH`/`VERIFIED` on the current `ComponentState`, per
 `analysis.update_intelligence.build_current_state`'s own `_EXACT_PIN_RE`).
 A range constraint (`>=1.2,<2.0`, `^1.2.3`, `1.x`) is deliberately never
@@ -27,12 +27,13 @@ rewritten here — which number to bump is genuinely ambiguous, not a fact
 this module can determine. A Cargo dependency using its *table* form
 (`name = { version = "=1.2.3" }`) is likewise never rewritten — only the
 simple string form (`name = "=1.2.3"`) is (see
-`_CARGO_TOML_PIN_RE_TEMPLATE`). Every other Proposal kind
-(creation/adoption/integration, and any range-constrained or
-unsupported-form update) still has no automatic path to a ChangePlan —
-the actual code change is a job for an external implementer (a human, or
-an agent such as Claude Code), never this module (ADR-007: no model vendor
-or agent harness hard-coded here).
+`_CARGO_TOML_PIN_RE_TEMPLATE`). `maven` is not supported yet: pom.xml's
+XML text-escaping rules would need more care than a plain regex
+substitution. Every other Proposal kind (creation/adoption/integration,
+and any range-constrained or unsupported-form/ecosystem update) still has
+no automatic path to a ChangePlan — the actual code change is a job for
+an external implementer (a human, or an agent such as Claude Code), never
+this module (ADR-007: no model vendor or agent harness hard-coded here).
 """
 
 from __future__ import annotations
@@ -173,6 +174,18 @@ _PYPROJECT_PIN_RE_TEMPLATE = r'(["\'])({name})\s*(==?)\s*{version}\s*\1'
 #: replacement can preserve the original quoting/whitespace exactly and
 #: only the version itself changes.
 _PACKAGE_JSON_PIN_RE_TEMPLATE = r'("{name}"\s*:\s*")({version})(")'
+
+#: Matches one `require` entry in raw go.mod text -- either the single-line
+#: form (`require {name} {version}`) or a line inside a `require (...)`
+#: block (just `{name} {version}`, arbitrarily indented) -- capturing
+#: everything up to and including the version's own leading whitespace
+#: (group "prefix") so a replacement preserves the original "require "
+#: keyword (if present), indentation, and any trailing `// indirect`
+#: comment exactly, changing only the version itself. Anchored to a line
+#: start (`re.MULTILINE`) and requires the version be followed by
+#: whitespace or end-of-line so it can never match a version that is
+#: merely a prefix of a longer token.
+_GO_MOD_PIN_RE_TEMPLATE = r"^(?P<prefix>[ \t]*(?:require[ \t]+)?{name}[ \t]+){version}(?=[ \t]|$)"
 
 #: Matches Cargo.toml's *simple string form* only (`name = "=1.2.3"`),
 #: capturing everything up to and including the opening quote (group 1) so
@@ -417,6 +430,32 @@ def _patch_package_json_pin(text: str, name: str, from_version: str, to_version:
     return text[: match.start()] + replacement + text[match.end() :]
 
 
+def _patch_go_mod_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
+    """Rewrite one `require` entry's version in raw go.mod text.
+
+    Matches only the literal `{name} {from_version}` this exact
+    `from_version` was itself derived from (go.mod's own convention: every
+    `require` line is already an exact, MVS-resolved version, per
+    `analysis.dependencies._parse_go_require_entry`) -- in either the
+    single-line `require module version` form or a line inside a
+    `require (...)` block, preserving indentation and any trailing
+    `// indirect` comment exactly. Returns `None`, never a best guess, when
+    that exact text isn't found (the manifest may have changed since the
+    assessment ran) or appears more than once (ambiguous which occurrence
+    to rewrite).
+    """
+    pattern = re.compile(
+        _GO_MOD_PIN_RE_TEMPLATE.format(name=re.escape(name), version=re.escape(from_version)),
+        re.MULTILINE,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    replacement = f"{match.group('prefix')}{to_version}"
+    return text[: match.start()] + replacement + text[match.end() :]
+
+
 def _patch_cargo_toml_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
     """Rewrite one exact-pinned dependency's version in raw Cargo.toml text.
 
@@ -446,13 +485,13 @@ def _patch_cargo_toml_pin(text: str, name: str, from_version: str, to_version: s
 def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -> ChangePlan | None:
     """Build an executable `ChangePlan` for a component-update `ImpactAssessment`.
 
-    Deterministic, no LLM: succeeds only for a `pypi`, `npm`, or `cargo`
-    dependency whose *current* constraint was confirmed as an exact pin
-    (`Confidence.HIGH`/`VERIFIED` on `from_state`, per
+    Deterministic, no LLM: succeeds only for a `pypi`, `npm`, `go`, or
+    `cargo` dependency whose *current* constraint was confirmed as an
+    exact pin (`Confidence.HIGH`/`VERIFIED` on `from_state`, per
     `build_current_state`) and whose declaring manifest still contains
     that exact text on disk. Returns `None` — never a best-effort or
     partial plan — for every other case: a non-actionable verdict (mirrors
-    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm`/`cargo`
+    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm`/`go`/`cargo`
     (other manifests aren't supported yet — see this module's docstring),
     a Cargo dependency using its table form rather than the simple string
     form (see `_CARGO_TOML_PIN_RE_TEMPLATE`), a range constraint, missing
@@ -474,6 +513,7 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
     patchers = {
         "pypi": _patch_pyproject_pin,
         "npm": _patch_package_json_pin,
+        "go": _patch_go_mod_pin,
         "cargo": _patch_cargo_toml_pin,
     }
     patcher = patchers.get(identity.distribution_source or "")

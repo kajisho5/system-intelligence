@@ -84,6 +84,7 @@ from system_intelligence.research import (
     GitHubResearchError,
     GitHubResearchProvider,
     GoProxyUpdateProvider,
+    MavenCentralUpdateProvider,
     MCPRegistryError,
     MCPRegistryResearchProvider,
     NpmUpdateProvider,
@@ -456,7 +457,7 @@ def dashboard(
     those forward on its own, so without `--compare-with` pointed at
     whatever directory `--record` on other commands has been accumulating
     into, those screens are correctly empty rather than showing stale data.
-    `--check-updates` adds a network request per pypi/npm/cargo/go dependency
+    `--check-updates` adds a network request per pypi/npm/cargo/go/maven dependency
     (skipped by default, unlike `si report`/`si diagnose`, which never
     touch the network at all); `--check-vulnerabilities` adds one more
     per resolved version, for a known-vulnerability lookup (OSV.dev).
@@ -632,18 +633,20 @@ def _update_providers() -> dict[str, ComponentUpdateProvider]:
         "npm": NpmUpdateProvider(),
         "cargo": CratesIoUpdateProvider(),
         "go": GoProxyUpdateProvider(),
+        "maven": MavenCentralUpdateProvider(),
     }
 
 
 def _vulnerability_providers() -> dict[str, VulnerabilityProvider]:
     # OSV.dev's own ecosystem names are case-sensitive ("PyPI"/"crates.io"/
-    # "Go", not "pypi"/"cargo"/"go") -- confirmed against the live API, not
-    # guessed.
+    # "Go"/"Maven", not "pypi"/"cargo"/"go"/"maven") -- confirmed against the
+    # live API, not guessed.
     return {
         "pypi": OSVVulnerabilityProvider("pypi", "PyPI"),
         "npm": OSVVulnerabilityProvider("npm", "npm"),
         "cargo": OSVVulnerabilityProvider("cargo", "crates.io"),
         "go": OSVVulnerabilityProvider("go", "Go"),
+        "maven": OSVVulnerabilityProvider("maven", "Maven"),
     }
 
 

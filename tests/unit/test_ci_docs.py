@@ -55,6 +55,18 @@ def test_detect_root_documents_recognizes_bare_and_txt_variants(tmp_path: Path) 
     assert document_types == {"README", "LICENSE"}
 
 
+def test_detect_root_documents_recognizes_code_of_conduct(tmp_path: Path) -> None:
+    """CODE_OF_CONDUCT.md is one of GitHub's own community health file
+    conventions, the same family CONTRIBUTING/SECURITY are already drawn
+    from -- recorded when present, same as SECURITY.md."""
+    (tmp_path / "CODE_OF_CONDUCT.md").write_text("# Code of Conduct\n", encoding="utf-8")
+
+    documents = detect_root_documents(tmp_path)
+
+    document_types = {d.document_type for d in documents}
+    assert document_types == {"CODE_OF_CONDUCT"}
+
+
 def test_detect_root_documents_none_present(tmp_path: Path) -> None:
     assert detect_root_documents(tmp_path) == []
 
