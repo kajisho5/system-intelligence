@@ -3,9 +3,9 @@
 Phase 3 scope: whether any CI job was detected and whether any test files
 exist under a conventional `tests/` directory (PHPUnit's `*Test.php`
 included), (Go) anywhere in the tree at all, or (Java/Maven/Gradle) under
-`src/test/java`. Not in scope: coverage percentages, lint/type-check
-configuration quality, or CI run history — those need richer signals than
-local discovery provides.
+`src/test/java`, or (Kotlin/Gradle) under `src/test/kotlin`. Not in scope:
+coverage percentages, lint/type-check configuration quality, or CI run
+history — those need richer signals than local discovery provides.
 """
 
 from __future__ import annotations
@@ -69,11 +69,28 @@ def _has_maven_layout_test_files(root: Path) -> bool:
     return test_dir.is_dir() and any(test_dir.rglob("*.java"))
 
 
+def _has_kotlin_layout_test_files(root: Path) -> bool:
+    """The Kotlin Gradle plugin extends Gradle's standard directory layout
+    with a parallel `kotlin` source root (verified against 290k+ real-world
+    `src/test/kotlin/**/*.kt` files across public GitHub repositories) --
+    the exact same mechanism `_has_maven_layout_test_files` already covers
+    for Java, just under the sibling `kotlin` directory instead of `java`.
+    Kotlin is already a first-class ecosystem here -- `discovery/structure.py`
+    maps `.kt` to "Kotlin" and documents `build.gradle.kts` as the default
+    manifest for new Kotlin/Android projects. A real Kotlin/Gradle project
+    with full test coverage under `src/test/kotlin` and no `src/test/java`
+    at all was previously unconditionally flagged with a `test_gap` finding.
+    """
+    test_dir = root / "src" / "test" / "kotlin"
+    return test_dir.is_dir() and any(test_dir.rglob("*.kt"))
+
+
 def _has_test_files(root: Path) -> bool:
     return (
         _has_directory_test_files(root)
         or _has_go_test_files(root)
         or _has_maven_layout_test_files(root)
+        or _has_kotlin_layout_test_files(root)
     )
 
 

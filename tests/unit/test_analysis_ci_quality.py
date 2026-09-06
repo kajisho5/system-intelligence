@@ -103,6 +103,43 @@ def test_audit_flags_maven_project_with_no_src_test_java_files(tmp_path: Path) -
     assert {f.category for f in findings} == {"test_gap"}
 
 
+def test_audit_recognizes_kotlin_layout_test_files(tmp_path: Path) -> None:
+    """The Kotlin Gradle plugin's own Standard Directory Layout places test
+    sources at `src/test/kotlin`, never under a root-level `tests/`
+    directory -- a real, fully-tested Kotlin/Gradle project must not be
+    flagged as having no tests just because it has no `tests/` directory
+    (or no `src/test/java` directory, which is Java-specific)."""
+    main_dir = tmp_path / "src" / "main" / "kotlin" / "com" / "example"
+    main_dir.mkdir(parents=True)
+    (main_dir / "App.kt").write_text("class App\n", encoding="utf-8")
+    test_dir = tmp_path / "src" / "test" / "kotlin" / "com" / "example"
+    test_dir.mkdir(parents=True)
+    (test_dir / "AppTest.kt").write_text("class AppTest\n", encoding="utf-8")
+    (tmp_path / "build.gradle.kts").write_text("", encoding="utf-8")
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert findings == []
+
+
+def test_audit_flags_kotlin_project_with_no_src_test_kotlin_files(tmp_path: Path) -> None:
+    """A `src/test/kotlin` directory with no actual `.kt` files in it (or no
+    such directory at all) must still be flagged -- an empty/absent
+    directory is not evidence of any real test coverage."""
+    main_dir = tmp_path / "src" / "main" / "kotlin" / "com" / "example"
+    main_dir.mkdir(parents=True)
+    (main_dir / "App.kt").write_text("class App\n", encoding="utf-8")
+    (tmp_path / "build.gradle.kts").write_text("", encoding="utf-8")
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert {f.category for f in findings} == {"test_gap"}
+
+
 def test_audit_recognizes_phpunit_tests_under_tests_dir(tmp_path: Path) -> None:
     """PHPUnit's own default naming convention (verified against PHPUnit's
     own manual) names a test class `<ClassName>Test`, e.g.
