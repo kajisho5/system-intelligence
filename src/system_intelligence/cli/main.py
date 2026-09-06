@@ -668,10 +668,12 @@ _CHECK_UPDATES_PLAN_OUT_OPTION = typer.Option(
     "--plan-out",
     help=(
         "Directory to write a ready-to-run ChangePlan JSON file for each actionable verdict "
-        "this can turn into one deterministically (today: a pypi or npm dependency pinned to "
-        "an exact version, per proposals.change_plan_for_component_update). Feed the result "
+        "this can turn into one deterministically (today: a pypi, npm, or go dependency "
+        "pinned to an exact version, or a Cargo.toml dependency using its simple string "
+        "form, per proposals.change_plan_for_component_update). Feed the result "
         "straight to 'si execute <file> <target> --approve'. Verdicts this can't determine "
-        "deterministically (range constraints, other ecosystems) are skipped, not guessed."
+        "deterministically (range constraints, other ecosystems, Cargo's table form) are "
+        "skipped, not guessed."
     ),
 )
 _CHECK_UPDATES_VULNERABILITIES_OPTION = typer.Option(
@@ -711,8 +713,9 @@ def check_updates(
     Proposal for a NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN verdict —
     there is nothing to propose in those cases. `--plan-out` closes
     "... -> Proposal -> ChangePlan" one step further, but only where doing
-    so is fully deterministic (a pypi or npm dependency pinned to an exact
-    version) — see `proposals.change_plan_for_component_update`. Every
+    so is fully deterministic (a pypi, npm, or go dependency pinned to an
+    exact version, or a Cargo.toml dependency using its simple string
+    form) — see `proposals.change_plan_for_component_update`. Every
     other case still has no automatic path to a ChangePlan; that remains a
     job for a human or an external implementer, never guessed here.
 
@@ -810,7 +813,8 @@ def check_updates(
         if written == 0:
             typer.echo(
                 "\nNo ChangePlan could be generated deterministically for any assessment "
-                "(today: pypi/npm exact-pin version bumps only)."
+                "(today: pypi/npm/go exact-pin version bumps, or a Cargo.toml simple "
+                "string form pin)."
             )
 
 
