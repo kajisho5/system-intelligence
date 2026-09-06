@@ -101,3 +101,33 @@ def test_audit_flags_maven_project_with_no_src_test_java_files(tmp_path: Path) -
     findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
 
     assert {f.category for f in findings} == {"test_gap"}
+
+
+def test_audit_recognizes_phpunit_tests_under_tests_dir(tmp_path: Path) -> None:
+    """PHPUnit's own default naming convention (verified against PHPUnit's
+    own manual) names a test class `<ClassName>Test`, e.g.
+    `tests/ExampleTest.php` -- a real, fully-tested PHP/Composer project
+    (already a first-class ecosystem here) must not be flagged just
+    because it has no Python/JS/TS/Rust test files."""
+    (tmp_path / "composer.json").write_text('{"require": {}}\n', encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "ExampleTest.php").write_text(
+        "<?php\nclass ExampleTest extends TestCase {}\n", encoding="utf-8"
+    )
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert findings == []
+
+
+def test_audit_flags_php_project_with_no_test_php_files(tmp_path: Path) -> None:
+    (tmp_path / "composer.json").write_text('{"require": {}}\n', encoding="utf-8")
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert {f.category for f in findings} == {"test_gap"}

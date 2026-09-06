@@ -1,10 +1,11 @@
 """Test/CI presence audit (docs/design/docs/05-analysis-engine.md, "Quality").
 
 Phase 3 scope: whether any CI job was detected and whether any test files
-exist under a conventional `tests/` directory, (Go) anywhere in the tree
-at all, or (Java/Maven/Gradle) under `src/test/java`. Not in scope:
-coverage percentages, lint/type-check configuration quality, or CI run
-history — those need richer signals than local discovery provides.
+exist under a conventional `tests/` directory (PHPUnit's `*Test.php`
+included), (Go) anywhere in the tree at all, or (Java/Maven/Gradle) under
+`src/test/java`. Not in scope: coverage percentages, lint/type-check
+configuration quality, or CI run history — those need richer signals than
+local discovery provides.
 """
 
 from __future__ import annotations
@@ -19,7 +20,12 @@ from system_intelligence.discovery.paths import iter_files
 
 #: Cargo's own convention: every file under `tests/` is compiled as its
 #: own integration-test crate, so a bare `*.rs` there (unlike a source
-#: file elsewhere) is unambiguously a test file.
+#: file elsewhere) is unambiguously a test file. `*Test.php` is PHPUnit's
+#: own default naming convention (verified against PHPUnit's own manual --
+#: a test class named `<ClassName>Test`, e.g. `tests/ExampleTest.php`),
+#: rounding out PHP (already a first-class ecosystem here --
+#: `discovery/structure.py` detects `.php` files and `composer.json`) the
+#: same way Go's/Maven's own conventions already are, below.
 _TEST_FILE_PATTERNS = (
     "test_*.py",
     "*_test.py",
@@ -28,6 +34,7 @@ _TEST_FILE_PATTERNS = (
     "*.spec.ts",
     "*.spec.js",
     "*.rs",
+    "*Test.php",
 )
 
 
