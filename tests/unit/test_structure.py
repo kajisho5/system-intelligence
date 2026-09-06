@@ -64,6 +64,29 @@ def test_scan_structure_detects_requirements_txt(tmp_path: Path) -> None:
     assert result.package_manifests[0].ecosystem == "pypi"
 
 
+def test_scan_structure_detects_additional_languages(tmp_path: Path) -> None:
+    """PHP/C/C++/C#/Kotlin/Swift were entirely unrepresented in
+    LANGUAGE_EXTENSIONS -- a repository using any of them previously
+    contributed zero file counts for its own primary language(s)."""
+    (tmp_path / "index.php").write_text("<?php\n", encoding="utf-8")
+    (tmp_path / "main.c").write_text("int main() {}\n", encoding="utf-8")
+    (tmp_path / "app.cpp").write_text("int main() {}\n", encoding="utf-8")
+    (tmp_path / "Program.cs").write_text("class Program {}\n", encoding="utf-8")
+    (tmp_path / "Main.kt").write_text("fun main() {}\n", encoding="utf-8")
+    (tmp_path / "App.swift").write_text('print("hi")\n', encoding="utf-8")
+
+    result = scan_structure(tmp_path)
+
+    assert result.language_file_counts == {
+        "PHP": 1,
+        "C": 1,
+        "C++": 1,
+        "C#": 1,
+        "Kotlin": 1,
+        "Swift": 1,
+    }
+
+
 def test_scan_structure_excludes_vendored_go_modules(tmp_path: Path) -> None:
     """A `go mod vendor`-managed project checks in a full copy of every
     dependency's own source tree -- including its own go.mod -- under
