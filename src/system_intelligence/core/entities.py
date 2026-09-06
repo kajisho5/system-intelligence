@@ -37,15 +37,6 @@ class Target(Entity):
     locator: str = Field(description="Local path, git URL, GitHub owner/repo, or manifest path.")
 
 
-class Repository(Entity):
-    url: str | None = None
-    default_branch: str | None = None
-    local_path: str | None = None
-    license: str | None = None
-    languages: list[str] = Field(default_factory=list)
-    trust_level: TrustLevel = TrustLevel.UNKNOWN
-
-
 class Interface(Entity):
     """A contract a Component exposes: a CLI, an HTTP API, a function signature, etc."""
 
@@ -69,6 +60,20 @@ class Component(Entity):
     interfaces: list[Interface] = Field(default_factory=list)
     dependencies: list[Dependency] = Field(default_factory=list)
     trust_level: TrustLevel = TrustLevel.UNKNOWN
+
+
+class Repository(Component):
+    """The repository itself, represented as the root Component (kind=REPOSITORY)
+    so it can live in the same canonical `components.json` list as everything
+    it contains, rather than needing a separate top-level snapshot file.
+    """
+
+    kind: ComponentKind = ComponentKind.REPOSITORY
+    url: str | None = None
+    default_branch: str | None = None
+    local_path: str | None = None
+    license: str | None = None
+    languages: list[str] = Field(default_factory=list)
 
 
 class Software(Component):
