@@ -62,9 +62,12 @@ from system_intelligence.research import (
     ComponentUpdateProvider,
     GitHubResearchError,
     GitHubResearchProvider,
+    MCPRegistryError,
+    MCPRegistryResearchProvider,
     NpmUpdateProvider,
     PyPIUpdateProvider,
     ResearchCache,
+    ResearchProvider,
     rank_candidates,
 )
 from system_intelligence.verification import VerificationError, run_verification
@@ -382,8 +385,31 @@ _RESEARCH_RECORD_OPTION = typer.Option(
         "these results to, so 'si dashboard' can show them later."
     ),
 )
+_RESEARCH_PROVIDER_OPTION = typer.Option(
+    "github",
+    "--provider",
+    help=(
+        "Which read-only source to search: 'github' (repositories; license/activity/star "
+        "signals available) or 'mcp-registry' (the official MCP server registry; that "
+        "registry's own schema carries no license/maintenance field, so those stay unknown "
+        "for every result — being listed there proves namespace ownership, not quality)."
+    ),
+)
 
 _ACTIVITY_LABEL = {True: "active", False: "stale", None: "unknown"}
+_RESEARCH_PROVIDER_ERRORS: tuple[type[Exception], ...] = (GitHubResearchError, MCPRegistryError)
+
+
+def _research_provider(provider_name: str) -> ResearchProvider:
+    if provider_name == "github":
+        return GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
+    if provider_name == "mcp-registry":
+        return MCPRegistryResearchProvider()
+    typer.echo(
+        f"error: unknown --provider {provider_name!r} (expected 'github' or 'mcp-registry')",
+        err=True,
+    )
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -393,17 +419,20 @@ def research(
     no_cache: bool = _NO_CACHE_OPTION,
     cache_dir: Path = _CACHE_DIR_OPTION,
     record: Path | None = _RESEARCH_RECORD_OPTION,
+    provider_name: str = _RESEARCH_PROVIDER_OPTION,
 ) -> None:
-    """Search GitHub for existing solutions before proposing something new.
+    """Search for existing solutions before proposing something new.
 
     Read-only — only ever issues GET requests. Candidates are ranked by
     license presence, recent activity, and archived status; star count is
     shown for reference only and never used to rank (ADR-009). Several
     scoring dimensions (functional fit, security posture, ...) cannot be
-    determined from a GitHub search response and are reported as unknown
-    rather than guessed.
+    determined from either provider's response and are reported as unknown
+    rather than guessed — for `--provider mcp-registry` this includes
+    license and activity themselves, since that registry's schema doesn't
+    carry them at all.
     """
-    provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
+    provider = _research_provider(provider_name)
     cache = ResearchCache(directory=cache_dir)
 
     results = None if no_cache else cache.get(provider.name, query)
@@ -411,7 +440,7 @@ def research(
     if results is None:
         try:
             results = provider.search(query, limit=limit)
-        except GitHubResearchError as exc:
+        except _RESEARCH_PROVIDER_ERRORS as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(code=1) from exc
         cache.set(provider.name, query, results)

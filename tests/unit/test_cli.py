@@ -195,6 +195,59 @@ def test_research_command_reports_ranked_candidates(
     assert "functional_fit" in result.stdout
 
 
+def test_research_command_mcp_registry_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response = {
+        "servers": [
+            {
+                "server": {
+                    "name": "com.pulsemcp/remote-filesystem",
+                    "description": "MCP server for remote filesystem operations.",
+                    "version": "0.1.2",
+                    "repository": {
+                        "url": "https://github.com/pulsemcp/mcp-servers",
+                        "source": "github",
+                    },
+                }
+            }
+        ]
+    }
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.mcp_registry._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "research",
+            "filesystem",
+            "--provider",
+            "mcp-registry",
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "com.pulsemcp/remote-filesystem" in result.stdout
+    assert "license: unknown (unknown)" in result.stdout
+
+
+def test_research_command_unknown_provider_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["research", "x", "--provider", "bogus", "--cache-dir", str(tmp_path / "cache")],
+    )
+
+    assert result.exit_code == 1
+    assert "unknown --provider" in (result.stdout + (result.stderr or ""))
+
+
 def test_research_command_uses_cache_on_second_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

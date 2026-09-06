@@ -10,6 +10,12 @@ research-engine.md, and docs/design/IMPLEMENTATION_BACKLOG.md Epic 5):
   REST API. Every field not directly present in the API response stays
   `Confidence.UNKNOWN` (the anti-hallucination rule) rather than being
   guessed.
+- `mcp_registry.MCPRegistryResearchProvider`: search/fetch against the
+  public official MCP Registry (registry.modelcontextprotocol.io). That
+  registry's own `server.json` schema has no license/maintenance/
+  popularity field at all, so every `ResearchResult` from it leaves those
+  dimensions `Confidence.UNKNOWN` — never synthesized to look consistent
+  with the GitHub provider.
 - `scoring.rank_candidates`: ranks candidates by verifiable, non-popularity
   signals (license presence, recent activity, archived status). Star count
   is exposed for display only and never used to rank (ADR-009).
@@ -26,6 +32,10 @@ search — docs/06 lists these as later steps in the search order.
 
 from system_intelligence.research.cache import ResearchCache
 from system_intelligence.research.github import GitHubResearchError, GitHubResearchProvider
+from system_intelligence.research.mcp_registry import (
+    MCPRegistryError,
+    MCPRegistryResearchProvider,
+)
 from system_intelligence.research.provider import ResearchProvider
 from system_intelligence.research.providers import (
     NpmUpdateError,
@@ -47,6 +57,8 @@ __all__ = [
     "ComponentUpdateProvider",
     "GitHubResearchError",
     "GitHubResearchProvider",
+    "MCPRegistryError",
+    "MCPRegistryResearchProvider",
     "NpmUpdateError",
     "NpmUpdateProvider",
     "PyPIUpdateError",
