@@ -80,6 +80,7 @@ Registry, was added beyond this epic's original PyPI/npm-agnostic scope.)
 - [x] post-change scan — `si diagnose --out` before and after a change, feeding the next two items
 - [x] before/after comparison — `si diff <before> <after>` (`reporting/diff.py`)
 - [x] regression detection — `si verify --before-snapshot <dir> --after-snapshot <dir>` populates `Verification.regressions_found` from that diff's added findings
+- [x] drift detection over time — `si watch <target>` (`docs/design/docs/16-roadmap.md` Phase 8's "scheduled scans"/"drift detection"/"regression alerts", scoped to a single target — no ecosystem-wide history, see Epic 10's still-unchecked "multi-repo manifest"). Deliberately not a daemon (ADR-004): each run is `si diagnose` plus `si diff`'s own engine (`reporting/diff.py::diff_snapshots`) against a self-managed `--state-dir` history — one immutable snapshot subdirectory per run (never overwritten, per `Snapshot.write_to_directory`'s own convention) plus a `latest.txt` pointer. "On an interval" means invoking `si watch` again later by hand, cron, or a CI schedule — this project has no polling loop or background-process machinery anywhere, and `watch` does not introduce any
 
 ## Epic 10 — Reference ecosystem
 - [ ] AI Video Production OS fixture — used only as an external, read-only validation target (cloned locally, never committed as a fixture in this repo)

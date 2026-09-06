@@ -211,6 +211,86 @@ def test_diff_command_missing_manifest_fails_clearly(tmp_path: Path) -> None:
     assert "no manifest.json" in result.stdout + (result.stderr or "")
 
 
+def test_watch_command_first_run_records_baseline(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    state_dir = tmp_path / "watch-state"
+
+    result = runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+
+    assert result.exit_code == 0
+    assert "recording this scan as the baseline" in result.stdout
+    assert (state_dir / "latest.txt").is_file()
+    recorded_id = (state_dir / "latest.txt").read_text(encoding="utf-8").strip()
+    assert (state_dir / recorded_id / "manifest.json").is_file()
+
+
+def test_watch_command_second_run_reports_no_drift_when_unchanged(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    state_dir = tmp_path / "watch-state"
+
+    runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+    result = runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+
+    assert result.exit_code == 0
+    assert "Baseline:" in result.stdout
+    assert "Current:" in result.stdout
+    assert "No drift detected since the last watch run." in result.stdout
+
+
+def test_watch_command_detects_new_finding_as_drift(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "README.md").write_text("# Hi\n", encoding="utf-8")
+    state_dir = tmp_path / "watch-state"
+
+    runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+    (target_dir / "README.md").unlink()
+    result = runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+
+    assert result.exit_code == 0
+    assert "Findings introduced" in result.stdout
+
+
+def test_watch_command_keeps_each_run_as_its_own_immutable_snapshot(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    state_dir = tmp_path / "watch-state"
+
+    runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+    first_id = (state_dir / "latest.txt").read_text(encoding="utf-8").strip()
+    runner.invoke(app, ["watch", str(target_dir), "--state-dir", str(state_dir)])
+    second_id = (state_dir / "latest.txt").read_text(encoding="utf-8").strip()
+
+    assert first_id != second_id
+    # Neither run's own snapshot directory is deleted by a later run.
+    assert (state_dir / first_id / "manifest.json").is_file()
+    assert (state_dir / second_id / "manifest.json").is_file()
+
+
+def test_watch_command_out_option_also_writes_snapshot(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    state_dir = tmp_path / "watch-state"
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app,
+        ["watch", str(target_dir), "--state-dir", str(state_dir), "--out", str(out_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert next(out_dir.glob("snapshot-*")).joinpath("manifest.json").is_file()
+
+
+def test_watch_command_missing_target_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["watch", str(tmp_path / "nope")])
+
+    assert result.exit_code == 1
+    assert "does not exist" in result.stdout + (result.stderr or "")
+
+
 def test_research_command_reports_ranked_candidates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

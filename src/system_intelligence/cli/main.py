@@ -2,8 +2,8 @@
 
 `si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`,
 `si diff`, `si research`, `si improve`, `si propose`, `si plan`, `si
-execute`, `si verify`, `si check-updates`, and `si dashboard` are
-implemented. `si plan` is not in docs/design/docs/13-cli-and-ux.md's
+execute`, `si verify`, `si check-updates`, `si dashboard`, and `si watch`
+are implemented. `si plan` is not in docs/design/docs/13-cli-and-ux.md's
 original command list; it exposes the Phase 7 capability-selection
 planner (docs/design/docs/10-plugin-skill-system.md, "Dynamic selection")
 so the capability set a request would run is visible before anything
@@ -17,9 +17,15 @@ Component Update Intelligence (`analysis/update_intelligence.py`) —
 also not in docs/13's original list, network-touching like `si research`.
 `si dashboard` renders the interactive System Intelligence Console
 (`reporting/dashboard_data.py` + `reporting/dashboard_html.py`) from one
-or more snapshots. The remaining commands from docs/13 (`design`, `watch`)
-are registered as explicit placeholders so `si --help` documents the
-intended surface without claiming functionality that does not exist yet.
+or more snapshots. `si watch` is `si diagnose` plus `si diff` against a
+self-managed history under `--state-dir`, deliberately with no internal
+polling loop or daemon (ADR-004, read-only by default; this project has
+no background-process machinery anywhere, and `watch` does not introduce
+any) — "on an interval" means invoking the command repeatedly from an
+external scheduler (cron, a CI schedule), not anything this process does
+on its own. The remaining command from docs/13 (`design`) is registered
+as an explicit placeholder so `si --help` documents the intended surface
+without claiming functionality that does not exist yet.
 """
 
 from __future__ import annotations
@@ -64,6 +70,7 @@ from system_intelligence.proposals import (
 )
 from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import (
+    SnapshotDiff,
     build_dashboard_data,
     diff_snapshots,
     export_json_schemas,
@@ -98,7 +105,6 @@ app = typer.Typer(
 
 _PLANNED_COMMANDS = {
     "design": "Architecture/design proposal generation. Planned for Phase 6.",
-    "watch": "Repeat diagnosis on an interval and detect drift. Planned for Phase 8.",
 }
 
 
@@ -279,6 +285,26 @@ _FROM_DIR_ARGUMENT = typer.Argument(..., help="Directory of the earlier canonica
 _TO_DIR_ARGUMENT = typer.Argument(..., help="Directory of the later canonical snapshot.")
 
 
+def _print_snapshot_diff_sections(result: SnapshotDiff) -> None:
+    def _section(label: str, lines: list[str]) -> None:
+        if not lines:
+            return
+        typer.echo(f"\n{label} ({len(lines)}):")
+        for line in lines:
+            typer.echo(f"  - {line}")
+
+    _section("Components added", [f"{c.kind.value}:{c.name}" for c in result.added_components])
+    _section("Components removed", [f"{c.kind.value}:{c.name}" for c in result.removed_components])
+    _section("Capabilities added", [c.name for c in result.added_capabilities])
+    _section("Capabilities removed", [c.name for c in result.removed_capabilities])
+    _section("Dependencies added", [f"{d.ecosystem}:{d.name}" for d in result.added_dependencies])
+    _section(
+        "Dependencies removed", [f"{d.ecosystem}:{d.name}" for d in result.removed_dependencies]
+    )
+    _section("Findings introduced", [f.statement for f in result.added_findings])
+    _section("Findings resolved", [f.statement for f in result.resolved_findings])
+
+
 @app.command(name="diff")
 def diff_command(from_dir: Path = _FROM_DIR_ARGUMENT, to_dir: Path = _TO_DIR_ARGUMENT) -> None:
     """Compare two canonical snapshot directories (each written by --out on another command)."""
@@ -298,23 +324,88 @@ def diff_command(from_dir: Path = _FROM_DIR_ARGUMENT, to_dir: Path = _TO_DIR_ARG
         typer.echo("No changes detected.")
         return
 
-    def _section(label: str, lines: list[str]) -> None:
-        if not lines:
-            return
-        typer.echo(f"\n{label} ({len(lines)}):")
-        for line in lines:
-            typer.echo(f"  - {line}")
+    _print_snapshot_diff_sections(result)
 
-    _section("Components added", [f"{c.kind.value}:{c.name}" for c in result.added_components])
-    _section("Components removed", [f"{c.kind.value}:{c.name}" for c in result.removed_components])
-    _section("Capabilities added", [c.name for c in result.added_capabilities])
-    _section("Capabilities removed", [c.name for c in result.removed_capabilities])
-    _section("Dependencies added", [f"{d.ecosystem}:{d.name}" for d in result.added_dependencies])
-    _section(
-        "Dependencies removed", [f"{d.ecosystem}:{d.name}" for d in result.removed_dependencies]
-    )
-    _section("Findings introduced", [f.statement for f in result.added_findings])
-    _section("Findings resolved", [f.statement for f in result.resolved_findings])
+
+_WATCH_STATE_DIR_OPTION = typer.Option(
+    Path(".si") / "watch",
+    "--state-dir",
+    help=(
+        "Directory holding this target's watch history (the same '.si/' convention "
+        "'si research'/'.si/requirements.json' already use). Never deleted or pruned "
+        "automatically -- grows by one snapshot per run."
+    ),
+)
+_WATCH_OUT_OPTION = typer.Option(
+    None,
+    "--out",
+    help="Also write this run's snapshot into this directory (in addition to --state-dir).",
+)
+
+
+@app.command()
+def watch(
+    target: str = _TARGET_ARGUMENT,
+    state_dir: Path = _WATCH_STATE_DIR_OPTION,
+    out: Path | None = _WATCH_OUT_OPTION,
+) -> None:
+    """Detect drift since the last 'si watch' run for this target.
+
+    Runs discovery and analysis exactly like `si diagnose`, then compares
+    the result against the snapshot recorded under `--state-dir` by the
+    previous `si watch` run for this target, using the same diff engine
+    `si diff` does. The first run for a given `--state-dir` has nothing to
+    compare against yet, so it only records a baseline.
+
+    Deliberately not a daemon: this process runs once and exits, exactly
+    like every other `si` command. Each snapshot is written to its own
+    immutable subdirectory of `--state-dir` (per `Snapshot.
+    write_to_directory`'s own "never overwrite a prior snapshot in place"
+    convention) with a small `latest.txt` pointer updated to it — nothing
+    under `--state-dir` is ever deleted by this command. Repeating "on an
+    interval" means invoking `si watch` again later (by hand, cron, or a
+    CI schedule); this command never sleeps, polls, or backgrounds itself.
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    snapshot = result.snapshot
+
+    latest_pointer = state_dir / "latest.txt"
+    baseline: Snapshot | None = None
+    if latest_pointer.is_file():
+        baseline_dir = state_dir / latest_pointer.read_text(encoding="utf-8").strip()
+        if (baseline_dir / "manifest.json").is_file():
+            baseline = Snapshot.read_from_directory(baseline_dir)
+
+    if baseline is None:
+        typer.echo(
+            f"No prior watch snapshot found under {state_dir} -- recording this scan as the "
+            "baseline for future 'si watch' runs."
+        )
+        typer.echo(f"Findings: {len(snapshot.findings)}")
+    else:
+        diff = diff_snapshots(baseline, snapshot)
+        typer.echo(f"Baseline: {diff.from_snapshot_id}")
+        typer.echo(f"Current:  {diff.to_snapshot_id}")
+        if not diff.has_changes:
+            typer.echo("No drift detected since the last watch run.")
+        else:
+            _print_snapshot_diff_sections(diff)
+
+    snapshot_dir = state_dir / snapshot.id
+    snapshot.write_to_directory(snapshot_dir)
+    latest_pointer.parent.mkdir(parents=True, exist_ok=True)
+    latest_pointer.write_text(snapshot.id, encoding="utf-8")
+
+    if out is not None:
+        out_snapshot_dir = out / snapshot.id
+        snapshot.write_to_directory(out_snapshot_dir)
+        typer.echo(f"\nSnapshot written to {out_snapshot_dir}")
 
 
 _DASHBOARD_OUT_OPTION = typer.Option(

@@ -68,6 +68,7 @@ read-only into a temp directory first):
 | `si plan <intent-or-text>` | Preview which capabilities a request would run |
 | `si execute <plan> <target>` | Apply a local `ChangePlan` (dry-run unless `--approve`); `--push --repo owner/repo` also pushes and opens a Draft PR, gated by its own separate Approval |
 | `si verify <command>` | Run a test command and record pass/fail |
+| `si watch <target>` | Drift since the last `si watch` run for this target, via a self-managed `--state-dir` history (no daemon — repeat it yourself, or from cron/CI) |
 | `si doctor`, `si version` | Environment check, installed version |
 
 `si execute`/`si verify`/`si research`/`si propose`/`si check-updates` all
@@ -87,9 +88,9 @@ dependency-free HTML file — `--compare-with <snapshot-dir>` populates
 Changes, `--check-updates` populates Updates. Nothing it renders can
 merge, delete, force-push, or write to a remote.
 
-`si design` and `si watch` are registered as explicit placeholders (`si
---help` documents them; running them fails clearly rather than silently
-doing nothing) — they are not implemented yet.
+`si design` is registered as an explicit placeholder (`si --help`
+documents it; running it fails clearly rather than silently doing
+nothing) — it is not implemented yet.
 
 ## Documentation
 
