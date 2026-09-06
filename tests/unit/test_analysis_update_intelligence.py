@@ -39,6 +39,65 @@ def test_build_current_state_exact_pin_is_used_at_high_confidence() -> None:
     assert state.version_confidence == Confidence.HIGH
 
 
+def test_build_current_state_npm_bare_version_is_an_exact_pin() -> None:
+    """npm's own convention pins an exact version with no operator at all
+    (e.g. `"react": "18.2.0"` in package.json) — unlike pypi, which spells
+    the same thing "==18.2.0"."""
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="18.2.0"))
+    assert state.version == "18.2.0"
+    assert state.version_confidence == Confidence.HIGH
+
+
+def test_build_current_state_npm_minor_wildcard_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="1.x"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_npm_patch_wildcard_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="1.2.x"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_npm_uppercase_wildcard_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="1.2.X"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_bare_star_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="*"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_npm_caret_range_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="^1.2.3"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_npm_tilde_range_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="~1.2.3"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_npm_hyphen_range_leaves_version_unknown() -> None:
+    state = build_current_state(_dependency(ecosystem="npm", version_constraint="1.0.0 - 2.0.0"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_pep440_prerelease_pin_still_matches() -> None:
+    """A regression guard: widening the exact-pin regex for npm must not
+    stop matching pypi's already-supported bare PEP 440 suffixes."""
+    state = build_current_state(_dependency(ecosystem="pypi", version_constraint="==1.2.3rc1"))
+    assert state.version == "1.2.3rc1"
+    assert state.version_confidence == Confidence.HIGH
+
+
 def test_build_current_state_resolved_version_wins_at_verified_confidence() -> None:
     dep = _dependency(version_constraint="^0.8.2", resolved_version="0.8.5")
     state = build_current_state(dep)
