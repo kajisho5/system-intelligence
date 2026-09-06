@@ -19,15 +19,31 @@ verified it (e.g. a human, or a later semantic-analysis phase).
 
 from __future__ import annotations
 
-from system_intelligence.core.enums import PermissionLevel
+from system_intelligence.core.enums import PermissionLevel, UpdateVerdict
 from system_intelligence.core.evidence import Evidence
-from system_intelligence.core.proposals import Proposal
+from system_intelligence.core.impact import ImpactAssessment
+from system_intelligence.core.proposals import Change, Proposal
 from system_intelligence.core.research import ResearchResult
 from system_intelligence.research.scoring import CandidateAssessment, rank_candidates
 
 _TEST_STRATEGY = "Add tests covering the new/adopted capability's stated requirements."
 _DOCUMENTATION_REQUIREMENTS = "Document the capability and how it satisfies each requirement."
 _ROLLBACK_STRATEGY = "Revert the change; no other component depends on it until adopted."
+
+_UPDATE_TEST_STRATEGY = (
+    "Re-run the existing test suite after updating; add a regression test if the "
+    "changelog or interface diff indicates a behavior change."
+)
+_UPDATE_DOCUMENTATION_REQUIREMENTS = (
+    "Note the version bump and any migration steps from the changelog or release notes."
+)
+_UPDATE_ROLLBACK_STRATEGY = (
+    "Revert the manifest version constraint change; no code changes are made automatically."
+)
+#: Verdicts with something to actually propose. NOT_ADVISABLE (the update
+#: itself is the risk), NO_UPDATE_AVAILABLE, and UNKNOWN never produce a
+#: Proposal — there is no change to propose in any of those cases.
+_PROPOSABLE_VERDICTS = frozenset({UpdateVerdict.UPDATE_RECOMMENDED, UpdateVerdict.REVIEW_REQUIRED})
 
 
 def _is_high_quality_candidate(assessment: CandidateAssessment) -> bool:
@@ -123,4 +139,52 @@ def propose_solution(
         documentation_requirements=_DOCUMENTATION_REQUIREMENTS,
         rollback_strategy=_ROLLBACK_STRATEGY,
         required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
+    )
+
+
+def propose_component_update(assessment: ImpactAssessment) -> Proposal | None:
+    """Turn a Component Update Intelligence `ImpactAssessment` into a concrete Proposal.
+
+    Closes "Current State -> Available State -> State Diff -> Impact ->
+    Recommendation -> Proposal" for any component, generically — nothing
+    here is specific to any ecosystem, package, or target.
+
+    Returns `None` for `NOT_ADVISABLE`/`NO_UPDATE_AVAILABLE`/`UNKNOWN`
+    verdicts: a Proposal describes a concrete change to make, and there is
+    none to propose when the update itself is the risk, nothing changed, or
+    nothing could be determined.
+    """
+    if assessment.verdict not in _PROPOSABLE_VERDICTS:
+        return None
+
+    diff = assessment.state_diff
+    identity = diff.identity
+    from_version = diff.from_state.version or "unknown"
+    to_version = diff.to_state.version or "unknown"
+
+    problem = (
+        f"{identity.name} has an available update ({from_version} -> {to_version}). "
+        f"{assessment.verdict_rationale}"
+    )
+    change = Change(
+        description=f"Update the version constraint for {identity.name} to {to_version!r}.",
+        required_permission_level=PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR,
+    )
+
+    return Proposal(
+        kind="component_update",
+        problem=problem,
+        evidence=list(assessment.evidence),
+        proposed_component_name=identity.name,
+        dependencies=[identity.name],
+        implementation_stages=[
+            "Update the version constraint in the declaring manifest.",
+            "Run the existing test suite.",
+            "Review the changelog/release notes for breaking changes if any were flagged.",
+        ],
+        changes=[change],
+        test_strategy=_UPDATE_TEST_STRATEGY,
+        documentation_requirements=_UPDATE_DOCUMENTATION_REQUIREMENTS,
+        rollback_strategy=_UPDATE_ROLLBACK_STRATEGY,
+        required_permission_level=PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR,
     )

@@ -47,7 +47,7 @@ from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
 from system_intelligence.execution import ChangePlan, LocalGitError, apply_plan
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
-from system_intelligence.proposals import propose_solution
+from system_intelligence.proposals import propose_component_update, propose_solution
 from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import (
     build_dashboard_data,
@@ -423,8 +423,27 @@ def _update_providers() -> dict[str, ComponentUpdateProvider]:
     return {"pypi": PyPIUpdateProvider(), "npm": NpmUpdateProvider()}
 
 
+_CHECK_UPDATES_PROPOSE_OPTION = typer.Option(
+    False,
+    "--propose",
+    help="Also print a component_update Proposal for each actionable verdict.",
+)
+_CHECK_UPDATES_RECORD_OPTION = typer.Option(
+    None,
+    "--record",
+    help=(
+        "An existing canonical snapshot directory (from --out on another command) to append "
+        "generated Proposals to, so 'si dashboard' can show them later."
+    ),
+)
+
+
 @app.command(name="check-updates")
-def check_updates(target: str = _TARGET_ARGUMENT) -> None:
+def check_updates(
+    target: str = _TARGET_ARGUMENT,
+    propose: bool = _CHECK_UPDATES_PROPOSE_OPTION,
+    record: Path | None = _CHECK_UPDATES_RECORD_OPTION,
+) -> None:
     """Component Update Intelligence: current vs. available state for every dependency.
 
     Read-only, but unlike `si diagnose` this makes network requests (one GET
@@ -437,7 +456,10 @@ def check_updates(target: str = _TARGET_ARGUMENT) -> None:
     verdict requires capability/dependency/interface impact to have
     actually been evaluated, which today's providers rarely can for an
     arbitrary third-party package. `REVIEW_REQUIRED` is the common, honest
-    outcome, not a shortcoming of this command.
+    outcome, not a shortcoming of this command. `--propose` (closing
+    "... -> Impact -> Recommendation -> Proposal") never produces a
+    Proposal for a NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN verdict —
+    there is nothing to propose in those cases.
     """
     try:
         discovery = discover_local_repository(target)
@@ -478,6 +500,20 @@ def check_updates(target: str = _TARGET_ARGUMENT) -> None:
         )
         for failure in check.unavailable:
             typer.echo(f"  - {failure.ecosystem}:{failure.name}: {failure.message}")
+
+    if propose or record is not None:
+        proposals = [
+            p for p in (propose_component_update(a) for a in check.assessments) if p is not None
+        ]
+        if propose:
+            if not proposals:
+                typer.echo("\nNo actionable verdict produced a Proposal.")
+            for proposal in proposals:
+                typer.echo(f"\nProposal ({proposal.kind}): {proposal.problem}")
+                typer.echo(f"    required permission: {proposal.required_permission_level.name}")
+        if record is not None:
+            for proposal in proposals:
+                _append_json_record(record, "proposals.json", proposal)
 
 
 @app.command()

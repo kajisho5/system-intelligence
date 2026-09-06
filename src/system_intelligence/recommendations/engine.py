@@ -4,12 +4,19 @@ Deliberately conservative: this does not invent information beyond what a
 Finding already carries. `rationale` and `evidence` are the Finding's own
 statement and evidence; only the objective, effort/risk estimate, and
 priority ordering are derived here.
+
+`recommend_from_impact` extends the same pattern to Component Update
+Intelligence's `ImpactAssessment` — the last step of "Current State ->
+Available State -> State Diff -> Impact -> Recommendation" the update
+intelligence feature was designed around, closing that loop generically
+for any component, not just Findings.
 """
 
 from __future__ import annotations
 
-from system_intelligence.core.enums import Confidence, PermissionLevel, Severity
+from system_intelligence.core.enums import Confidence, PermissionLevel, Severity, UpdateVerdict
 from system_intelligence.core.findings import Finding
+from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.recommendations import Recommendation
 
 #: Rough effort sizing per finding category, based on what fixing it
@@ -67,3 +74,54 @@ def generate_recommendations(findings: list[Finding]) -> list[Recommendation]:
     """Turn Findings into Recommendations, ordered by severity then confidence (R7)."""
     ranked_findings = sorted(findings, key=_priority_score, reverse=True)
     return [recommend_from_finding(f) for f in ranked_findings]
+
+
+#: Only verdicts with something to act on produce a Recommendation.
+#: NO_UPDATE_AVAILABLE and UNKNOWN are deliberately excluded — there is
+#: nothing to recommend when nothing changed or nothing could be determined.
+_UPDATE_RISK_BY_VERDICT: dict[UpdateVerdict, str] = {
+    UpdateVerdict.UPDATE_RECOMMENDED: "low",
+    UpdateVerdict.REVIEW_REQUIRED: "medium",
+    UpdateVerdict.NOT_ADVISABLE: "high",
+}
+
+
+def recommend_from_impact(assessment: ImpactAssessment) -> Recommendation | None:
+    """Turn a Component Update Intelligence `ImpactAssessment` into a Recommendation.
+
+    Returns `None` for `NO_UPDATE_AVAILABLE`/`UNKNOWN` verdicts rather than
+    a hollow "everything is fine" recommendation.
+    """
+    risk = _UPDATE_RISK_BY_VERDICT.get(assessment.verdict)
+    if risk is None:
+        return None
+
+    diff = assessment.state_diff
+    identity = diff.identity
+    from_version = diff.from_state.version or "unknown"
+    to_version = diff.to_state.version or "unknown"
+
+    if assessment.verdict == UpdateVerdict.NOT_ADVISABLE:
+        objective = f"Do not update {identity.name} to {to_version} without further review."
+    else:
+        objective = f"Update {identity.name} from {from_version} to {to_version}."
+
+    return Recommendation(
+        objective=objective,
+        rationale=assessment.verdict_rationale,
+        evidence=list(assessment.evidence),
+        confidence=assessment.verdict_confidence,
+        estimated_effort="small",
+        risk=risk,
+        expected_benefit=(
+            f"Resolves an available update for {identity.name} "
+            f"({identity.distribution_source or 'unknown source'})."
+        ),
+        required_approval_level=PermissionLevel.RECOMMEND,
+    )
+
+
+def generate_update_recommendations(assessments: list[ImpactAssessment]) -> list[Recommendation]:
+    """Turn Update Intelligence assessments into Recommendations, skipping non-actionable ones."""
+    recommendations = [recommend_from_impact(a) for a in assessments]
+    return [r for r in recommendations if r is not None]

@@ -1,9 +1,16 @@
 from datetime import UTC, datetime, timedelta
 
-from system_intelligence.core.enums import Confidence, PermissionLevel
+from system_intelligence.core.component_state import (
+    AvailableState,
+    ComponentIdentity,
+    ComponentState,
+)
+from system_intelligence.core.enums import ComponentKind, Confidence, PermissionLevel, UpdateVerdict
 from system_intelligence.core.evidence import Evidence, EvidenceKind
+from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.research import ResearchResult
-from system_intelligence.proposals.engine import propose_solution
+from system_intelligence.core.state_diff import StateDiff
+from system_intelligence.proposals.engine import propose_component_update, propose_solution
 
 
 def _candidate(
@@ -114,3 +121,46 @@ def test_evidence_from_problem_and_candidate_are_combined() -> None:
 
     assert problem_evidence in proposal.evidence
     assert len(proposal.evidence) == 1 + len(candidate.evidence)
+
+
+def _update_assessment(verdict: UpdateVerdict) -> ImpactAssessment:
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    current = ComponentState(identity=identity, version="0.8.2")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    return ImpactAssessment(
+        state_diff=diff,
+        verdict=verdict,
+        verdict_confidence=Confidence.MEDIUM,
+        verdict_rationale="rationale text",
+    )
+
+
+def test_propose_component_update_for_review_required() -> None:
+    proposal = propose_component_update(_update_assessment(UpdateVerdict.REVIEW_REQUIRED))
+
+    assert proposal is not None
+    assert proposal.kind == "component_update"
+    assert "ffmpeg-skill" in proposal.problem
+    assert "0.8.2" in proposal.problem and "0.9.2" in proposal.problem
+    assert proposal.proposed_component_name == "ffmpeg-skill"
+    assert proposal.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+    assert len(proposal.changes) == 1
+
+
+def test_propose_component_update_for_update_recommended() -> None:
+    proposal = propose_component_update(_update_assessment(UpdateVerdict.UPDATE_RECOMMENDED))
+    assert proposal is not None
+    assert proposal.kind == "component_update"
+
+
+def test_propose_component_update_none_for_not_advisable() -> None:
+    assert propose_component_update(_update_assessment(UpdateVerdict.NOT_ADVISABLE)) is None
+
+
+def test_propose_component_update_none_for_no_update_available() -> None:
+    assert propose_component_update(_update_assessment(UpdateVerdict.NO_UPDATE_AVAILABLE)) is None
+
+
+def test_propose_component_update_none_for_unknown() -> None:
+    assert propose_component_update(_update_assessment(UpdateVerdict.UNKNOWN)) is None

@@ -1,7 +1,24 @@
-from system_intelligence.core.enums import Confidence, PermissionLevel, Severity
+from system_intelligence.core.component_state import (
+    AvailableState,
+    ComponentIdentity,
+    ComponentState,
+)
+from system_intelligence.core.enums import (
+    ComponentKind,
+    Confidence,
+    PermissionLevel,
+    Severity,
+    UpdateVerdict,
+)
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
-from system_intelligence.recommendations.engine import generate_recommendations
+from system_intelligence.core.impact import ImpactAssessment
+from system_intelligence.core.state_diff import StateDiff
+from system_intelligence.recommendations.engine import (
+    generate_recommendations,
+    generate_update_recommendations,
+    recommend_from_impact,
+)
 
 
 def _finding(
@@ -59,3 +76,49 @@ def test_generate_recommendations_orders_by_severity_then_confidence() -> None:
         medium_high_conf.statement,
         low.statement,
     ]
+
+
+def _assessment(verdict: UpdateVerdict) -> ImpactAssessment:
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    current = ComponentState(identity=identity, version="0.8.2")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    return ImpactAssessment(
+        state_diff=diff,
+        verdict=verdict,
+        verdict_confidence=Confidence.MEDIUM,
+        verdict_rationale="rationale text",
+    )
+
+
+def test_recommend_from_impact_update_recommended() -> None:
+    recommendation = recommend_from_impact(_assessment(UpdateVerdict.UPDATE_RECOMMENDED))
+    assert recommendation is not None
+    assert recommendation.objective == "Update ffmpeg-skill from 0.8.2 to 0.9.2."
+    assert recommendation.risk == "low"
+    assert recommendation.rationale == "rationale text"
+
+
+def test_recommend_from_impact_not_advisable_warns_against_update() -> None:
+    recommendation = recommend_from_impact(_assessment(UpdateVerdict.NOT_ADVISABLE))
+    assert recommendation is not None
+    assert "Do not update" in recommendation.objective
+    assert recommendation.risk == "high"
+
+
+def test_recommend_from_impact_no_update_available_returns_none() -> None:
+    assert recommend_from_impact(_assessment(UpdateVerdict.NO_UPDATE_AVAILABLE)) is None
+
+
+def test_recommend_from_impact_unknown_returns_none() -> None:
+    assert recommend_from_impact(_assessment(UpdateVerdict.UNKNOWN)) is None
+
+
+def test_generate_update_recommendations_filters_non_actionable() -> None:
+    assessments = [
+        _assessment(UpdateVerdict.REVIEW_REQUIRED),
+        _assessment(UpdateVerdict.NO_UPDATE_AVAILABLE),
+        _assessment(UpdateVerdict.UNKNOWN),
+    ]
+    recommendations = generate_update_recommendations(assessments)
+    assert len(recommendations) == 1

@@ -603,6 +603,57 @@ def test_check_updates_command_reports_review_required(
     assert "review_required" in result.stdout
 
 
+def test_check_updates_command_propose_prints_proposal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--propose"])
+
+    assert result.exit_code == 0
+    assert "Proposal (component_update)" in result.stdout
+    assert "pydantic" in result.stdout
+
+
+def test_check_updates_command_record_appends_proposal_to_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--record", str(snapshot_dir)])
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "proposals.json").read_text(encoding="utf-8"))
+    assert len(recorded) == 1
+    assert recorded[0]["kind"] == "component_update"
+
+
 def test_check_updates_command_reports_source_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -10,8 +10,13 @@ Not yet implemented: refactor proposals (need capability-gap/duplicate
 detection wired to this engine) and the "new Skill"/"new Agent" proposal
 templates docs/07 also lists — both need richer input than a bare research
 result currently provides.
+
+`propose_component_update` is a separate decision (not the adopt/create
+tree above): it turns a Component Update Intelligence `ImpactAssessment`
+into a `component_update`-kind Proposal, the last step of "Current State
+-> Available State -> State Diff -> Impact -> Recommendation -> Proposal".
 """
 
-from system_intelligence.proposals.engine import propose_solution
+from system_intelligence.proposals.engine import propose_component_update, propose_solution
 
-__all__ = ["propose_solution"]
+__all__ = ["propose_component_update", "propose_solution"]
