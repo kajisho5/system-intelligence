@@ -25,8 +25,9 @@ OBSERVE → UNDERSTAND → ANALYZE → RESEARCH → AUDIT → DESIGN
   metadata, and static analysis produce facts; LLM reasoning interprets
   evidence and proposes hypotheses, it does not manufacture facts.
 - **Read-only by default.** Discovery, analysis, and research never write to
-  a target. Remote writes (branch/commit/Draft PR) and any destructive
-  operation require an explicit `Approval` record; merge, close, delete,
+  a target. Local writes (branch/commit) and remote writes (pushing that
+  branch, opening a Draft PR) each require their own explicit `Approval`
+  record — approving one never authorizes the other; merge, close, delete,
   force-push, visibility, credential, and deployment operations are never
   triggered automatically (see `docs/design/docs/08-governance.md`).
 
@@ -35,14 +36,14 @@ OBSERVE → UNDERSTAND → ANALYZE → RESEARCH → AUDIT → DESIGN
 Pre-alpha, but functional. Discovery (local paths and, read-only,
 GitHub repositories), deterministic analysis, the Relationship graph,
 external research, the recommendation/proposal engines, Component Update
-Intelligence, human-approved local execution, the static HTML report, and
-the interactive Dashboard are all implemented and covered by tests — see
+Intelligence, human-approved local and remote execution (branch/commit,
+and pushing it as a Draft PR), the static HTML report, and the
+interactive Dashboard are all implemented and covered by tests — see
 `docs/design/docs/16-roadmap.md` for the full roadmap and
 [Commands](#commands) below for what `si` can do today. Not yet
-implemented: Draft PR creation (local branch/commit only), a plugin
-loader for external Skills/Agents (the capability registry is a static
-Python dict), and package-registry/Capability-Contract adapters beyond
-PyPI/npm.
+implemented: a plugin loader for external Skills/Agents (the capability
+registry is a static Python dict), and package-registry/Capability-Contract
+adapters beyond PyPI/npm.
 
 ## Commands
 
@@ -65,7 +66,7 @@ read-only into a temp directory first):
 | `si improve <target>` | Findings → ranked Recommendations |
 | `si propose <problem>` | Adopt/integrate/create decision → a Proposal |
 | `si plan <intent-or-text>` | Preview which capabilities a request would run |
-| `si execute <plan> <target>` | Apply a local `ChangePlan` (dry-run unless `--approve`; local branch/commit only, never a remote write) |
+| `si execute <plan> <target>` | Apply a local `ChangePlan` (dry-run unless `--approve`); `--push --repo owner/repo` also pushes and opens a Draft PR, gated by its own separate Approval |
 | `si verify <command>` | Run a test command and record pass/fail |
 | `si doctor`, `si version` | Environment check, installed version |
 

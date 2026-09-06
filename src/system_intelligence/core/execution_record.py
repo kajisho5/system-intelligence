@@ -25,6 +25,8 @@ class ExecutionRecord(BaseModel):
     branch_name: str | None = None
     commit_sha: str | None = None
     files_written: list[str] = Field(default_factory=list)
+    pull_request_number: int | None = None
+    pull_request_url: str | None = None
     applied: bool
     decision_reason: str
     executed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
