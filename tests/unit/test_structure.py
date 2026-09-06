@@ -31,3 +31,23 @@ def test_scan_structure_empty_directory(tmp_path: Path) -> None:
     result = scan_structure(tmp_path)
     assert result.languages == []
     assert result.package_manifests == []
+
+
+def test_scan_structure_detects_pipfile(tmp_path: Path) -> None:
+    """A Pipenv project has no pyproject.toml/setup.py at all -- Pipfile
+    must be recognized on its own, not just alongside those."""
+    (tmp_path / "Pipfile").write_text("[packages]\n", encoding="utf-8")
+
+    result = scan_structure(tmp_path)
+
+    assert len(result.package_manifests) == 1
+    assert result.package_manifests[0].ecosystem == "pypi"
+
+
+def test_scan_structure_detects_gradle_kotlin_dsl(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
+
+    result = scan_structure(tmp_path)
+
+    assert len(result.package_manifests) == 1
+    assert result.package_manifests[0].ecosystem == "gradle"

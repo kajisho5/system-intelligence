@@ -33,14 +33,22 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
 }
 
 #: manifest filename -> (ecosystem, language)
+#: Multiple filenames per ecosystem are already the norm here (pypi has
+#: both pyproject.toml and setup.py) -- Pipfile (Pipenv's manifest, which
+#: has no pyproject.toml/setup.py at all) and build.gradle.kts (Gradle's
+#: Kotlin DSL form, the default for new Kotlin/Android projects) round out
+#: that same pattern for two real, common conventions this table would
+#: otherwise silently miss.
 PACKAGE_MANIFESTS: dict[str, tuple[str, str]] = {
     "pyproject.toml": ("pypi", "Python"),
     "setup.py": ("pypi", "Python"),
+    "Pipfile": ("pypi", "Python"),
     "package.json": ("npm", "JavaScript/TypeScript"),
     "Cargo.toml": ("cargo", "Rust"),
     "go.mod": ("go", "Go"),
     "pom.xml": ("maven", "Java"),
     "build.gradle": ("gradle", "Java"),
+    "build.gradle.kts": ("gradle", "Java"),
     "Gemfile": ("rubygems", "Ruby"),
 }
 
