@@ -1084,6 +1084,95 @@ def test_check_updates_command_record_appends_proposal_to_snapshot(
     assert recorded[0]["kind"] == "component_update"
 
 
+def test_check_updates_command_plan_out_writes_change_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    plan_out = tmp_path / "plans"
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--plan-out", str(plan_out)])
+
+    assert result.exit_code == 0
+    plan_files = list(plan_out.glob("*.json"))
+    assert len(plan_files) == 1
+    plan = json.loads(plan_files[0].read_text(encoding="utf-8"))
+    expected_content = (
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.9.0"]\n'
+    )
+    assert plan["branch_name"] == "si/update-pydantic-to-2.9.0"
+    assert plan["files"] == {"pyproject.toml": expected_content}
+    assert plan["required_permission_level"] == "CREATE_BRANCH_OR_DRAFT_PR"
+
+
+def test_check_updates_plan_out_end_to_end_through_execute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full deterministic loop: check-updates --plan-out -> execute --approve
+    actually patches the manifest on disk, with no hand-written plan.json."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+    _init_repo(target_dir)
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    plan_out = tmp_path / "plans"
+    runner.invoke(app, ["check-updates", str(target_dir), "--plan-out", str(plan_out)])
+    plan_file = next(plan_out.glob("*.json"))
+
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            {
+                "actor": "human:test",
+                "scope": "repository",
+                "action": "create_local_branch_and_commit",
+                "target": str(target_dir),
+                "permission_level": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(target_dir),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+        ],
+    )
+
+    expected_content = (
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.9.0"]\n'
+    )
+    assert result.exit_code == 0
+    assert "Applied: branch 'si/update-pydantic-to-2.9.0'" in result.stdout
+    assert (target_dir / "pyproject.toml").read_text(encoding="utf-8") == expected_content
+
+
 def test_check_updates_command_reports_source_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
