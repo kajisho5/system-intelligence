@@ -581,6 +581,114 @@ def test_verify_command_without_component_option_leaves_it_null(tmp_path: Path) 
     assert recorded[0]["component_id"] is None
 
 
+def test_verify_command_before_after_snapshot_detects_regression(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "README.md").write_text("# Hi\n", encoding="utf-8")
+    (target_dir / "LICENSE").write_text("MIT\n", encoding="utf-8")
+
+    before_out = tmp_path / "before"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(before_out)])
+    before_dir = next(before_out.glob("snapshot-*"))
+
+    (target_dir / "LICENSE").unlink()  # introduces a new "no LICENSE" finding
+    after_out = tmp_path / "after"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(after_out)])
+    after_dir = next(after_out.glob("snapshot-*"))
+
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+    result = runner.invoke(
+        app,
+        [
+            "verify",
+            "python3 -c print(1)",
+            "--target",
+            str(target_dir),
+            "--before-snapshot",
+            str(before_dir),
+            "--after-snapshot",
+            str(after_dir),
+            "--record",
+            str(snapshot_dir),
+        ],
+    )
+
+    # The command itself passed, but a regression was introduced -> non-zero exit.
+    assert result.exit_code == 1
+    assert "Regressions detected" in result.stdout
+    assert "LICENSE" in result.stdout
+    recorded = json.loads((snapshot_dir / "verification.json").read_text(encoding="utf-8"))
+    assert len(recorded[0]["regressions_found"]) == 1
+    assert "LICENSE" in recorded[0]["regressions_found"][0]
+    assert recorded[0]["before_snapshot_id"] is not None
+    assert recorded[0]["after_snapshot_id"] is not None
+
+
+def test_verify_command_before_after_snapshot_no_regression_passes(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+
+    snap_out = tmp_path / "snap-src"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+    result = runner.invoke(
+        app,
+        [
+            "verify",
+            "python3 -c print(1)",
+            "--target",
+            str(target_dir),
+            "--before-snapshot",
+            str(snap_dir),
+            "--after-snapshot",
+            str(snap_dir),
+            "--record",
+            str(snapshot_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Regressions detected" not in result.stdout
+
+
+def test_verify_command_only_one_snapshot_flag_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["verify", "python3 -c print(1)", "--target", str(tmp_path), "--before-snapshot", "x"],
+    )
+
+    assert result.exit_code == 1
+    assert "must be given together" in (result.stdout + (result.stderr or ""))
+
+
+def test_verify_command_snapshot_missing_manifest_fails_clearly(tmp_path: Path) -> None:
+    missing_a = tmp_path / "a"
+    missing_b = tmp_path / "b"
+    missing_a.mkdir()
+    missing_b.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "verify",
+            "python3 -c print(1)",
+            "--target",
+            str(tmp_path),
+            "--before-snapshot",
+            str(missing_a),
+            "--after-snapshot",
+            str(missing_b),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "no manifest.json" in (result.stdout + (result.stderr or ""))
+
+
 def test_execute_command_record_appends_to_snapshot(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     plan_file = _write_plan_file(tmp_path)

@@ -903,6 +903,26 @@ _VERIFY_COMPONENT_OPTION = typer.Option(
         "when the check isn't about one specific discovered Component."
     ),
 )
+_VERIFY_BEFORE_SNAPSHOT_OPTION = typer.Option(
+    None,
+    "--before-snapshot",
+    help="A canonical snapshot directory captured before the change, for regression "
+    "detection (findings present after the change but not before). Must be given "
+    "together with --after-snapshot.",
+)
+_VERIFY_AFTER_SNAPSHOT_OPTION = typer.Option(
+    None,
+    "--after-snapshot",
+    help="A canonical snapshot directory captured after the change, for regression "
+    "detection. Must be given together with --before-snapshot.",
+)
+
+
+def _load_verification_snapshot(directory: Path) -> Snapshot:
+    if not (directory / "manifest.json").is_file():
+        typer.echo(f"error: {directory} has no manifest.json", err=True)
+        raise typer.Exit(code=1)
+    return Snapshot.read_from_directory(directory)
 
 
 @app.command()
@@ -911,16 +931,36 @@ def verify(
     target: str = _VERIFY_TARGET_OPTION,
     record: Path | None = _VERIFY_RECORD_OPTION,
     component: str | None = _VERIFY_COMPONENT_OPTION,
+    before_snapshot: Path | None = _VERIFY_BEFORE_SNAPSHOT_OPTION,
+    after_snapshot: Path | None = _VERIFY_AFTER_SNAPSHOT_OPTION,
 ) -> None:
     """Run a test command locally and report the result (R10).
 
     Pass/fail is taken directly from the command's own exit code — never
-    inferred or assumed. This does not yet re-scan or diff snapshots (that
-    needs a stored before-snapshot); it only records whether the given
-    command passed.
+    inferred or assumed. Passing both --before-snapshot and --after-snapshot
+    (two canonical snapshot directories, e.g. from 'si diagnose --out'
+    before and after applying a change) additionally computes
+    regressions_found from their diff's added findings — never guessed
+    from the command's own pass/fail alone. Exits non-zero if the command
+    failed or a regression was found.
     """
+    if (before_snapshot is None) != (after_snapshot is None):
+        typer.echo("error: --before-snapshot and --after-snapshot must be given together", err=True)
+        raise typer.Exit(code=1)
+
+    before_snap = (
+        _load_verification_snapshot(before_snapshot) if before_snapshot is not None else None
+    )
+    after_snap = _load_verification_snapshot(after_snapshot) if after_snapshot is not None else None
+
     try:
-        verification = run_verification(Path(target), shlex.split(command), component_id=component)
+        verification = run_verification(
+            Path(target),
+            shlex.split(command),
+            component_id=component,
+            before_snapshot=before_snap,
+            after_snapshot=after_snap,
+        )
     except VerificationError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -931,10 +971,14 @@ def verify(
     status = "PASSED" if verification.tests_passed else "FAILED"
     typer.echo(f"Command: {verification.tests_run[0]}")
     typer.echo(f"Result: {status}")
+    if verification.regressions_found:
+        typer.echo(f"\nRegressions detected ({len(verification.regressions_found)}):")
+        for regression in verification.regressions_found:
+            typer.echo(f"  - {regression}")
     if verification.evidence:
         typer.echo(f"\nOutput:\n{verification.evidence[0].observation}")
 
-    if not verification.tests_passed:
+    if not verification.tests_passed or verification.regressions_found:
         raise typer.Exit(code=1)
 
 
