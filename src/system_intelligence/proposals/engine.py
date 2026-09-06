@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from system_intelligence.core.enums import Confidence, PermissionLevel, UpdateVerdict
+from system_intelligence.core.enums import ComponentKind, Confidence, PermissionLevel, UpdateVerdict
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.proposals import Change, Proposal
@@ -47,6 +47,67 @@ from system_intelligence.research.scoring import CandidateAssessment, rank_candi
 _TEST_STRATEGY = "Add tests covering the new/adopted capability's stated requirements."
 _DOCUMENTATION_REQUIREMENTS = "Document the capability and how it satisfies each requirement."
 _ROLLBACK_STRATEGY = "Revert the change; no other component depends on it until adopted."
+
+#: Per-`ComponentKind` test/documentation guidance (docs/07-improvement-
+#: engine.md's "Creation proposals" list). Each kind is verified and
+#: documented differently in practice -- a Skill's contract lives in its
+#: SKILL.md, an Agent can't be unit-tested the same way a package's
+#: functions can, an MCP server's contract is its tool/resource schema.
+#: `None` (the default, and any `ComponentKind` not listed here) keeps the
+#: original generic wording so every existing caller is unaffected.
+_TEST_STRATEGY_BY_KIND: dict[ComponentKind, str] = {
+    ComponentKind.SKILL: (
+        "Invoke the Skill through its own declared entry points (per its SKILL.md "
+        "contract) with representative inputs and verify the stated capabilities."
+    ),
+    ComponentKind.AGENT: (
+        "Run representative end-to-end task scenarios against the agent (not just unit "
+        "tests) and verify it stays within its declared tool/permission grants."
+    ),
+    ComponentKind.MCP_SERVER: (
+        "Validate every exposed tool/resource against its declared schema, then perform "
+        "a live round-trip call for each to confirm the contract holds in practice."
+    ),
+    ComponentKind.TOOL: (
+        "Add tests covering the tool's CLI/API contract for each stated requirement, "
+        "including its documented error/exit-code behavior."
+    ),
+    ComponentKind.WORKFLOW: (
+        "Run the workflow end-to-end (a dry-run mode first, if one exists) and verify "
+        "each stated trigger condition and side effect."
+    ),
+    ComponentKind.DOCUMENT: (
+        "Review for accuracy and completeness against each stated requirement; check "
+        "that any links/references it makes actually resolve."
+    ),
+    ComponentKind.REPOSITORY: (
+        "Verify the new repository's own CI passes and its bootstrap instructions work "
+        "from a clean checkout."
+    ),
+}
+_DOCUMENTATION_REQUIREMENTS_BY_KIND: dict[ComponentKind, str] = {
+    ComponentKind.SKILL: "Document the capability in the Skill's own SKILL.md.",
+    ComponentKind.AGENT: (
+        "Document the agent's required tool/permission grants and the scenarios it "
+        "was verified against."
+    ),
+    ComponentKind.MCP_SERVER: "Document every exposed tool/resource and its schema.",
+    ComponentKind.WORKFLOW: "Document each trigger condition and side effect.",
+    ComponentKind.REPOSITORY: "Document bootstrap/setup steps in the new repository's README.",
+}
+
+
+def _test_strategy_for(target_kind: ComponentKind | None) -> str:
+    if target_kind is None:
+        return _TEST_STRATEGY
+    return _TEST_STRATEGY_BY_KIND.get(target_kind, _TEST_STRATEGY)
+
+
+def _documentation_requirements_for(target_kind: ComponentKind | None) -> str:
+    if target_kind is None:
+        return _DOCUMENTATION_REQUIREMENTS
+    return _DOCUMENTATION_REQUIREMENTS_BY_KIND.get(target_kind, _DOCUMENTATION_REQUIREMENTS)
+
 
 _UPDATE_TEST_STRATEGY = (
     "Re-run the existing test suite after updating; add a regression test if the "
@@ -106,10 +167,22 @@ def propose_solution(
     requirements: list[str] | None = None,
     research_results: list[ResearchResult] | None = None,
     functional_fit_confirmed: bool = False,
+    target_kind: ComponentKind | None = None,
 ) -> Proposal:
+    """Turn a stated need into a creation/adoption/integration Proposal.
+
+    `target_kind` (docs/07-improvement-engine.md's "Creation proposals"
+    list) shapes `test_strategy`/`documentation_requirements` to how that
+    kind of component is actually verified and documented in practice --
+    e.g. a Skill's contract lives in its SKILL.md, an Agent is verified by
+    running scenarios rather than unit tests. Omit it (the default) to get
+    the original generic wording, unchanged for every existing caller.
+    """
     evidence = evidence or []
     requirements = requirements or []
     research_results = research_results or []
+    test_strategy = _test_strategy_for(target_kind)
+    documentation_requirements = _documentation_requirements_for(target_kind)
 
     if not research_results:
         return Proposal(
@@ -122,8 +195,8 @@ def propose_solution(
                 "No candidate solutions were found in the searched external ecosystem."
             ),
             capabilities=list(requirements),
-            test_strategy=_TEST_STRATEGY,
-            documentation_requirements=_DOCUMENTATION_REQUIREMENTS,
+            test_strategy=test_strategy,
+            documentation_requirements=documentation_requirements,
             rollback_strategy=_ROLLBACK_STRATEGY,
             required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
         )
@@ -142,8 +215,8 @@ def propose_solution(
             proposed_component_name=best.result.identifier,
             capabilities=list(requirements),
             dependencies=[best.result.identifier],
-            test_strategy=_TEST_STRATEGY,
-            documentation_requirements=_DOCUMENTATION_REQUIREMENTS,
+            test_strategy=test_strategy,
+            documentation_requirements=documentation_requirements,
             rollback_strategy=_ROLLBACK_STRATEGY,
             required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
         )
@@ -166,8 +239,8 @@ def propose_solution(
         why_existing_solutions_insufficient=reason,
         capabilities=list(requirements),
         dependencies=[best.result.identifier],
-        test_strategy=_TEST_STRATEGY,
-        documentation_requirements=_DOCUMENTATION_REQUIREMENTS,
+        test_strategy=test_strategy,
+        documentation_requirements=documentation_requirements,
         rollback_strategy=_ROLLBACK_STRATEGY,
         required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
     )
