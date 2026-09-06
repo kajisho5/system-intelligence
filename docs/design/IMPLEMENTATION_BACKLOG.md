@@ -58,6 +58,7 @@ Registry, was added beyond this epic's original PyPI/npm-agnostic scope.)
 ## Epic 6 — Reporting
 - [x] static HTML generator — `reporting/html.py`
 - [x] graph visualization — `reporting/dashboard_html.py`'s capability provider SVG graph subtab
+- [x] Proposals detail view — `reporting/dashboard_html.py::toggleProposalDetail`; click-to-expand a Proposal row (same interaction pattern as `toggleComponentDetail`) to show `capabilities`/`interfaces`/`test_strategy`/`documentation_requirements`/`rollback_strategy`/etc. — all of these already existed on `Proposal` but the Proposals table previously rendered only `kind`/`problem`/permission/insufficiency-reason, with no way to see the rest without opening the raw JSON snapshot. Interactively verified with a real browser (Playwright/Chromium): expand/collapse both work, no console errors, populated `interfaces` (from the target-kind feature) renders correctly
 - [x] dashboard JSON export — `reporting/dashboard_data.py::DashboardData`/`build_dashboard_data`; also the documented external consumer boundary (`docs/design/docs/12-storage-and-state.md`)
 - [x] snapshot diff — `reporting/diff.py`
 
