@@ -8,9 +8,17 @@ pip's own option flags and direct URL/VCS references skipped),
 `package.json` (`dependencies`/`devDependencies`), `Cargo.toml`
 (`[dependencies]`/`[dev-dependencies]`/`[build-dependencies]`), `go.mod`
 (`require` directives), and `pom.xml` (the project's own direct
-`<dependencies>`, literal versions only). No dependency resolution,
-transitive graph, or version conflict detection yet — this only records
-what a manifest *declares*.
+`<dependencies>`, literal versions only). No transitive graph or version
+conflict detection yet.
+
+One resolution step is implemented: a Cargo dependency's sibling
+`Cargo.lock` (single-crate projects only -- a workspace's lockfile lives
+only at the workspace root, never guessed at from a member crate's own
+directory) resolves `Dependency.resolved_version` for an unambiguous
+package name, even when the declared constraint itself is a range
+(`anyhow = "1.0"` means "the currently *locked* 1.0.x, whichever that
+resolved to", not just "some 1.0.x exists"). The equivalent for
+npm/pip (`package-lock.json`, `poetry.lock`) is not implemented yet.
 """
 
 from __future__ import annotations
@@ -217,11 +225,60 @@ def _cargo_version_constraint(spec: object) -> str | None:
     return None
 
 
+def _extract_cargo_lock_resolved_versions(cargo_lock_path: Path) -> dict[str, str]:
+    """Package name -> resolved version, from a sibling `Cargo.lock`.
+
+    Skips any name with more than one `[[package]]` entry -- a real,
+    common case for transitive dependencies (e.g. two crates each
+    depending on a different major version of the same library, verified
+    against a real `Cargo.lock` where `syn` appears twice at different
+    versions). Returning "the" resolved version for an ambiguous name
+    would be a guess, not a fact, so it is left unresolved instead --
+    same discipline as every other "return None/skip rather than guess"
+    case in this module.
+    """
+    try:
+        data = tomllib.loads(cargo_lock_path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return {}
+    packages = data.get("package")
+    if not isinstance(packages, list):
+        return {}
+    versions_by_name: dict[str, list[str]] = {}
+    for entry in packages:
+        if not isinstance(entry, dict):
+            continue
+        name, version = entry.get("name"), entry.get("version")
+        if isinstance(name, str) and isinstance(version, str):
+            versions_by_name.setdefault(name, []).append(version)
+    return {name: versions[0] for name, versions in versions_by_name.items() if len(versions) == 1}
+
+
+def _cargo_lock_evidence(rel_path: str, name: str, version: str) -> Evidence:
+    return Evidence(
+        kind=EvidenceKind.PACKAGE_METADATA,
+        source=rel_path,
+        observation=f"{name!r} resolved to version {version!r} in {rel_path}",
+        confidence=Confidence.VERIFIED,
+    )
+
+
 def _extract_cargo_dependencies(path: Path, rel_path: str) -> list[Dependency]:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, OSError):
         return []
+
+    # Cargo.lock lives alongside Cargo.toml for a single-crate project; in
+    # a workspace, it lives only at the workspace root, so a member
+    # crate's own Cargo.toml simply has no sibling Cargo.lock and gets no
+    # resolved-version boost -- never guessed at from another directory.
+    lock_path = path.parent / "Cargo.lock"
+    resolved_versions = (
+        _extract_cargo_lock_resolved_versions(lock_path) if lock_path.is_file() else {}
+    )
+    lock_rel_path = str(Path(rel_path).parent / "Cargo.lock")
+
     dependencies: list[Dependency] = []
     for section in ("dependencies", "dev-dependencies", "build-dependencies"):
         section_value = data.get(section, {})
@@ -231,13 +288,18 @@ def _extract_cargo_dependencies(path: Path, rel_path: str) -> list[Dependency]:
             constraint = _cargo_version_constraint(spec)
             if constraint is None:
                 continue
+            resolved_version = resolved_versions.get(name)
+            evidence = [_manifest_evidence(rel_path, name)]
+            if resolved_version is not None:
+                evidence.append(_cargo_lock_evidence(lock_rel_path, name, resolved_version))
             dependencies.append(
                 Dependency(
                     id=stable_id("dependency", "cargo", rel_path, name),
                     name=name,
                     ecosystem="cargo",
                     version_constraint=constraint,
-                    evidence=[_manifest_evidence(rel_path, name)],
+                    resolved_version=resolved_version,
+                    evidence=evidence,
                 )
             )
     return dependencies

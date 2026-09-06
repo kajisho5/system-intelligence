@@ -339,6 +339,83 @@ def test_extract_cargo_dependencies_malformed_manifest_returns_empty(tmp_path: P
     assert extract_dependencies(tmp_path, manifests) == []
 
 
+def test_extract_cargo_dependencies_resolves_version_from_sibling_lock_file(
+    tmp_path: Path,
+) -> None:
+    """A range constraint (`anyhow = "1.0"` means `^1.0`) leaves the
+    *declared* version ambiguous, but Cargo.lock records exactly which
+    1.0.x was actually resolved -- Dependency.resolved_version exists for
+    exactly this, and build_current_state already consumes it at VERIFIED
+    confidence, but nothing produced it for any ecosystem until now."""
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n[dependencies]\nanyhow = "1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "Cargo.lock").write_text(
+        "version = 4\n\n"
+        "[[package]]\n"
+        'name = "anyhow"\n'
+        'version = "1.0.104"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert len(dependencies) == 1
+    assert dependencies[0].version_constraint == "1.0"
+    assert dependencies[0].resolved_version == "1.0.104"
+    assert len(dependencies[0].evidence) == 2
+
+
+def test_extract_cargo_dependencies_ambiguous_lock_entry_leaves_unresolved(
+    tmp_path: Path,
+) -> None:
+    """Two [[package]] entries for the same name (a real, common case for
+    a transitive dependency with conflicting major versions, e.g. `syn`
+    v1 and v2 both present) must never guess which one is "the"
+    dependency's resolved version."""
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n[dependencies]\nsyn = "2.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "Cargo.lock").write_text(
+        "version = 4\n\n"
+        '[[package]]\nname = "syn"\nversion = "1.0.109"\n\n'
+        '[[package]]\nname = "syn"\nversion = "2.0.60"\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert len(dependencies) == 1
+    assert dependencies[0].resolved_version is None
+    assert len(dependencies[0].evidence) == 1
+
+
+def test_extract_cargo_dependencies_no_lock_file_leaves_unresolved(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n[dependencies]\nserde = "1.0"\n', encoding="utf-8"
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert dependencies[0].resolved_version is None
+
+
+def test_extract_cargo_dependencies_malformed_lock_file_leaves_unresolved(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n[dependencies]\nserde = "1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "Cargo.lock").write_text("not valid toml [[[", encoding="utf-8")
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert dependencies[0].resolved_version is None
+
+
 def test_extract_go_dependencies_single_line_and_block_form(tmp_path: Path) -> None:
     (tmp_path / "go.mod").write_text(
         "module example.com/x\n\ngo 1.21\n\n"
