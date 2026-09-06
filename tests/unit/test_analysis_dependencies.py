@@ -24,6 +24,75 @@ def test_extract_pyproject_dependencies(tmp_path: Path) -> None:
     assert pydantic.evidence
 
 
+def test_extract_poetry_dependencies_bare_version_is_normalized_to_exact(tmp_path: Path) -> None:
+    """Poetry's own [tool.poetry.dependencies] table predates PEP 621
+    support and is still the form most existing Poetry projects use --
+    previously entirely unparsed, so a Poetry-native pyproject.toml always
+    reported zero dependencies. A bare version means an exact pin under
+    Poetry's own convention (confirmed against Poetry's official docs),
+    so it's normalized to PEP 508's own "==" form."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.poetry]\n"
+        'name = "demo"\n\n'
+        "[tool.poetry.dependencies]\n"
+        'python = "^3.11"\n'
+        'requests = "2.31.0"\n'
+        'click = "^8.1"\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="pyproject.toml", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    names = {d.name for d in dependencies}
+    assert names == {"requests", "click"}
+    requests_dep = next(d for d in dependencies if d.name == "requests")
+    assert requests_dep.version_constraint == "==2.31.0"
+    assert requests_dep.ecosystem == "pypi"
+    click_dep = next(d for d in dependencies if d.name == "click")
+    assert click_dep.version_constraint == "^8.1"
+
+
+def test_extract_poetry_dependencies_table_form_and_no_version(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.poetry.dependencies]\n"
+        'requests = { version = "2.31.0", extras = ["security"] }\n'
+        'mylocal = { path = "../mylocal" }\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="pyproject.toml", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"requests"}
+    assert dependencies[0].version_constraint == "==2.31.0"
+
+
+def test_extract_poetry_dependencies_wildcard_not_treated_as_exact(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.poetry.dependencies]\nrequests = "1.*"\n', encoding="utf-8"
+    )
+    manifests = [PackageManifest(path="pyproject.toml", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert dependencies[0].version_constraint == "==1.*"
+    # _EXACT_PIN_RE (analysis/update_intelligence.py) rejects the "*"
+    # character, so this is never treated as an exact pin downstream --
+    # verified in test_analysis_update_intelligence.py.
+
+
+def test_extract_poetry_dependencies_none_when_table_absent(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["typer"]\n', encoding="utf-8"
+    )
+    manifests = [PackageManifest(path="pyproject.toml", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"typer"}
+
+
 def test_extract_requirements_txt_dependencies(tmp_path: Path) -> None:
     (tmp_path / "requirements.txt").write_text(
         "# a full-line comment\n"
