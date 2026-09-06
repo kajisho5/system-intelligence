@@ -8,11 +8,16 @@ from system_intelligence.intelligence.intents import (
 
 
 def test_resolve_intent_inspect() -> None:
+    """Must match every capability `discover_local_repository` (the actual
+    `si inspect` implementation) unconditionally runs -- including agent
+    and ADR detection, which it always runs alongside Skill detection."""
     resolved = resolve_intent("inspect")
     assert set(resolved) == {
         "git_metadata",
         "structure_scan",
         "skill_detection",
+        "agent_detection",
+        "adr_detection",
         "ci_docs_detection",
     }
 

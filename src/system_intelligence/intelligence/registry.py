@@ -30,6 +30,12 @@ CAPABILITIES: dict[str, CapabilityDescriptor] = {
     "skill_detection": CapabilityDescriptor(
         "skill_detection", "Detect standard Agent Skills (SKILL.md)."
     ),
+    "agent_detection": CapabilityDescriptor(
+        "agent_detection", "Detect Claude Code subagents (.claude/agents/*.md)."
+    ),
+    "adr_detection": CapabilityDescriptor(
+        "adr_detection", "Detect Architecture Decision Records by filename convention."
+    ),
     "ci_docs_detection": CapabilityDescriptor(
         "ci_docs_detection", "Detect CI workflows and well-known root documents."
     ),
@@ -58,6 +64,11 @@ CAPABILITIES: dict[str, CapabilityDescriptor] = {
         "Flag Skills with no textual reference outside their own directory.",
         requires=frozenset({"skill_detection"}),
     ),
+    "capability_gap_detection": CapabilityDescriptor(
+        "capability_gap_detection",
+        "Flag capabilities declared required (.si/requirements.json) but not found.",
+        requires=frozenset({"capability_extraction"}),
+    ),
     "circular_dependency_detection": CapabilityDescriptor(
         "circular_dependency_detection", "AST-based circular-import detection."
     ),
@@ -77,6 +88,7 @@ CAPABILITIES: dict[str, CapabilityDescriptor] = {
                 "capability_extraction",
                 "unused_skill_detection",
                 "circular_dependency_detection",
+                "capability_gap_detection",
             }
         ),
     ),

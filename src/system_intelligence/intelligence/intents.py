@@ -21,6 +21,8 @@ _DIAGNOSE_CAPABILITIES: frozenset[str] = frozenset(
         "git_metadata",
         "structure_scan",
         "skill_detection",
+        "agent_detection",
+        "adr_detection",
         "ci_docs_detection",
         "documentation_audit",
         "ci_test_audit",
@@ -29,12 +31,20 @@ _DIAGNOSE_CAPABILITIES: frozenset[str] = frozenset(
         "unused_skill_detection",
         "circular_dependency_detection",
         "relationship_graph_construction",
+        "capability_gap_detection",
     }
 )
 
 INTENTS: dict[str, frozenset[str]] = {
     "inspect": frozenset(
-        {"git_metadata", "structure_scan", "skill_detection", "ci_docs_detection"}
+        {
+            "git_metadata",
+            "structure_scan",
+            "skill_detection",
+            "agent_detection",
+            "adr_detection",
+            "ci_docs_detection",
+        }
     ),
     "diagnose": _DIAGNOSE_CAPABILITIES,
     "improve": _DIAGNOSE_CAPABILITIES | {"recommendation_ranking"},
