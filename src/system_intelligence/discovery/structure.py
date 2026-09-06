@@ -19,6 +19,14 @@ from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.discovery.paths import iter_files
 
+#: Each extension maps to exactly one language unambiguously, same as the
+#: existing entries -- `.php`/`.cs`/`.kt`/`.swift` are single-language
+#: extensions with no cross-language ambiguity, and `.c`/`.cpp` cover two
+#: more common, previously entirely-unrepresented languages this
+#: heuristic would otherwise undercount a real C/C++ repository's file
+#: histogram for (`.h`/`.hpp` headers are deliberately excluded -- they are
+#: shared between C and C++ and would need more than a filename to
+#: disambiguate, unlike every other entry here).
 LANGUAGE_EXTENSIONS: dict[str, str] = {
     ".py": "Python",
     ".ts": "TypeScript",
@@ -30,6 +38,12 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
     ".java": "Java",
     ".rb": "Ruby",
     ".sh": "Shell",
+    ".php": "PHP",
+    ".c": "C",
+    ".cpp": "C++",
+    ".cs": "C#",
+    ".kt": "Kotlin",
+    ".swift": "Swift",
 }
 
 #: manifest filename -> (ecosystem, language)
