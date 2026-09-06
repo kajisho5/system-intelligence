@@ -18,21 +18,22 @@ verified it (e.g. a human, or a later semantic-analysis phase).
 
 `change_plan_for_component_update` closes the one Proposal shape this
 project can currently turn into an executable `execution.plan.ChangePlan`
-without guessing at intent: a `pypi`, `npm`, or `go` dependency whose
-*currently declared* constraint is an exact pin
+without guessing at intent: a `pypi`, `npm`, `go`, or `cargo` dependency
+whose *currently declared* constraint is an exact pin
 (`Confidence.HIGH`/`VERIFIED` on the current `ComponentState`, per
 `analysis.update_intelligence.build_current_state`'s own `_EXACT_PIN_RE`).
 A range constraint (`>=1.2,<2.0`, `^1.2.3`, `1.x`) is deliberately never
 rewritten here — which number to bump is genuinely ambiguous, not a fact
-this module can determine. `cargo`/`maven` are not supported yet: writing
-an updated pin back into Cargo.toml needs a TOML-preserving writer this
-project does not have, and pom.xml's XML text-escaping rules would need
-more care than a plain regex substitution. Every other Proposal kind
-(creation/adoption/integration, and any range-constrained or unsupported-
-ecosystem update) still has no automatic path to a ChangePlan — the actual
-code change is a job for an external implementer (a human, or an agent
-such as Claude Code), never this module (ADR-007: no model vendor or agent
-harness hard-coded here).
+this module can determine. A Cargo dependency using its *table* form
+(`name = { version = "=1.2.3" }`) is likewise never rewritten — only the
+simple string form (`name = "=1.2.3"`) is (see
+`_CARGO_TOML_PIN_RE_TEMPLATE`). `maven` is not supported yet: pom.xml's
+XML text-escaping rules would need more care than a plain regex
+substitution. Every other Proposal kind (creation/adoption/integration,
+and any range-constrained or unsupported-form/ecosystem update) still has
+no automatic path to a ChangePlan — the actual code change is a job for
+an external implementer (a human, or an agent such as Claude Code), never
+this module (ADR-007: no model vendor or agent harness hard-coded here).
 """
 
 from __future__ import annotations
@@ -185,6 +186,21 @@ _PACKAGE_JSON_PIN_RE_TEMPLATE = r'("{name}"\s*:\s*")({version})(")'
 #: whitespace or end-of-line so it can never match a version that is
 #: merely a prefix of a longer token.
 _GO_MOD_PIN_RE_TEMPLATE = r"^(?P<prefix>[ \t]*(?:require[ \t]+)?{name}[ \t]+){version}(?=[ \t]|$)"
+
+#: Matches Cargo.toml's *simple string form* only (`name = "=1.2.3"`),
+#: capturing everything up to and including the opening quote (group 1) so
+#: a replacement can preserve the original name/whitespace/quote-style
+#: exactly. Cargo's own exact-pin operator (`=`, inside the quotes,
+#: distinct from TOML's own `=` assignment operator right before the
+#: quote) is always present in the matched text -- `build_current_state`
+#: only ever derives a `from_version` for `cargo` when the constraint
+#: itself started with `=` (`_BARE_CONSTRAINT_IS_EXACT_PIN` deliberately
+#: excludes cargo). Cargo's *table* form (`name = { version = "=1.2.3" }`,
+#: or a `[dependencies.name]` dotted-table section) never matches this --
+#: deliberately, since a value nested inside a table isn't a name-adjacent
+#: literal this regex could locate without also matching unrelated
+#: same-named keys elsewhere in the file.
+_CARGO_TOML_PIN_RE_TEMPLATE = r'({name}\s*=\s*)(["\'])=\s*{version}\s*\2'
 
 
 def _is_high_quality_candidate(assessment: CandidateAssessment) -> bool:
@@ -440,20 +456,47 @@ def _patch_go_mod_pin(text: str, name: str, from_version: str, to_version: str) 
     return text[: match.start()] + replacement + text[match.end() :]
 
 
+def _patch_cargo_toml_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
+    """Rewrite one exact-pinned dependency's version in raw Cargo.toml text.
+
+    Matches only Cargo's simple string form (`name = "=1.2.3"`) pinned
+    with its own `=` exact-pin operator -- the only form
+    `build_current_state` ever derives an exact `from_version` from for
+    `cargo` (a bare version means a caret range, per
+    `_BARE_CONSTRAINT_IS_EXACT_PIN`'s own docstring). The table form
+    (`name = { version = "=1.2.3" }`) or a `[dependencies.name]`
+    dotted-table section never matches -- returned `None`, same as any
+    other case this can't safely rewrite -- since a nested `version` key
+    isn't a name-adjacent literal this regex could locate without risking
+    a match against an unrelated same-named key elsewhere in the file.
+    """
+    pattern = re.compile(
+        _CARGO_TOML_PIN_RE_TEMPLATE.format(name=re.escape(name), version=re.escape(from_version))
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    prefix, quote = match.group(1), match.group(2)
+    replacement = f"{prefix}{quote}={to_version}{quote}"
+    return text[: match.start()] + replacement + text[match.end() :]
+
+
 def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -> ChangePlan | None:
     """Build an executable `ChangePlan` for a component-update `ImpactAssessment`.
 
-    Deterministic, no LLM: succeeds only for a `pypi`, `npm`, or `go`
-    dependency whose *current* constraint was confirmed as an exact pin
-    (`Confidence.HIGH`/`VERIFIED` on `from_state`, per
+    Deterministic, no LLM: succeeds only for a `pypi`, `npm`, `go`, or
+    `cargo` dependency whose *current* constraint was confirmed as an
+    exact pin (`Confidence.HIGH`/`VERIFIED` on `from_state`, per
     `build_current_state`) and whose declaring manifest still contains
     that exact text on disk. Returns `None` — never a best-effort or
     partial plan — for every other case: a non-actionable verdict (mirrors
-    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm`/`go`
+    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm`/`go`/`cargo`
     (other manifests aren't supported yet — see this module's docstring),
-    a range constraint, missing manifest evidence, an unreadable manifest
-    file, or manifest text that no longer matches what the assessment
-    observed.
+    a Cargo dependency using its table form rather than the simple string
+    form (see `_CARGO_TOML_PIN_RE_TEMPLATE`), a range constraint, missing
+    manifest evidence, an unreadable manifest file, or manifest text that
+    no longer matches what the assessment observed.
 
     A caller that gets `None` back still has the `Proposal` from
     `propose_component_update` (unaffected by this function) describing
@@ -471,6 +514,7 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
         "pypi": _patch_pyproject_pin,
         "npm": _patch_package_json_pin,
         "go": _patch_go_mod_pin,
+        "cargo": _patch_cargo_toml_pin,
     }
     patcher = patchers.get(identity.distribution_source or "")
     if patcher is None:
