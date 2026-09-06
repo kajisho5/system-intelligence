@@ -64,6 +64,22 @@ def test_unknown_category_gets_unknown_effort() -> None:
     assert recommendation.estimated_effort == "unknown"
 
 
+def test_capability_gap_category_has_a_real_effort_estimate() -> None:
+    """analysis/gaps.py::audit_capability_gaps produces `capability_gap`
+    Findings -- previously absent from `_EFFORT_BY_CATEGORY`, so every one
+    fell through to "unknown" effort and an artificially "low" risk despite
+    being a HIGH-severity finding."""
+    finding = _finding("capability_gap", Severity.HIGH)
+    [recommendation] = generate_recommendations([finding])
+    assert recommendation.estimated_effort != "unknown"
+
+
+def test_invalid_requirements_file_category_has_a_real_effort_estimate() -> None:
+    finding = _finding("invalid_requirements_file", Severity.HIGH)
+    [recommendation] = generate_recommendations([finding])
+    assert recommendation.estimated_effort != "unknown"
+
+
 def test_generate_recommendations_orders_by_severity_then_confidence() -> None:
     low = _finding("documentation_gap", Severity.LOW, Confidence.HIGH)
     critical = _finding("ci_health", Severity.CRITICAL, Confidence.LOW)
