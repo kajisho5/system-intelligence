@@ -146,6 +146,7 @@ def test_target_kind_omitted_keeps_generic_wording() -> None:
         proposal.documentation_requirements
         == "Document the capability and how it satisfies each requirement."
     )
+    assert proposal.interfaces == []
 
 
 def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
@@ -155,6 +156,21 @@ def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
         proposal.documentation_requirements
         == "Document the capability in the Skill's own SKILL.md."
     )
+    assert len(proposal.interfaces) == 1
+    assert "SKILL.md" in proposal.interfaces[0]
+
+
+def test_target_kind_agent_populates_agent_md_interface() -> None:
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.AGENT)
+    assert len(proposal.interfaces) == 1
+    assert ".claude/agents" in proposal.interfaces[0]
+
+
+def test_target_kind_without_dedicated_interface_stays_empty() -> None:
+    """A ComponentKind with no single well-known interface convention
+    (e.g. DOCUMENT) must get an empty interfaces list, never a guessed one."""
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.DOCUMENT)
+    assert proposal.interfaces == []
 
 
 def test_target_kind_agent_shapes_test_and_documentation_strategy() -> None:
@@ -175,6 +191,7 @@ def test_target_kind_applies_to_adoption_proposal() -> None:
     )
     assert proposal.kind == "adoption"
     assert proposal.test_strategy is not None and "schema" in proposal.test_strategy
+    assert len(proposal.interfaces) == 1 and "JSON schema" in proposal.interfaces[0]
 
 
 def test_target_kind_applies_to_integration_proposal() -> None:
@@ -184,6 +201,7 @@ def test_target_kind_applies_to_integration_proposal() -> None:
     )
     assert proposal.kind == "integration"
     assert proposal.test_strategy is not None and "trigger" in proposal.test_strategy
+    assert len(proposal.interfaces) == 1 and "trigger" in proposal.interfaces[0]
 
 
 def test_target_kind_without_specific_wording_falls_back_to_generic() -> None:

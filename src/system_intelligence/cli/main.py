@@ -891,7 +891,9 @@ _PROPOSAL_TARGET_KIND_OPTION = typer.Option(
     help=(
         "What kind of component this Proposal is for (e.g. 'skill', 'agent', "
         "'mcp_server', 'package'; see ComponentKind) — shapes test_strategy/"
-        "documentation_requirements to how that kind is actually verified in practice."
+        "documentation_requirements to how that kind is actually verified in practice, "
+        "and populates interfaces with that kind's own known discovery convention "
+        "(e.g. a Skill's SKILL.md, an Agent's .claude/agents/*.md), where one exists."
     ),
 )
 
@@ -956,6 +958,16 @@ def propose(
         typer.echo(f"Alternatives considered: {', '.join(proposal.alternatives_considered)}")
     if proposal.why_existing_solutions_insufficient:
         typer.echo(f"Why not sufficient as-is: {proposal.why_existing_solutions_insufficient}")
+    if proposal.capabilities:
+        typer.echo(f"Capabilities: {', '.join(proposal.capabilities)}")
+    if proposal.interfaces:
+        typer.echo(f"Interfaces: {', '.join(proposal.interfaces)}")
+    if proposal.test_strategy:
+        typer.echo(f"Test strategy: {proposal.test_strategy}")
+    if proposal.documentation_requirements:
+        typer.echo(f"Documentation requirements: {proposal.documentation_requirements}")
+    if proposal.rollback_strategy:
+        typer.echo(f"Rollback strategy: {proposal.rollback_strategy}")
     typer.echo(f"Required permission level: {proposal.required_permission_level.name}")
 
     if out is not None:

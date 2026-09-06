@@ -96,6 +96,33 @@ _DOCUMENTATION_REQUIREMENTS_BY_KIND: dict[ComponentKind, str] = {
     ComponentKind.REPOSITORY: "Document bootstrap/setup steps in the new repository's README.",
 }
 
+#: Per-`ComponentKind` interface points a Proposal for that kind should name
+#: (`Proposal.interfaces`, "Proposal must contain" in docs/07-improvement-
+#: engine.md) -- each is the same explicit, verified convention this
+#: project already detects for that kind elsewhere (`discovery/skills.py`,
+#: `discovery/agents.py`), not a guessed API shape. A kind with no
+#: dedicated entry (including `None`/unlisted, and every kind whose
+#: "interface" isn't a single well-known convention -- DOCUMENT, PACKAGE,
+#: SERVICE, UNKNOWN) gets the empty list, same as every caller saw before
+#: this existed, rather than an invented description.
+_INTERFACES_BY_KIND: dict[ComponentKind, list[str]] = {
+    ComponentKind.SKILL: [
+        "SKILL.md front matter (name, description) as the discovery contract (discovery/skills.py)."
+    ],
+    ComponentKind.AGENT: [
+        ".claude/agents/<name>.md front matter (name, description, and any tools/model "
+        "grants) as the discovery contract (discovery/agents.py)."
+    ],
+    ComponentKind.MCP_SERVER: [
+        "Each exposed tool/resource's declared JSON schema for its inputs and outputs."
+    ],
+    ComponentKind.TOOL: ["Its CLI flags/arguments or public API signature."],
+    ComponentKind.WORKFLOW: ["Its trigger condition(s) and the side effect(s)/steps it runs."],
+    ComponentKind.REPOSITORY: [
+        "Its own README/CONTRIBUTING as the entry point for building and running it."
+    ],
+}
+
 
 def _test_strategy_for(target_kind: ComponentKind | None) -> str:
     if target_kind is None:
@@ -107,6 +134,12 @@ def _documentation_requirements_for(target_kind: ComponentKind | None) -> str:
     if target_kind is None:
         return _DOCUMENTATION_REQUIREMENTS
     return _DOCUMENTATION_REQUIREMENTS_BY_KIND.get(target_kind, _DOCUMENTATION_REQUIREMENTS)
+
+
+def _interfaces_for(target_kind: ComponentKind | None) -> list[str]:
+    if target_kind is None:
+        return []
+    return _INTERFACES_BY_KIND.get(target_kind, [])
 
 
 _UPDATE_TEST_STRATEGY = (
@@ -175,14 +208,19 @@ def propose_solution(
     list) shapes `test_strategy`/`documentation_requirements` to how that
     kind of component is actually verified and documented in practice --
     e.g. a Skill's contract lives in its SKILL.md, an Agent is verified by
-    running scenarios rather than unit tests. Omit it (the default) to get
-    the original generic wording, unchanged for every existing caller.
+    running scenarios rather than unit tests -- and populates `interfaces`
+    with that kind's own explicit, already-detected discovery convention
+    where one exists (a Skill's SKILL.md front matter, an Agent's
+    `.claude/agents/*.md` front matter, ...). Omit it (the default) to get
+    the original generic wording and an empty `interfaces` list, unchanged
+    for every existing caller.
     """
     evidence = evidence or []
     requirements = requirements or []
     research_results = research_results or []
     test_strategy = _test_strategy_for(target_kind)
     documentation_requirements = _documentation_requirements_for(target_kind)
+    interfaces = _interfaces_for(target_kind)
 
     if not research_results:
         return Proposal(
@@ -195,6 +233,7 @@ def propose_solution(
                 "No candidate solutions were found in the searched external ecosystem."
             ),
             capabilities=list(requirements),
+            interfaces=interfaces,
             test_strategy=test_strategy,
             documentation_requirements=documentation_requirements,
             rollback_strategy=_ROLLBACK_STRATEGY,
@@ -214,6 +253,7 @@ def propose_solution(
             alternatives_considered=alternatives,
             proposed_component_name=best.result.identifier,
             capabilities=list(requirements),
+            interfaces=interfaces,
             dependencies=[best.result.identifier],
             test_strategy=test_strategy,
             documentation_requirements=documentation_requirements,
@@ -238,6 +278,7 @@ def propose_solution(
         proposed_component_name=best.result.identifier,
         why_existing_solutions_insufficient=reason,
         capabilities=list(requirements),
+        interfaces=interfaces,
         dependencies=[best.result.identifier],
         test_strategy=test_strategy,
         documentation_requirements=documentation_requirements,
