@@ -232,6 +232,12 @@ _SCRIPT = r"""
       el("span", { "aria-hidden": "true" }, BADGE_SYMBOL[k] + " "), String(label));
   }
   function chip(text) { return el("span", { class: "chip" }, text); }
+  function advisoryList(advisories, label) {
+    if (!advisories || !advisories.length) return null;
+    return el("p", null, label + ": ", advisories.map(function (adv) {
+      return badge((adv.severity ? adv.severity + " " : "") + adv.id, "critical");
+    }));
+  }
 
   function confidenceKind(c) {
     if (c === "verified" || c === "high") return "success";
@@ -377,6 +383,8 @@ _SCRIPT = r"""
         badge(a.verdict.replace(/_/g, " "), verdictKind(a.verdict)), " ",
         badge(a.verdict_confidence, confidenceKind(a.verdict_confidence)),
         el("p", null, a.verdict_rationale),
+        advisoryList(a.current_version_advisories, "Known vulnerabilities (current version)"),
+        advisoryList(a.available_version_advisories, "Known vulnerabilities (available version)"),
         a.unknown_dimensions.length
           ? el("p", null, "Unresolved dimensions: " + a.unknown_dimensions.join(", ")) : null,
         a.affected_entity_ids.length

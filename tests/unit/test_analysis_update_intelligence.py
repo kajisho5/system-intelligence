@@ -13,7 +13,9 @@ from system_intelligence.core.enums import (
     UpdateVerdict,
 )
 from system_intelligence.core.relationships import Relationship
+from system_intelligence.core.security import SecurityAdvisory
 from system_intelligence.research.update_provider import ComponentUpdateError
+from system_intelligence.research.vulnerability_provider import VulnerabilityLookupError
 
 
 def _dependency(**overrides: object) -> Dependency:
@@ -527,3 +529,148 @@ def test_check_dependency_updates_deduplicates_shared_dependency() -> None:
     )
 
     assert len(check.assessments) == 1
+
+
+def test_assess_impact_carries_advisories_without_changing_verdict() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    current = build_current_state(dep)
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill", distribution_source="npm"
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+    advisory = SecurityAdvisory(id="GHSA-xxxx", summary="bad", severity="HIGH")
+
+    assessment = assess_impact(diff, [], current_advisories=[advisory], available_advisories=[])
+
+    assert assessment.current_version_advisories == [advisory]
+    assert assessment.available_version_advisories == []
+    # A vulnerable current version is informational only -- it does not by
+    # itself unlock a better verdict than the unresolved-dimensions case
+    # would otherwise produce.
+    assert assessment.verdict == UpdateVerdict.REVIEW_REQUIRED
+
+
+def test_assess_impact_advisories_default_to_empty_when_omitted() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    current = build_current_state(dep)
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+
+    assessment = assess_impact(diff, [])
+
+    assert assessment.current_version_advisories == []
+    assert assessment.available_version_advisories == []
+
+
+class _FakeVulnerabilityProvider:
+    name = "npm"
+
+    def __init__(
+        self,
+        advisories_by_version: dict[str, list[SecurityAdvisory]] | None = None,
+        error: Exception | None = None,
+    ):
+        self._advisories_by_version = advisories_by_version or {}
+        self._error = error
+        self.queried_versions: list[str] = []
+
+    def fetch_advisories(self, identity: ComponentIdentity, version: str) -> list[SecurityAdvisory]:
+        self.queried_versions.append(version)
+        if self._error:
+            raise self._error
+        return self._advisories_by_version.get(version, [])
+
+
+def test_check_dependency_updates_populates_advisories_from_vulnerability_provider() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    current_advisory = SecurityAdvisory(id="GHSA-old", summary="fixed in the new version")
+    vuln_provider = _FakeVulnerabilityProvider({"0.8.2": [current_advisory], "0.9.2": []})
+
+    check = check_dependency_updates(
+        [repo],
+        providers={"npm": _FakeProvider(available=available)},
+        vulnerability_providers={"npm": vuln_provider},
+    )
+
+    assert len(check.assessments) == 1
+    assert check.assessments[0].current_version_advisories == [current_advisory]
+    assert check.assessments[0].available_version_advisories == []
+    assert sorted(vuln_provider.queried_versions) == ["0.8.2", "0.9.2"]
+
+
+def test_check_dependency_updates_reuses_current_advisories_when_versions_match() -> None:
+    """Never query the same version twice -- current == available means
+    the same advisory set applies to both, with no update available at all."""
+    dep = _dependency(resolved_version="0.9.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    advisory = SecurityAdvisory(id="GHSA-still-open", summary="no fix yet")
+    vuln_provider = _FakeVulnerabilityProvider({"0.9.2": [advisory]})
+
+    check = check_dependency_updates(
+        [repo],
+        providers={"npm": _FakeProvider(available=available)},
+        vulnerability_providers={"npm": vuln_provider},
+    )
+
+    assert check.assessments[0].current_version_advisories == [advisory]
+    assert check.assessments[0].available_version_advisories == [advisory]
+    assert vuln_provider.queried_versions == ["0.9.2"]
+
+
+def test_check_dependency_updates_without_vulnerability_providers_leaves_advisories_empty() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+
+    check = check_dependency_updates([repo], providers={"npm": _FakeProvider(available=available)})
+
+    assert check.assessments[0].current_version_advisories == []
+    assert check.assessments[0].available_version_advisories == []
+
+
+def test_check_dependency_updates_vulnerability_lookup_failure_does_not_block_freshness_check() -> (
+    None
+):
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    vuln_provider = _FakeVulnerabilityProvider(error=VulnerabilityLookupError("OSV.dev down"))
+
+    check = check_dependency_updates(
+        [repo],
+        providers={"npm": _FakeProvider(available=available)},
+        vulnerability_providers={"npm": vuln_provider},
+    )
+
+    assert len(check.assessments) == 1
+    assert check.assessments[0].current_version_advisories == []
+    assert check.assessments[0].verdict != UpdateVerdict.UNKNOWN
+
+
+def test_check_dependency_updates_skips_vulnerability_lookup_when_current_version_unknown() -> None:
+    dep = _dependency(version_constraint="^0.8.2")  # a range: current version stays unresolved
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    vuln_provider = _FakeVulnerabilityProvider({"0.9.2": [SecurityAdvisory(id="x", summary="y")]})
+
+    check = check_dependency_updates(
+        [repo],
+        providers={"npm": _FakeProvider(available=available)},
+        vulnerability_providers={"npm": vuln_provider},
+    )
+
+    assert check.assessments[0].current_version_advisories == []
+    assert check.assessments[0].available_version_advisories == [
+        SecurityAdvisory(id="x", summary="y")
+    ]
+    assert vuln_provider.queried_versions == ["0.9.2"]

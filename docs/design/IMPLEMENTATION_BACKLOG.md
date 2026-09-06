@@ -51,6 +51,8 @@ named on each `[x]` line for the actual code, not just the schema.
 (A second provider, `research/mcp_registry.py` against the official MCP
 Registry, was added beyond this epic's original PyPI/npm-agnostic scope.)
 
+- [x] known-vulnerability lookup — `research/vulnerability_provider.py::VulnerabilityProvider` (a per-version "does this have any known advisories?" Protocol, distinct from `ComponentUpdateProvider`'s freshness question) implemented by `research/providers/osv.py::OSVVulnerabilityProvider` against OSV.dev, which covers both pypi and npm from one API. Wired into `analysis/update_intelligence.py::check_dependency_updates`/`ImpactAssessment` as informational `current_version_advisories`/`available_version_advisories` — never changes `UpdateVerdict` (a vulnerable current version does not by itself prove capability/dependency/interface impact was evaluated). `si check-updates --check-vulnerabilities` / `si dashboard --check-updates --check-vulnerabilities` (opt-in: one extra network request per resolved version). Live-validated against the real OSV.dev API (`lodash@4.17.20` correctly returns 5 real GHSA advisories)
+
 ## Epic 6 — Reporting
 - [x] static HTML generator — `reporting/html.py`
 - [x] graph visualization — `reporting/dashboard_html.py`'s capability provider SVG graph subtab

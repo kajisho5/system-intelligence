@@ -1061,6 +1061,44 @@ def test_check_updates_command_reports_review_required(
     assert "current: 2.0.0" in result.stdout
     assert "available: 2.9.0" in result.stdout
     assert "review_required" in result.stdout
+    # Without --check-vulnerabilities, no vulnerability lookup is attempted
+    # at all -- confirmed here by never mocking OSV's endpoint and still
+    # getting a clean pass with no advisory output.
+    assert "known vulnerabilities" not in result.stdout
+
+
+def test_check_updates_command_check_vulnerabilities_reports_advisory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    def _fake_http_post(url: str, headers: dict[str, str], data: bytes) -> tuple[int, bytes]:
+        body = json.loads(data)
+        if body["version"] == "2.0.0":
+            vuln = {"id": "GHSA-test", "summary": "x", "database_specific": {"severity": "HIGH"}}
+            return 200, json.dumps({"vulns": [vuln]}).encode()
+        return 200, b"{}"
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.osv._default_http_post", _fake_http_post
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--check-vulnerabilities"])
+
+    assert result.exit_code == 0
+    assert "known vulnerabilities (current version): GHSA-test (HIGH)" in result.stdout
+    assert "known vulnerabilities (available version)" not in result.stdout
 
 
 def test_check_updates_command_propose_prints_proposal(
@@ -1544,3 +1582,78 @@ def test_dashboard_command_check_updates_populates_update_intelligence(
     )
     assert dashboard_json["overview"]["has_update_check"] is True
     assert dashboard_json["overview"]["update_assessment_count"] == 1
+    # --check-updates alone never triggers the OSV lookup -- confirmed here
+    # by never mocking its endpoint and still getting a clean pass.
+    assert dashboard_json["update_assessments"][0]["current_version_advisories"] == []
+
+
+def test_dashboard_command_check_vulnerabilities_populates_advisories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    def _fake_http_post(url: str, headers: dict[str, str], data: bytes) -> tuple[int, bytes]:
+        return 200, json.dumps({"vulns": [{"id": "GHSA-test", "summary": "x"}]}).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.osv._default_http_post", _fake_http_post
+    )
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app,
+        [
+            "dashboard",
+            str(target_dir),
+            "--out",
+            str(out_dir),
+            "--check-updates",
+            "--check-vulnerabilities",
+        ],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    advisories = dashboard_json["update_assessments"][0]["current_version_advisories"]
+    assert advisories == [
+        {"id": "GHSA-test", "summary": "x", "severity": None, "aliases": [], "url": None}
+    ]
+
+
+def test_dashboard_command_check_vulnerabilities_without_check_updates_is_ignored(
+    tmp_path: Path,
+) -> None:
+    """--check-vulnerabilities has nothing to attach to without
+    --check-updates -- it must not fail, just be a no-op."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app, ["dashboard", str(target_dir), "--out", str(out_dir), "--check-vulnerabilities"]
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    assert dashboard_json["overview"]["has_update_check"] is False

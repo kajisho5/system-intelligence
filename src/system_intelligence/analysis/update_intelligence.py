@@ -35,10 +35,15 @@ from system_intelligence.core.enums import (
 from system_intelligence.core.evidence import Evidence
 from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.relationships import Relationship
+from system_intelligence.core.security import SecurityAdvisory
 from system_intelligence.core.state_diff import StateDiff, StateDiffItem
 from system_intelligence.research.update_provider import (
     ComponentUpdateError,
     ComponentUpdateProvider,
+)
+from system_intelligence.research.vulnerability_provider import (
+    VulnerabilityLookupError,
+    VulnerabilityProvider,
 )
 
 #: A constraint with no range operator, wildcard, or whitespace-separated
@@ -243,6 +248,9 @@ def assess_impact(
     state_diff: StateDiff,
     components: list[Component],
     relationships: list[Relationship] | None = None,
+    *,
+    current_advisories: list[SecurityAdvisory] | None = None,
+    available_advisories: list[SecurityAdvisory] | None = None,
 ) -> ImpactAssessment:
     """Assess what a StateDiff would mean for the rest of the observed system.
 
@@ -253,6 +261,15 @@ def assess_impact(
     Without it, this falls back to a same-Snapshot dependency name/ecosystem
     scan, which will under-report indirect/transitive consumers but never
     over-reports.
+
+    `current_advisories`/`available_advisories` (from a `VulnerabilityProvider`,
+    optional) are carried straight onto the returned `ImpactAssessment` as
+    independent, informational facts — they never change `verdict`. A
+    vulnerable current version does not by itself prove capability/
+    dependency/interface impact was evaluated, so it still cannot unlock
+    `UPDATE_RECOMMENDED` on its own (`ImpactAssessment`'s own validator);
+    what an update actually fixes is for the caller/human to read from
+    these lists directly.
     """
     identity = state_diff.identity
     affected_entity_ids = (
@@ -331,6 +348,8 @@ def assess_impact(
         verdict_confidence=verdict_confidence,
         verdict_rationale=rationale,
         evidence=evidence,
+        current_version_advisories=current_advisories or [],
+        available_version_advisories=available_advisories or [],
     )
 
 
@@ -356,10 +375,25 @@ class UpdateCheckResult:
     unavailable: list[UpdateLookupFailure]
 
 
+def _fetch_advisories(
+    provider: VulnerabilityProvider | None, identity: ComponentIdentity, version: str | None
+) -> list[SecurityAdvisory]:
+    """Best-effort advisory lookup: no provider, no version, or a failed
+    lookup all quietly yield no advisories rather than blocking the update
+    check — vulnerability data is supplementary here, not core to it."""
+    if provider is None or version is None:
+        return []
+    try:
+        return provider.fetch_advisories(identity, version)
+    except VulnerabilityLookupError:
+        return []
+
+
 def check_dependency_updates(
     components: list[Component],
     providers: dict[str, ComponentUpdateProvider],
     relationships: list[Relationship] | None = None,
+    vulnerability_providers: dict[str, VulnerabilityProvider] | None = None,
 ) -> UpdateCheckResult:
     """Run Update Intelligence for every Dependency whose ecosystem has a provider.
 
@@ -374,6 +408,11 @@ def check_dependency_updates(
     build_relationships`) is forwarded to `assess_impact` for precise
     affected-component lookup; omit it to fall back to the same-Snapshot
     dependency scan.
+
+    `vulnerability_providers` (same shape as `providers`, optional) adds a
+    known-vulnerability lookup for whichever version(s) could be resolved.
+    A failed or missing lookup never blocks the freshness check itself —
+    see `_fetch_advisories`.
     """
     seen: set[tuple[str, str]] = set()
     assessments: list[ImpactAssessment] = []
@@ -387,8 +426,9 @@ def check_dependency_updates(
             if provider is None:
                 continue
             seen.add(key)
+            identity = _identity_for(dependency)
             try:
-                available = provider.fetch_available_state(_identity_for(dependency))
+                available = provider.fetch_available_state(identity)
             except ComponentUpdateError as exc:
                 unavailable.append(
                     UpdateLookupFailure(
@@ -400,5 +440,24 @@ def check_dependency_updates(
                 continue
             current = build_current_state(dependency)
             diff = diff_states(current, available)
-            assessments.append(assess_impact(diff, components, relationships))
+
+            vulnerability_provider = (vulnerability_providers or {}).get(dependency.ecosystem)
+            current_advisories = _fetch_advisories(
+                vulnerability_provider, identity, current.version
+            )
+            available_advisories = (
+                current_advisories
+                if available.version == current.version
+                else _fetch_advisories(vulnerability_provider, identity, available.version)
+            )
+
+            assessments.append(
+                assess_impact(
+                    diff,
+                    components,
+                    relationships,
+                    current_advisories=current_advisories,
+                    available_advisories=available_advisories,
+                )
+            )
     return UpdateCheckResult(assessments=assessments, unavailable=unavailable)
