@@ -17,11 +17,22 @@ from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
 
+#: Matched case-insensitively against the actual on-disk filename (see
+#: `detect_root_documents`) -- a case-sensitive filesystem (Linux) would
+#: otherwise report a real `readme.md`/`License` as missing just because
+#: its case differs from the table below, which GitHub's own README/
+#: LICENSE detection does not do either. Bare `README`/`LICENSE` and
+#: `.txt` variants are included alongside the existing `.md`/`.rst`
+#: entries for the same reason multiple extensions were already listed
+#: per type: each is a real, common convention, not a guess.
 _ROOT_DOCUMENTS: dict[str, str] = {
     "README.md": "README",
     "README.rst": "README",
+    "README.txt": "README",
+    "README": "README",
     "LICENSE": "LICENSE",
     "LICENSE.md": "LICENSE",
+    "LICENSE.txt": "LICENSE",
     "CONTRIBUTING.md": "CONTRIBUTING",
     "SECURITY.md": "SECURITY",
 }
@@ -55,22 +66,27 @@ def detect_ci_jobs(root: Path) -> list[CIJob]:
 
 
 def detect_root_documents(root: Path) -> list[Document]:
+    try:
+        root_files = {entry.name.lower(): entry.name for entry in root.iterdir() if entry.is_file()}
+    except OSError:
+        return []
+
     documents: list[Document] = []
     for filename, document_type in _ROOT_DOCUMENTS.items():
-        path = root / filename
-        if not path.is_file():
+        actual_name = root_files.get(filename.lower())
+        if actual_name is None:
             continue
         documents.append(
             Document(
-                id=stable_id("document", filename),
-                name=filename,
-                path=filename,
+                id=stable_id("document", actual_name),
+                name=actual_name,
+                path=actual_name,
                 document_type=document_type,
                 evidence=[
                     Evidence(
                         kind=EvidenceKind.FILE,
-                        source=filename,
-                        observation=f"{filename} found at repository root",
+                        source=actual_name,
+                        observation=f"{actual_name} found at repository root",
                         confidence=Confidence.VERIFIED,
                     )
                 ],
