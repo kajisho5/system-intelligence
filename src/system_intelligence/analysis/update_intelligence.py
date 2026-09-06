@@ -55,6 +55,16 @@ from system_intelligence.research.vulnerability_provider import (
 #: suffixes ("1.2.3rc1", "2.0a1") keep matching as before.
 _EXACT_PIN_RE = re.compile(r"^(?:==?\s*)?[0-9][0-9A-Za-z.+_-]*$")
 
+#: Ecosystems whose own manifest convention treats a **bare** version
+#: constraint (no operator) as pinning that exact version -- npm's
+#: package.json ("18.2.0" means exactly that version). Never assumed for
+#: an ecosystem where a bare version means something else: Cargo.toml's
+#: own convention treats a bare "1.2.3" as a caret requirement
+#: (`^1.2.3`, a compatible-updates range), not an exact pin, so a bare
+#: Cargo constraint is only ever exact when explicitly prefixed with "="
+#: (Cargo's own exact-pin operator) -- never guessed from the bare form.
+_BARE_CONSTRAINT_IS_EXACT_PIN = frozenset({"npm"})
+
 
 def _has_wildcard_segment(constraint: str) -> bool:
     """True if any dot-separated segment is npm's wildcard shorthand.
@@ -89,7 +99,13 @@ def build_current_state(dependency: Dependency) -> ComponentState:
     version_confidence = Confidence.VERIFIED if version else Confidence.UNKNOWN
     if not version and dependency.version_constraint:
         constraint = dependency.version_constraint.strip()
-        if _EXACT_PIN_RE.match(constraint) and not _has_wildcard_segment(constraint):
+        has_pin_operator = constraint.startswith("=")
+        bare_is_exact = dependency.ecosystem in _BARE_CONSTRAINT_IS_EXACT_PIN
+        if (
+            _EXACT_PIN_RE.match(constraint)
+            and not _has_wildcard_segment(constraint)
+            and (has_pin_operator or bare_is_exact)
+        ):
             version = constraint.lstrip("=").strip()
             version_confidence = Confidence.HIGH
 
