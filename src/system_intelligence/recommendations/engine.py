@@ -29,6 +29,8 @@ _EFFORT_BY_CATEGORY: dict[str, str] = {
     "unused_candidate": "small",
     "duplicated_capability": "medium",
     "circular_dependency": "large",
+    "capability_gap": "medium",
+    "invalid_requirements_file": "small",
 }
 
 _SEVERITY_WEIGHT: dict[Severity, int] = {
