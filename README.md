@@ -53,6 +53,7 @@ Read-only unless noted:
 | `si diagnose <target>` | Discovery + deterministic analysis → Findings |
 | `si report <target>` | Static, offline-viewable HTML report |
 | `si dashboard <target>` | Interactive "System Intelligence Console" (see below) |
+| `si schema` | Export JSON Schema files for the canonical snapshot format (no target) |
 | `si diff <from> <to>` | Diff two canonical snapshot directories |
 | `si research <query>` | Search for existing solutions — `--provider github` (default) or `--provider mcp-registry` (network) |
 | `si check-updates <target>` | Component Update Intelligence: current vs. available state (network) |
@@ -67,12 +68,13 @@ Read-only unless noted:
 accept `--record <snapshot-dir>` to attach their result to an existing
 canonical snapshot so a later `si dashboard` can show it.
 
-`si dashboard` renders 13 sections (Overview, Findings, Updates,
+`si dashboard` renders 14 sections (Overview, Findings, Updates,
 Recommendations, Proposals, Executions, Components, Capabilities,
-Dependencies, Changes, Research, Evidence, Settings/Governance) from one
-or more snapshots as a single dependency-free HTML file — `--compare-with
-<snapshot-dir>` populates Changes, `--check-updates` populates Updates.
-Nothing it renders can merge, delete, force-push, or write to a remote.
+Dependencies, Architecture Decisions, Changes, Research, Evidence,
+Settings/Governance) from one or more snapshots as a single
+dependency-free HTML file — `--compare-with <snapshot-dir>` populates
+Changes, `--check-updates` populates Updates. Nothing it renders can
+merge, delete, force-push, or write to a remote.
 
 `si design` and `si watch` are registered as explicit placeholders (`si
 --help` documents them; running them fails clearly rather than silently

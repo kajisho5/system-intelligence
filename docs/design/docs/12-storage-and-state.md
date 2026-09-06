@@ -66,10 +66,13 @@ never SI's internal Python classes:
    re-derive itself.
 
 Both read the same `Snapshot` state; neither is a second, competing
-source of truth, and no separate "export" schema/version/CLI command
-exists beyond these — `Snapshot.tool_version` (surfaced on
-`DashboardData.overview.tool_version` too) is the one compatibility
-marker for both.
+source of truth, and no separate "export" format/version exists beyond
+these — `Snapshot.tool_version` (surfaced on `DashboardData.overview.
+tool_version` too) is the one compatibility marker for both. `si schema`
+(`reporting/schema.py::export_json_schemas`) writes JSON Schema files
+*describing* these same two paths — one per canonical snapshot file plus
+`dashboard_data` — for a consumer that wants to validate what it reads;
+it does not introduce a third format.
 
 ### Distinguishing what kind of claim something is
 

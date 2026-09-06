@@ -14,7 +14,7 @@ named on each `[x]` line for the actual code, not just the schema.
 - [x] add contribution guide — `CONTRIBUTING.md`
 
 ## Epic 2 — Domain model
-- [ ] define JSON schemas — no standalone `*.schema.json` artifact exists; the pydantic models in `core/` are the de facto schema (each can emit one via `model_json_schema()`, but none is exported/committed today)
+- [x] define JSON schemas — `reporting/schema.py::export_json_schemas`, `si schema [--out DIR]`; one `*.schema.json` per canonical snapshot file plus `dashboard_data`, guarded by a test that fails if a future `Snapshot` field has no matching schema entry
 - [x] implement entities — `core/entities.py`
 - [x] implement relationships — `core/relationships.py`, `analysis/relationships.py`
 - [x] implement evidence — `core/evidence.py`

@@ -55,6 +55,7 @@ from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import (
     build_dashboard_data,
     diff_snapshots,
+    export_json_schemas,
     generate_dashboard_html,
     generate_html_report,
 )
@@ -231,6 +232,27 @@ def report(target: str = _TARGET_ARGUMENT, out: Path = _REPORT_OUT_OPTION) -> No
 
     typer.echo(f"Report written to {report_path}")
     typer.echo(f"Snapshot written to {snapshot_dir}")
+
+
+_SCHEMA_OUT_OPTION = typer.Option(
+    Path("si-schema"), "--out", help="Directory to write the JSON Schema files into."
+)
+
+
+@app.command()
+def schema(out: Path = _SCHEMA_OUT_OPTION) -> None:
+    """Export JSON Schema files for the canonical snapshot format.
+
+    Writes one `<name>.schema.json` per file in the canonical snapshot
+    directory layout (docs/design/docs/12-storage-and-state.md), plus
+    `dashboard_data.schema.json` for the Dashboard's read model — so an
+    external consumer can validate what it reads without depending on
+    this project's own Python types. Takes no target: this describes the
+    format itself, not any particular scan.
+    """
+    written = export_json_schemas(out)
+    for path in written:
+        typer.echo(f"Wrote {path}")
 
 
 _FROM_DIR_ARGUMENT = typer.Argument(..., help="Directory of the earlier canonical snapshot.")
