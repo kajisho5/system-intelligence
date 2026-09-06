@@ -24,13 +24,13 @@ research-engine.md, and docs/design/IMPLEMENTATION_BACKLOG.md Epic 5):
 - `update_provider.ComponentUpdateProvider`: a narrower Protocol for
   Component Update Intelligence — "what is the latest available state of
   *this* known identity?" rather than a free-text search. `providers/pypi.py`,
-  `providers/npm.py`, `providers/crates_io.py`, and `providers/go_proxy.py`
-  implement it as pure ecosystem adapters.
+  `providers/npm.py`, `providers/crates_io.py`, `providers/go_proxy.py`, and
+  `providers/maven_central.py` implement it as pure ecosystem adapters.
 - `vulnerability_provider.VulnerabilityProvider`: "does this specific,
   already-known version have any known vulnerabilities?" — a per-version
   lookup, distinct from the freshness question `ComponentUpdateProvider`
   answers. `providers/osv.py` implements it against OSV.dev, which covers
-  pypi, npm, crates.io, and Go from one ecosystem-agnostic API.
+  pypi, npm, crates.io, Go, and Maven from one ecosystem-agnostic API.
 
 Not yet implemented: standards/specification lookups and general web
 search — docs/06 lists these as later steps in the search order.
@@ -48,6 +48,8 @@ from system_intelligence.research.providers import (
     CratesIoUpdateProvider,
     GoProxyUpdateError,
     GoProxyUpdateProvider,
+    MavenCentralUpdateError,
+    MavenCentralUpdateProvider,
     NpmUpdateError,
     NpmUpdateProvider,
     OSVLookupError,
@@ -77,6 +79,8 @@ __all__ = [
     "GitHubResearchProvider",
     "GoProxyUpdateError",
     "GoProxyUpdateProvider",
+    "MavenCentralUpdateError",
+    "MavenCentralUpdateProvider",
     "MCPRegistryError",
     "MCPRegistryResearchProvider",
     "NpmUpdateError",
