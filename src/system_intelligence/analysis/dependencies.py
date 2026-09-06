@@ -40,7 +40,10 @@ def _parse_pep508(requirement: str, rel_path: str) -> Dependency | None:
     # remainder as a version constraint.
     constraint = rest.split(";", 1)[0].strip()
     return Dependency(
-        id=stable_id("dependency", "pypi", name),
+        # Keyed by manifest path too: a monorepo with more than one
+        # pyproject.toml can legitimately declare the same package name at
+        # different constraints, and those must not collide into one id.
+        id=stable_id("dependency", "pypi", rel_path, name),
         name=name,
         ecosystem="pypi",
         version_constraint=constraint or None,
@@ -65,10 +68,13 @@ def _extract_package_json_dependencies(path: Path, rel_path: str) -> list[Depend
         return []
     dependencies: list[Dependency] = []
     for section in ("dependencies", "devDependencies"):
-        for name, version in data.get(section, {}).items():
+        section_value = data.get(section, {})
+        if not isinstance(section_value, dict):
+            continue  # malformed manifest: not the conventional name->version mapping
+        for name, version in section_value.items():
             dependencies.append(
                 Dependency(
-                    id=stable_id("dependency", "npm", name),
+                    id=stable_id("dependency", "npm", rel_path, name),
                     name=name,
                     ecosystem="npm",
                     version_constraint=str(version),

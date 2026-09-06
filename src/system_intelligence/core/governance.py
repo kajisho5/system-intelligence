@@ -8,7 +8,7 @@ enforces this, this module only defines the schema.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -26,7 +26,7 @@ class Approval(BaseModel):
     action: str
     target: str
     permission_level: PermissionLevel
-    approved_at: datetime = Field(default_factory=lambda: datetime.now())
+    approved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = None
 
     @model_validator(mode="after")
@@ -48,5 +48,5 @@ class AuditLogEntry(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     action: str
     result: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now())
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     correlation_id: str

@@ -77,3 +77,17 @@ def test_build_import_graph_uses_src_layout(tmp_path: Path) -> None:
     findings = detect_circular_dependencies(tmp_path)
 
     assert len(findings) == 1
+
+
+def test_build_import_graph_does_not_double_count_src_layout(tmp_path: Path) -> None:
+    # A repo with both a src/ package and unrelated root-level Python files
+    # (e.g. tests/) must not scan the root as a second source root: doing
+    # so used to produce phantom "src.pkg.*" modules alongside the real
+    # "pkg.*" ones.
+    _write(tmp_path / "src" / "pkg" / "__init__.py", "")
+    _write(tmp_path / "src" / "pkg" / "a.py", "")
+    _write(tmp_path / "tests" / "test_a.py", "")
+
+    graph = build_import_graph(tmp_path)
+
+    assert set(graph) == {"pkg", "pkg.a"}

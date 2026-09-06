@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -20,4 +20,4 @@ class Verification(BaseModel):
     tests_passed: bool | None = None
     regressions_found: list[str] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
-    verified_at: datetime = Field(default_factory=lambda: datetime.now())
+    verified_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

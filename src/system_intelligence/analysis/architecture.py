@@ -29,7 +29,18 @@ def _module_name(path: Path, source_root: Path) -> str | None:
 
 
 def _resolve_source_roots(root: Path) -> list[Path]:
-    return [p for p in (root, root / "src") if p.is_dir()]
+    """Pick the source root(s) to scan for local modules.
+
+    A `src/` layout and a flat layout are mutually exclusive conventions:
+    treating both `root` and `root/src` as source roots at once double-
+    counts every module under `src/` (once as `pkg.module`, once as
+    `src.pkg.module`, the latter never matching any real import
+    statement). Prefer `src/` when present.
+    """
+    src_root = root / "src"
+    if src_root.is_dir():
+        return [src_root]
+    return [root]
 
 
 def _current_package_parts(module_name: str, is_package_init: bool) -> list[str]:

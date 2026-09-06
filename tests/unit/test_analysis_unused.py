@@ -50,6 +50,30 @@ def test_audit_unused_skills_finding_has_evidence_and_medium_confidence(tmp_path
     assert finding.evidence[0].confidence.value == "verified"
 
 
+def test_classify_skill_usage_root_level_skill_referenced(tmp_path: Path) -> None:
+    # A SKILL.md at the repository root has an empty "own directory" —
+    # only the file itself should be excluded, not the whole repo.
+    (tmp_path / "SKILL.md").write_text("---\nname: root-skill\n---\n", encoding="utf-8")
+    (tmp_path / "consumer.py").write_text("# uses root-skill here\n", encoding="utf-8")
+
+    skill = Skill(name="root-skill", path="SKILL.md")
+    status, references = classify_skill_usage(skill, tmp_path)
+
+    assert status == UsageStatus.UNKNOWN
+    assert references == ["consumer.py"]
+
+
+def test_classify_skill_usage_root_level_skill_unreferenced(tmp_path: Path) -> None:
+    (tmp_path / "SKILL.md").write_text("---\nname: root-skill\n---\n", encoding="utf-8")
+    (tmp_path / "other.py").write_text("nothing relevant\n", encoding="utf-8")
+
+    skill = Skill(name="root-skill", path="SKILL.md")
+    status, references = classify_skill_usage(skill, tmp_path)
+
+    assert status == UsageStatus.UNREFERENCED
+    assert references == []
+
+
 def test_audit_unused_skills_no_finding_when_referenced(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "used"
     skill_dir.mkdir(parents=True)

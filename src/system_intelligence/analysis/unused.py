@@ -36,38 +36,60 @@ _SEARCHABLE_EXTENSIONS = {
 }
 
 
-def _find_references(skill: Skill, root: Path) -> list[str]:
-    skill_dir_parts = Path(skill.path).parent.parts if skill.path else ()
-    referencing_files: list[str] = []
-
+def _read_searchable_files(root: Path) -> dict[str, str]:
+    """Read every searchable-text file under `root` exactly once."""
+    contents: dict[str, str] = {}
     for path in iter_files(root):
-        rel_parts = path.relative_to(root).parts
-        if rel_parts[: len(skill_dir_parts)] == skill_dir_parts:
-            continue  # skip the Skill's own directory
         if path.suffix not in _SEARCHABLE_EXTENSIONS:
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            contents[str(path.relative_to(root))] = path.read_text(
+                encoding="utf-8", errors="ignore"
+            )
         except OSError:
             continue
-        if skill.name in text:
-            referencing_files.append(str(path.relative_to(root)))
+    return contents
 
+
+def _find_references(skill: Skill, file_contents: dict[str, str]) -> list[str]:
+    """Search an already-read file-content map for occurrences of `skill.name`.
+
+    A Skill's own `SKILL.md` is always excluded (its frontmatter contains
+    the Skill's own name, which is not a "consumer" reference). The rest of
+    its directory (scripts/, references/, ...) is excluded too, but only
+    when that directory is non-empty — a root-level `SKILL.md` has no
+    directory of its own to exclude beyond the file itself, and treating an
+    empty exclusion prefix as matching every path (as `()[:0] == ()`
+    trivially does) would skip the entire repository instead of nothing.
+    """
+    skill_path = Path(skill.path) if skill.path else None
+    skill_dir_parts = skill_path.parent.parts if skill_path else ()
+
+    referencing_files: list[str] = []
+    for rel_path_str, text in file_contents.items():
+        rel_parts = Path(rel_path_str).parts
+        if skill_path is not None and rel_parts == skill_path.parts:
+            continue
+        if skill_dir_parts and rel_parts[: len(skill_dir_parts)] == skill_dir_parts:
+            continue
+        if skill.name in text:
+            referencing_files.append(rel_path_str)
     return referencing_files
 
 
 def classify_skill_usage(skill: Skill, root: Path) -> tuple[UsageStatus, list[str]]:
     """Classify a Skill's static-reference status by searching outside its own directory."""
-    references = _find_references(skill, root)
+    references = _find_references(skill, _read_searchable_files(root))
     status = UsageStatus.UNREFERENCED if not references else UsageStatus.UNKNOWN
     return status, references
 
 
 def audit_unused_skills(skills: list[Skill], root: Path) -> list[Finding]:
+    file_contents = _read_searchable_files(root)  # read every file once, not once per Skill
     findings: list[Finding] = []
     for skill in skills:
-        status, references = classify_skill_usage(skill, root)
-        if status != UsageStatus.UNREFERENCED:
+        references = _find_references(skill, file_contents)
+        if references:
             continue
         findings.append(
             Finding(
