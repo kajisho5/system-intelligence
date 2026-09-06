@@ -64,6 +64,20 @@ def test_scan_structure_detects_requirements_txt(tmp_path: Path) -> None:
     assert result.package_manifests[0].ecosystem == "pypi"
 
 
+def test_scan_structure_detects_composer_json(tmp_path: Path) -> None:
+    """PHP's de facto standard package manifest (Packagist/Composer) --
+    LANGUAGE_EXTENSIONS already recognizes .php, but PACKAGE_MANIFESTS had
+    no matching entry, so a PHP repository's manifest was silently never
+    reported as ecosystem evidence."""
+    (tmp_path / "composer.json").write_text('{"require": {}}\n', encoding="utf-8")
+
+    result = scan_structure(tmp_path)
+
+    assert len(result.package_manifests) == 1
+    assert result.package_manifests[0].ecosystem == "packagist"
+    assert result.package_manifests[0].language == "PHP"
+
+
 def test_scan_structure_detects_additional_languages(tmp_path: Path) -> None:
     """PHP/C/C++/C#/Kotlin/Swift were entirely unrepresented in
     LANGUAGE_EXTENSIONS -- a repository using any of them previously
