@@ -78,9 +78,11 @@ from system_intelligence.research import (
     MCPRegistryError,
     MCPRegistryResearchProvider,
     NpmUpdateProvider,
+    OSVVulnerabilityProvider,
     PyPIUpdateProvider,
     ResearchCache,
     ResearchProvider,
+    VulnerabilityProvider,
     rank_candidates,
 )
 from system_intelligence.verification import VerificationError, run_verification
@@ -330,6 +332,14 @@ _DASHBOARD_CHECK_UPDATES_OPTION = typer.Option(
     "--check-updates",
     help="Also run Component Update Intelligence (network requests to pypi/npm) and include it.",
 )
+_DASHBOARD_CHECK_VULNERABILITIES_OPTION = typer.Option(
+    False,
+    "--check-vulnerabilities",
+    help=(
+        "With --check-updates, also look up known vulnerabilities (OSV.dev) for each "
+        "resolved version. Ignored without --check-updates."
+    ),
+)
 
 
 @app.command()
@@ -338,6 +348,7 @@ def dashboard(
     out: Path = _DASHBOARD_OUT_OPTION,
     compare_with: Path | None = _DASHBOARD_COMPARE_OPTION,
     check_updates: bool = _DASHBOARD_CHECK_UPDATES_OPTION,
+    check_vulnerabilities: bool = _DASHBOARD_CHECK_VULNERABILITIES_OPTION,
 ) -> None:
     """Generate the interactive System Intelligence Console for a local target.
 
@@ -353,7 +364,8 @@ def dashboard(
     into, those screens are correctly empty rather than showing stale data.
     `--check-updates` adds a network request per pypi/npm dependency
     (skipped by default, unlike `si report`/`si diagnose`, which never
-    touch the network at all).
+    touch the network at all); `--check-vulnerabilities` adds one more
+    per resolved version, for a known-vulnerability lookup (OSV.dev).
     """
     try:
         discovery = discover_local_repository(target)
@@ -393,8 +405,12 @@ def dashboard(
 
     update_check = None
     if check_updates:
+        vulnerability_providers = _vulnerability_providers() if check_vulnerabilities else None
         update_check = check_dependency_updates(
-            snapshot.components, _update_providers(), snapshot.relationships
+            snapshot.components,
+            _update_providers(),
+            snapshot.relationships,
+            vulnerability_providers,
         )
 
     data = build_dashboard_data(
@@ -520,6 +536,15 @@ def _update_providers() -> dict[str, ComponentUpdateProvider]:
     return {"pypi": PyPIUpdateProvider(), "npm": NpmUpdateProvider()}
 
 
+def _vulnerability_providers() -> dict[str, VulnerabilityProvider]:
+    # OSV.dev's own ecosystem names are case-sensitive ("PyPI", not
+    # "pypi") -- confirmed against the live API, not guessed.
+    return {
+        "pypi": OSVVulnerabilityProvider("pypi", "PyPI"),
+        "npm": OSVVulnerabilityProvider("npm", "npm"),
+    }
+
+
 _CHECK_UPDATES_PROPOSE_OPTION = typer.Option(
     False,
     "--propose",
@@ -544,6 +569,15 @@ _CHECK_UPDATES_PLAN_OUT_OPTION = typer.Option(
         "deterministically (range constraints, other ecosystems) are skipped, not guessed."
     ),
 )
+_CHECK_UPDATES_VULNERABILITIES_OPTION = typer.Option(
+    False,
+    "--check-vulnerabilities",
+    help=(
+        "Also look up known vulnerabilities (OSV.dev) for the current/available version of "
+        "each pypi/npm dependency. Off by default: one extra network request per resolved "
+        "version, independent of whether an update is available."
+    ),
+)
 
 
 @app.command(name="check-updates")
@@ -552,6 +586,7 @@ def check_updates(
     propose: bool = _CHECK_UPDATES_PROPOSE_OPTION,
     record: Path | None = _CHECK_UPDATES_RECORD_OPTION,
     plan_out: Path | None = _CHECK_UPDATES_PLAN_OUT_OPTION,
+    check_vulnerabilities: bool = _CHECK_UPDATES_VULNERABILITIES_OPTION,
 ) -> None:
     """Component Update Intelligence: current vs. available state for every dependency.
 
@@ -574,6 +609,13 @@ def check_updates(
     version) — see `proposals.change_plan_for_component_update`. Every
     other case still has no automatic path to a ChangePlan; that remains a
     job for a human or an external implementer, never guessed here.
+
+    `--check-vulnerabilities` additionally checks each resolved current/
+    available version against OSV.dev for known vulnerabilities
+    (`ImpactAssessment.current_version_advisories`/`available_version_
+    advisories`) — a separate, informational fact from the update verdict
+    itself: a known-vulnerable current version never by itself unlocks
+    `UPDATE_RECOMMENDED` (see `analysis.update_intelligence.assess_impact`).
     """
     try:
         discovery = discover_local_repository(target)
@@ -583,8 +625,12 @@ def check_updates(
 
     result = analyze_local_repository(discovery)
     providers = _update_providers()
+    vulnerability_providers = _vulnerability_providers() if check_vulnerabilities else None
     check = check_dependency_updates(
-        result.snapshot.components, providers, result.snapshot.relationships
+        result.snapshot.components,
+        providers,
+        result.snapshot.relationships,
+        vulnerability_providers,
     )
 
     if not check.assessments and not check.unavailable:
@@ -607,6 +653,18 @@ def check_updates(
             typer.echo(f"    affects: {', '.join(assessment.affected_entity_ids)}")
         if assessment.unknown_dimensions:
             typer.echo(f"    unresolved dimensions: {', '.join(assessment.unknown_dimensions)}")
+        if assessment.current_version_advisories:
+            ids = ", ".join(
+                f"{a.id} ({a.severity})" if a.severity else a.id
+                for a in assessment.current_version_advisories
+            )
+            typer.echo(f"    known vulnerabilities (current version): {ids}")
+        if assessment.available_version_advisories:
+            ids = ", ".join(
+                f"{a.id} ({a.severity})" if a.severity else a.id
+                for a in assessment.available_version_advisories
+            )
+            typer.echo(f"    known vulnerabilities (available version): {ids}")
 
     if check.unavailable:
         typer.echo(
@@ -724,6 +782,15 @@ _PROPOSAL_TARGET_OPTION = typer.Option(
         "Required by --handoff-out."
     ),
 )
+_PROPOSAL_TARGET_KIND_OPTION = typer.Option(
+    None,
+    "--target-kind",
+    help=(
+        "What kind of component this Proposal is for (e.g. 'skill', 'agent', "
+        "'mcp_server', 'package'; see ComponentKind) — shapes test_strategy/"
+        "documentation_requirements to how that kind is actually verified in practice."
+    ),
+)
 
 
 @app.command()
@@ -736,6 +803,7 @@ def propose(
     record: Path | None = _PROPOSAL_RECORD_OPTION,
     target: str | None = _PROPOSAL_TARGET_OPTION,
     handoff_out: Path | None = _PROPOSAL_HANDOFF_OUT_OPTION,
+    target_kind: str | None = _PROPOSAL_TARGET_KIND_OPTION,
 ) -> None:
     """Produce a concrete proposal: adopt, integrate, or create (docs/07-improvement-engine.md).
 
@@ -747,6 +815,17 @@ def propose(
     if handoff_out is not None and target is None:
         typer.echo("error: --handoff-out requires --target.", err=True)
         raise typer.Exit(code=1)
+    parsed_target_kind: ComponentKind | None = None
+    if target_kind is not None:
+        try:
+            parsed_target_kind = ComponentKind(target_kind)
+        except ValueError:
+            valid = ", ".join(sorted(k.value for k in ComponentKind))
+            typer.echo(
+                f"error: unknown --target-kind {target_kind!r} (expected one of: {valid})",
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
     research_results = []
     if research_query:
         provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
@@ -761,6 +840,7 @@ def propose(
         requirements=requirement,
         research_results=research_results,
         functional_fit_confirmed=confirm_fit,
+        target_kind=parsed_target_kind,
     )
 
     typer.echo(f"Proposal kind: {proposal.kind}")

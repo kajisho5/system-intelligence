@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from system_intelligence.core.enums import Confidence, UpdateVerdict
 from system_intelligence.core.evidence import Evidence
+from system_intelligence.core.security import SecurityAdvisory
 from system_intelligence.core.state_diff import StateDiff, StateDiffItem
 
 #: Dimensions an ImpactAssessment always tries to evaluate. Any left
@@ -48,6 +49,19 @@ class ImpactAssessment(BaseModel):
         description="Plain-language reason for the verdict — never left implicit."
     )
     evidence: list[Evidence] = Field(default_factory=list)
+    current_version_advisories: list[SecurityAdvisory] = Field(
+        default_factory=list,
+        description=(
+            "Known vulnerabilities affecting the *currently installed* version, from a "
+            "VulnerabilityProvider — independent of whether any update is available. Empty "
+            "means none were found, not that none were checked (a caller that ran no "
+            "vulnerability check leaves this empty too)."
+        ),
+    )
+    available_version_advisories: list[SecurityAdvisory] = Field(
+        default_factory=list,
+        description="Known vulnerabilities affecting the *available* version, same caveat.",
+    )
 
     @model_validator(mode="after")
     def _forbid_unsupported_recommendation(self) -> ImpactAssessment:

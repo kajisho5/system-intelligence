@@ -12,6 +12,7 @@ from system_intelligence.core.enums import (
     UpdateVerdict,
 )
 from system_intelligence.core.impact import ImpactAssessment
+from system_intelligence.core.security import SecurityAdvisory
 from system_intelligence.core.state_diff import StateDiff, StateDiffItem
 
 
@@ -71,3 +72,45 @@ def test_review_required_allowed_with_unknown_dimensions() -> None:
         verdict_rationale="cannot confirm safety",
     )
     assert assessment.unknown_dimensions == ("capability", "interface")
+
+
+def test_advisories_default_to_empty() -> None:
+    assessment = ImpactAssessment(
+        state_diff=_diff(),
+        verdict=UpdateVerdict.NO_UPDATE_AVAILABLE,
+        verdict_confidence=Confidence.VERIFIED,
+        verdict_rationale="unrelated to advisories",
+    )
+    assert assessment.current_version_advisories == []
+    assert assessment.available_version_advisories == []
+
+
+def test_a_vulnerable_current_version_still_cannot_unlock_update_recommended() -> None:
+    """Advisories are informational: they never bypass the validator that
+    forbids UPDATE_RECOMMENDED without every material dimension resolved."""
+    advisory = SecurityAdvisory(id="GHSA-xxxx", summary="something bad")
+    with pytest.raises(ValueError, match="UPDATE_RECOMMENDED"):
+        ImpactAssessment(
+            state_diff=_diff(),
+            unknown_dimensions=("capability",),
+            verdict=UpdateVerdict.UPDATE_RECOMMENDED,
+            verdict_confidence=Confidence.HIGH,
+            verdict_rationale="should not be allowed",
+            current_version_advisories=[advisory],
+        )
+
+
+def test_advisories_can_be_carried_alongside_a_valid_verdict() -> None:
+    advisory = SecurityAdvisory(
+        id="GHSA-xxxx", summary="Command injection", severity="HIGH", aliases=["CVE-2021-1"]
+    )
+    assessment = ImpactAssessment(
+        state_diff=_diff(),
+        unknown_dimensions=("capability",),
+        verdict=UpdateVerdict.REVIEW_REQUIRED,
+        verdict_confidence=Confidence.MEDIUM,
+        verdict_rationale="review needed",
+        current_version_advisories=[advisory],
+    )
+    assert assessment.current_version_advisories == [advisory]
+    assert assessment.available_version_advisories == []
