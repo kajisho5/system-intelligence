@@ -1,8 +1,8 @@
 """`si` command-line entry point.
 
 `si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`,
-`si diff`, and `si research` are implemented. The remaining commands from
-docs/design/docs/13-cli-and-ux.md (`design`, `improve`, `propose`,
+`si diff`, `si research`, `si improve`, and `si propose` are implemented.
+The remaining commands from docs/design/docs/13-cli-and-ux.md (`design`,
 `execute`, `verify`, `watch`) are registered as explicit placeholders so
 `si --help` documents the intended surface without claiming functionality
 that does not exist yet.
@@ -25,6 +25,8 @@ from system_intelligence.core.enums import ComponentKind, Severity
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
+from system_intelligence.proposals import propose_solution
+from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import diff_snapshots, generate_html_report
 from system_intelligence.research import (
     UNSCORABLE_DIMENSIONS,
@@ -44,8 +46,6 @@ app = typer.Typer(
 
 _PLANNED_COMMANDS = {
     "design": "Architecture/design proposal generation. Planned for Phase 6.",
-    "improve": "Generate an improvement plan. Planned for Phase 6.",
-    "propose": "Create a concrete change proposal. Planned for Phase 6.",
     "execute": "Perform an approved change. Planned for Phase 8 (human-approved execution).",
     "verify": "Validate a change and compare before/after state. Planned for Phase 8.",
     "watch": "Repeat diagnosis on an interval and detect drift. Planned for Phase 8.",
@@ -299,6 +299,102 @@ def research(
         f"\n{len(UNSCORABLE_DIMENSIONS)} dimension(s) could not be assessed from this data "
         f"and are excluded from ranking: {', '.join(UNSCORABLE_DIMENSIONS)}."
     )
+
+
+@app.command()
+def improve(target: str = _TARGET_ARGUMENT) -> None:
+    """Generate a ranked improvement plan: discovery, analysis, then recommendations.
+
+    Every recommendation traces back to a Finding's own evidence — this
+    does not invent anything Phase 3's analyzers didn't already find.
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    recommendations = generate_recommendations(result.snapshot.findings)
+
+    if not recommendations:
+        typer.echo("No recommendations — no findings to act on.")
+        return
+
+    typer.echo(f"{len(recommendations)} recommendation(s), highest priority first:\n")
+    for rec in recommendations:
+        typer.echo(f"- {rec.objective}")
+        typer.echo(f"    why: {rec.rationale}")
+        typer.echo(f"    effort: {rec.estimated_effort}, risk: {rec.risk}")
+        typer.echo(f"    confidence: {rec.confidence.value}")
+
+
+_PROBLEM_ARGUMENT = typer.Argument(..., help="The need or problem statement, in plain language.")
+_REQUIREMENT_OPTION = typer.Option(
+    [], "--requirement", help="A requirement the solution must satisfy. Repeatable."
+)
+_RESEARCH_QUERY_OPTION = typer.Option(
+    None, "--research-query", help="If given, search GitHub for candidates before deciding."
+)
+_CONFIRM_FIT_OPTION = typer.Option(
+    False,
+    "--confirm-fit",
+    help=(
+        "Assert that a human (or other process) has already verified the best "
+        "candidate's functional fit. Never set this from research data alone."
+    ),
+)
+_PROPOSAL_OUT_OPTION = typer.Option(
+    None, "--out", help="File to write the proposal as JSON. Skipped if omitted."
+)
+
+
+@app.command()
+def propose(
+    problem: str = _PROBLEM_ARGUMENT,
+    requirement: list[str] = _REQUIREMENT_OPTION,
+    research_query: str | None = _RESEARCH_QUERY_OPTION,
+    confirm_fit: bool = _CONFIRM_FIT_OPTION,
+    out: Path | None = _PROPOSAL_OUT_OPTION,
+) -> None:
+    """Produce a concrete proposal: adopt, integrate, or create (docs/07-improvement-engine.md).
+
+    Without `--research-query`, no external solution is searched for and
+    the result is always a creation proposal. `--confirm-fit` must reflect
+    an actual verification you (or another process) performed — this
+    command never infers functional fit from research metadata alone.
+    """
+    research_results = []
+    if research_query:
+        provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
+        try:
+            research_results = provider.search(research_query)
+        except GitHubResearchError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+    proposal = propose_solution(
+        problem,
+        requirements=requirement,
+        research_results=research_results,
+        functional_fit_confirmed=confirm_fit,
+    )
+
+    typer.echo(f"Proposal kind: {proposal.kind}")
+    typer.echo(f"Problem: {proposal.problem}")
+    if proposal.requirements:
+        typer.echo(f"Requirements: {', '.join(proposal.requirements)}")
+    if proposal.proposed_component_name:
+        typer.echo(f"Proposed component: {proposal.proposed_component_name}")
+    if proposal.alternatives_considered:
+        typer.echo(f"Alternatives considered: {', '.join(proposal.alternatives_considered)}")
+    if proposal.why_existing_solutions_insufficient:
+        typer.echo(f"Why not sufficient as-is: {proposal.why_existing_solutions_insufficient}")
+    typer.echo(f"Required permission level: {proposal.required_permission_level.name}")
+
+    if out is not None:
+        out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
+        typer.echo(f"\nProposal written to {out}")
 
 
 @app.command()

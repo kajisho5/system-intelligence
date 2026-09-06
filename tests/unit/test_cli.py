@@ -219,3 +219,104 @@ def test_research_command_network_error_fails_clearly(
 
     assert result.exit_code == 1
     assert "error" in result.stdout + (result.stderr or "")
+
+
+def test_improve_command_reports_recommendations(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "recommendation(s)" in result.stdout
+    assert "No README file was found" in result.stdout
+
+
+def test_improve_command_healthy_project_has_no_recommendations(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("MIT\n", encoding="utf-8")
+    (tmp_path / "CONTRIBUTING.md").write_text("Contribute\n", encoding="utf-8")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("name: CI\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_x.py").write_text("", encoding="utf-8")
+
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "No recommendations" in result.stdout
+
+
+def test_improve_command_missing_target_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["improve", str(tmp_path / "nope")])
+    assert result.exit_code == 1
+    assert "does not exist" in result.stdout + (result.stderr or "")
+
+
+def test_propose_command_without_research_is_creation(tmp_path: Path) -> None:
+    out_path = tmp_path / "proposal.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "propose",
+            "Need a markdown renderer",
+            "--requirement",
+            "renders CommonMark",
+            "--out",
+            str(out_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Proposal kind: creation" in result.stdout
+    written = json.loads(out_path.read_text(encoding="utf-8"))
+    assert written["kind"] == "creation"
+    assert written["requirements"] == ["renders CommonMark"]
+
+
+def test_propose_command_with_research_query(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response = {
+        "items": [
+            {
+                "full_name": "psf/black",
+                "html_url": "https://github.com/psf/black",
+                "license": {"spdx_id": "MIT"},
+                "pushed_at": "2026-08-01T00:00:00Z",
+                "archived": False,
+            },
+            {
+                "full_name": "other/formatter",
+                "html_url": "https://github.com/other/formatter",
+                "license": None,
+                "archived": True,
+            },
+        ]
+    }
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr("system_intelligence.research.github._default_http_get", _fake_http_get)
+
+    result = runner.invoke(app, ["propose", "Need a formatter", "--research-query", "black"])
+
+    assert result.exit_code == 0
+    assert "Proposal kind: integration" in result.stdout
+    assert "psf/black" in result.stdout
+    assert "Alternatives considered: other/formatter" in result.stdout
+
+
+def test_propose_command_research_error_fails_clearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _raise(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        raise OSError("no network")
+
+    monkeypatch.setattr("system_intelligence.research.github._default_http_get", _raise)
+
+    result = runner.invoke(app, ["propose", "Need X", "--research-query", "x"])
+
+    assert result.exit_code == 1
+    assert "error" in result.stdout + (result.stderr or "")
