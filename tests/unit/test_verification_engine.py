@@ -46,3 +46,17 @@ def test_run_verification_links_proposal_and_snapshot_ids(tmp_path: Path) -> Non
     assert verification.change_id == "change-1"
     assert verification.before_snapshot_id == "snapshot-before"
     assert verification.after_snapshot_id == "snapshot-after"
+
+
+def test_run_verification_links_component_id(tmp_path: Path) -> None:
+    verification = run_verification(
+        tmp_path, ["python3", "-c", "pass"], component_id="skill-ffmpeg"
+    )
+
+    assert verification.component_id == "skill-ffmpeg"
+
+
+def test_run_verification_without_component_id_leaves_it_none(tmp_path: Path) -> None:
+    verification = run_verification(tmp_path, ["python3", "-c", "pass"])
+
+    assert verification.component_id is None

@@ -441,6 +441,7 @@ _SCRIPT = r"""
     if (next && next.classList && next.classList.contains("detail-row")) { next.remove(); return; }
     var findings = DATA.findings.filter(function (f) { return (f.affected_entity_ids || []).indexOf(c.id) !== -1; });
     var assessments = DATA.update_assessments.filter(function (a) { return a.state_diff.identity.component_id === c.id; });
+    var verifications = DATA.verifications.filter(function (v) { return v.component_id === c.id; });
     var block = el("div", { class: "detail-block" },
       el("h4", null, "Trust level"),
       el("p", null, c.trust_level),
@@ -452,6 +453,11 @@ _SCRIPT = r"""
       findings.length ? el("ul", null, findings.map(function (f) { return el("li", null, badge(f.severity, severityKind(f.severity)), " " + f.statement); })) : el("p", null, "None."),
       el("h4", null, "Update assessments"),
       assessments.length ? el("ul", null, assessments.map(function (a) { return el("li", null, badge(a.verdict, verdictKind(a.verdict)), " " + a.verdict_rationale); })) : el("p", null, "Not checked."),
+      el("h4", null, "Verifications"),
+      verifications.length ? el("ul", null, verifications.map(function (v) {
+        var label = v.tests_passed === null ? "unknown" : String(v.tests_passed);
+        return el("li", null, badge(label, v.tests_passed ? "success" : "critical"), " " + (v.tests_run[0] || ""));
+      })) : el("p", null, "None recorded for this component."),
       el("h4", null, "Evidence"),
       c.evidence.length ? el("ul", null, c.evidence.map(function (e) { return el("li", null, "[" + e.kind + "] " + e.observation); })) : el("p", null, "None recorded."));
     var td = el("td", { colspan: "7" }, block);

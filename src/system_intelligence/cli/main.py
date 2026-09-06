@@ -893,6 +893,16 @@ _VERIFY_RECORD_OPTION = typer.Option(
         "this run's Verification to, so 'si dashboard' can show it later."
     ),
 )
+_VERIFY_COMPONENT_OPTION = typer.Option(
+    None,
+    "--component",
+    help=(
+        "A Component id from an existing snapshot's components.json this check is about "
+        "(e.g. one Skill's own conformance/test command) — attaches it to the recorded "
+        "Verification so 'si dashboard' can show it on that Component's detail view. Omit "
+        "when the check isn't about one specific discovered Component."
+    ),
+)
 
 
 @app.command()
@@ -900,6 +910,7 @@ def verify(
     command: str = _VERIFY_COMMAND_ARGUMENT,
     target: str = _VERIFY_TARGET_OPTION,
     record: Path | None = _VERIFY_RECORD_OPTION,
+    component: str | None = _VERIFY_COMPONENT_OPTION,
 ) -> None:
     """Run a test command locally and report the result (R10).
 
@@ -909,7 +920,7 @@ def verify(
     command passed.
     """
     try:
-        verification = run_verification(Path(target), shlex.split(command))
+        verification = run_verification(Path(target), shlex.split(command), component_id=component)
     except VerificationError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc

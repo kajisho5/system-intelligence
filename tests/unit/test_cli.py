@@ -544,6 +544,43 @@ def test_verify_command_record_appends_to_snapshot(tmp_path: Path) -> None:
     assert recorded[0]["tests_passed"] is True
 
 
+def test_verify_command_component_option_is_recorded(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "verify",
+            "python3 -c print(1)",
+            "--target",
+            str(tmp_path),
+            "--component",
+            "skill-ffmpeg",
+            "--record",
+            str(snapshot_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "verification.json").read_text(encoding="utf-8"))
+    assert recorded[0]["component_id"] == "skill-ffmpeg"
+
+
+def test_verify_command_without_component_option_leaves_it_null(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["verify", "python3 -c print(1)", "--target", str(tmp_path), "--record", str(snapshot_dir)],
+    )
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "verification.json").read_text(encoding="utf-8"))
+    assert recorded[0]["component_id"] is None
+
+
 def test_execute_command_record_appends_to_snapshot(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     plan_file = _write_plan_file(tmp_path)
@@ -943,6 +980,53 @@ def test_dashboard_command_compare_with_derives_trust_level_from_research(
     )
     repository = next(c for c in dashboard_json["components"] if c["kind"] == "repository")
     assert repository["trust_level"] == "community"
+
+
+def test_dashboard_command_compare_with_surfaces_component_scoped_verification(
+    tmp_path: Path,
+) -> None:
+    """`si verify --component <id> --record` attaches a Verification to a
+    specific discovered Component; `si dashboard --compare-with` must
+    surface it in the rendered snapshot's verifications list."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+
+    snap_out = tmp_path / "snap"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+    components = json.loads((snap_dir / "components.json").read_text(encoding="utf-8"))
+    repository_id = next(c["id"] for c in components if c["kind"] == "repository")
+
+    verify_result = runner.invoke(
+        app,
+        [
+            "verify",
+            "python3 -c print(1)",
+            "--target",
+            str(target_dir),
+            "--component",
+            repository_id,
+            "--record",
+            str(snap_dir),
+        ],
+    )
+    assert verify_result.exit_code == 0
+
+    out_dir = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        ["dashboard", str(target_dir), "--out", str(out_dir), "--compare-with", str(snap_dir)],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    assert len(dashboard_json["verifications"]) == 1
+    assert dashboard_json["verifications"][0]["component_id"] == repository_id
 
 
 def test_dashboard_command_compare_with_missing_manifest_fails_clearly(tmp_path: Path) -> None:

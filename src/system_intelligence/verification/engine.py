@@ -32,6 +32,7 @@ def run_verification(
     change_id: str | None = None,
     before_snapshot_id: str | None = None,
     after_snapshot_id: str | None = None,
+    component_id: str | None = None,
 ) -> Verification:
     """Run `command` in `repo_root` and record whether it passed.
 
@@ -79,6 +80,7 @@ def run_verification(
         change_id=change_id,
         before_snapshot_id=before_snapshot_id,
         after_snapshot_id=after_snapshot_id,
+        component_id=component_id,
         tests_run=[command_str],
         tests_passed=passed,
         evidence=[evidence],
