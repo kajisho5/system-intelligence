@@ -15,8 +15,22 @@ result currently provides.
 tree above): it turns a Component Update Intelligence `ImpactAssessment`
 into a `component_update`-kind Proposal, the last step of "Current State
 -> Available State -> State Diff -> Impact -> Recommendation -> Proposal".
+
+`change_plan_for_component_update` closes the one deterministic Proposal
+-> `execution.plan.ChangePlan` path this project currently has: a `pypi`
+exact-pin version bump, where the manifest edit is fully mechanical and
+never ambiguous. Every other Proposal kind still needs an external
+implementer (human or agent) to turn it into a ChangePlan by hand.
 """
 
-from system_intelligence.proposals.engine import propose_component_update, propose_solution
+from system_intelligence.proposals.engine import (
+    change_plan_for_component_update,
+    propose_component_update,
+    propose_solution,
+)
 
-__all__ = ["propose_component_update", "propose_solution"]
+__all__ = [
+    "change_plan_for_component_update",
+    "propose_component_update",
+    "propose_solution",
+]

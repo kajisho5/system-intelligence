@@ -32,3 +32,20 @@ class ChangePlan:
         if self.description:
             lines.insert(0, self.description)
         return lines
+
+    def to_plan_file_dict(self) -> dict[str, object]:
+        """Serialize to the exact shape `cli/main.py`'s `execute` command reads back.
+
+        `required_permission_level` is written by name (`"CREATE_BRANCH_OR_
+        DRAFT_PR"`), not by int value — `execute` looks it up via
+        `PermissionLevel[name]`, matching how a hand-authored plan file
+        already writes it.
+        """
+        return {
+            "branch_name": self.branch_name,
+            "commit_message": self.commit_message,
+            "files": self.files,
+            "description": self.description,
+            "evidence_summary": self.evidence_summary,
+            "required_permission_level": self.required_permission_level.name,
+        }

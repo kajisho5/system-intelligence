@@ -1,16 +1,27 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from system_intelligence.core.component_state import (
     AvailableState,
     ComponentIdentity,
     ComponentState,
 )
-from system_intelligence.core.enums import ComponentKind, Confidence, PermissionLevel, UpdateVerdict
+from system_intelligence.core.enums import (
+    ComponentKind,
+    Confidence,
+    PermissionLevel,
+    StateDiffCategory,
+    UpdateVerdict,
+)
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.research import ResearchResult
-from system_intelligence.core.state_diff import StateDiff
-from system_intelligence.proposals.engine import propose_component_update, propose_solution
+from system_intelligence.core.state_diff import StateDiff, StateDiffItem
+from system_intelligence.proposals.engine import (
+    change_plan_for_component_update,
+    propose_component_update,
+    propose_solution,
+)
 
 
 def _candidate(
@@ -164,3 +175,196 @@ def test_propose_component_update_none_for_no_update_available() -> None:
 
 def test_propose_component_update_none_for_unknown() -> None:
     assert propose_component_update(_update_assessment(UpdateVerdict.UNKNOWN)) is None
+
+
+def _manifest_evidence(rel_path: str, name: str) -> Evidence:
+    # Mirrors analysis.dependencies._manifest_evidence exactly -- the real
+    # producer of this Evidence shape.
+    return Evidence(
+        kind=EvidenceKind.PACKAGE_METADATA,
+        source=rel_path,
+        observation=f"{name!r} declared as a dependency in {rel_path}",
+        confidence=Confidence.VERIFIED,
+    )
+
+
+def test_propose_component_update_populates_change_file_paths_from_evidence() -> None:
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="requests", distribution_source="pypi"
+    )
+    current = ComponentState(
+        identity=identity,
+        version="1.2.3",
+        version_confidence=Confidence.HIGH,
+        evidence=[_manifest_evidence("pyproject.toml", "requests")],
+    )
+    available = AvailableState(identity=identity, provider="pypi", version="2.0.0")
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    assessment = ImpactAssessment(
+        state_diff=diff,
+        verdict=UpdateVerdict.UPDATE_RECOMMENDED,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+    proposal = propose_component_update(assessment)
+
+    assert proposal is not None
+    assert proposal.changes[0].file_paths == ["pyproject.toml"]
+
+
+def _pypi_pin_assessment(
+    root: Path,
+    *,
+    name: str = "requests",
+    from_version: str = "1.2.3",
+    to_version: str = "2.0.0",
+    manifest_path: str = "pyproject.toml",
+    version_confidence: Confidence = Confidence.HIGH,
+    verdict: UpdateVerdict = UpdateVerdict.UPDATE_RECOMMENDED,
+    write_manifest: bool = True,
+) -> ImpactAssessment:
+    if write_manifest:
+        (root / manifest_path).write_text(
+            f'[project]\ndependencies = [\n  "{name}=={from_version}",\n]\n', encoding="utf-8"
+        )
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name=name, distribution_source="pypi"
+    )
+    current = ComponentState(
+        identity=identity,
+        version=from_version,
+        version_confidence=version_confidence,
+        evidence=[_manifest_evidence(manifest_path, name)],
+    )
+    available = AvailableState(identity=identity, provider="pypi", version=to_version)
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    return ImpactAssessment(
+        state_diff=diff,
+        verdict=verdict,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+
+def test_change_plan_for_component_update_success(tmp_path: Path) -> None:
+    assessment = _pypi_pin_assessment(tmp_path)
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.branch_name == "si/update-requests-to-2.0.0"
+    assert plan.commit_message == "Update requests to 2.0.0"
+    assert plan.files == {
+        "pyproject.toml": '[project]\ndependencies = [\n  "requests==2.0.0",\n]\n'
+    }
+    assert plan.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+
+
+def test_change_plan_for_component_update_none_for_non_actionable_verdict(tmp_path: Path) -> None:
+    assessment = _pypi_pin_assessment(tmp_path, verdict=UpdateVerdict.NOT_ADVISABLE)
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_none_for_npm(tmp_path: Path) -> None:
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="left-pad", distribution_source="npm"
+    )
+    current = ComponentState(
+        identity=identity,
+        version="1.2.3",
+        version_confidence=Confidence.HIGH,
+        evidence=[_manifest_evidence("package.json", "left-pad")],
+    )
+    available = AvailableState(identity=identity, provider="npm", version="2.0.0")
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    assessment = ImpactAssessment(
+        state_diff=diff,
+        verdict=UpdateVerdict.UPDATE_RECOMMENDED,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_none_for_range_constraint(tmp_path: Path) -> None:
+    assessment = _pypi_pin_assessment(tmp_path, version_confidence=Confidence.UNKNOWN)
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_none_without_manifest_evidence(tmp_path: Path) -> None:
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="requests", distribution_source="pypi"
+    )
+    current = ComponentState(
+        identity=identity, version="1.2.3", version_confidence=Confidence.HIGH, evidence=[]
+    )
+    available = AvailableState(identity=identity, provider="pypi", version="2.0.0")
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    assessment = ImpactAssessment(
+        state_diff=diff,
+        verdict=UpdateVerdict.UPDATE_RECOMMENDED,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_none_when_manifest_file_missing(tmp_path: Path) -> None:
+    assessment = _pypi_pin_assessment(tmp_path, write_manifest=False)
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_none_when_available_version_missing(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\ndependencies = [\n  "requests==1.2.3",\n]\n', encoding="utf-8"
+    )
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="requests", distribution_source="pypi"
+    )
+    current = ComponentState(
+        identity=identity,
+        version="1.2.3",
+        version_confidence=Confidence.HIGH,
+        evidence=[_manifest_evidence("pyproject.toml", "requests")],
+    )
+    # An available-state provider that reports a breaking change but never
+    # actually resolved a version number for it.
+    available = AvailableState(identity=identity, provider="pypi", version=None)
+    diff = StateDiff(
+        identity=identity,
+        from_state=current,
+        to_state=available,
+        items=[
+            StateDiffItem(
+                category=StateDiffCategory.BREAKING,
+                description="breaking change flagged",
+                confidence=Confidence.HIGH,
+            )
+        ],
+    )
+    assessment = ImpactAssessment(
+        state_diff=diff,
+        verdict=UpdateVerdict.REVIEW_REQUIRED,
+        verdict_confidence=Confidence.MEDIUM,
+        verdict_rationale="rationale text",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_none_when_manifest_text_has_drifted(
+    tmp_path: Path,
+) -> None:
+    assessment = _pypi_pin_assessment(tmp_path)
+    # The manifest changed since the assessment ran -- the exact pinned
+    # text this needs to match no longer exists.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\ndependencies = [\n  "requests>=1.0,<2.0",\n]\n', encoding="utf-8"
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None

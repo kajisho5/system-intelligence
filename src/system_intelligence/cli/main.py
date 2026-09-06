@@ -56,7 +56,11 @@ from system_intelligence.execution import (
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
 from system_intelligence.policy import audit_log_entry
-from system_intelligence.proposals import propose_component_update, propose_solution
+from system_intelligence.proposals import (
+    change_plan_for_component_update,
+    propose_component_update,
+    propose_solution,
+)
 from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import (
     build_dashboard_data,
@@ -528,6 +532,17 @@ _CHECK_UPDATES_RECORD_OPTION = typer.Option(
         "generated Proposals to, so 'si dashboard' can show them later."
     ),
 )
+_CHECK_UPDATES_PLAN_OUT_OPTION = typer.Option(
+    None,
+    "--plan-out",
+    help=(
+        "Directory to write a ready-to-run ChangePlan JSON file for each actionable verdict "
+        "this can turn into one deterministically (today: a pypi dependency pinned to an "
+        "exact version, per proposals.change_plan_for_component_update). Feed the result "
+        "straight to 'si execute <file> <target> --approve'. Verdicts this can't determine "
+        "deterministically (range constraints, non-pypi ecosystems) are skipped, not guessed."
+    ),
+)
 
 
 @app.command(name="check-updates")
@@ -535,6 +550,7 @@ def check_updates(
     target: str = _TARGET_ARGUMENT,
     propose: bool = _CHECK_UPDATES_PROPOSE_OPTION,
     record: Path | None = _CHECK_UPDATES_RECORD_OPTION,
+    plan_out: Path | None = _CHECK_UPDATES_PLAN_OUT_OPTION,
 ) -> None:
     """Component Update Intelligence: current vs. available state for every dependency.
 
@@ -551,7 +567,12 @@ def check_updates(
     outcome, not a shortcoming of this command. `--propose` (closing
     "... -> Impact -> Recommendation -> Proposal") never produces a
     Proposal for a NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN verdict —
-    there is nothing to propose in those cases.
+    there is nothing to propose in those cases. `--plan-out` closes
+    "... -> Proposal -> ChangePlan" one step further, but only where doing
+    so is fully deterministic (a pypi dependency pinned to an exact
+    version) — see `proposals.change_plan_for_component_update`. Every
+    other case still has no automatic path to a ChangePlan; that remains a
+    job for a human or an external implementer, never guessed here.
     """
     try:
         discovery = discover_local_repository(target)
@@ -606,6 +627,26 @@ def check_updates(
         if record is not None:
             for proposal in proposals:
                 _append_json_record(record, "proposals.json", proposal)
+
+    if plan_out is not None:
+        plan_out.mkdir(parents=True, exist_ok=True)
+        written = 0
+        for assessment in check.assessments:
+            change_plan = change_plan_for_component_update(assessment, Path(target))
+            if change_plan is None:
+                continue
+            plan_path = plan_out / f"{change_plan.branch_name.replace('/', '-')}.json"
+            plan_path.write_text(
+                json.dumps(change_plan.to_plan_file_dict(), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            typer.echo(f"ChangePlan written to {plan_path}")
+            written += 1
+        if written == 0:
+            typer.echo(
+                "\nNo ChangePlan could be generated deterministically for any assessment "
+                "(today: pypi exact-pin version bumps only)."
+            )
 
 
 @app.command()
