@@ -9,6 +9,17 @@ def test_is_excluded_matches_known_vendor_dirs() -> None:
     assert is_excluded(("src", "app")) is False
 
 
+def test_is_excluded_matches_vendor_tox_and_target_dirs() -> None:
+    """vendor (Go `go mod vendor` / PHP Composer's own dependency-vendoring
+    convention -- a full copy of every dependency's source tree, including
+    its own manifest/README/LICENSE files) is this module's own docstring
+    concern realized exactly; .tox and target are the same "dependency
+    cache / build output" shape as the already-excluded .venv/dist/build."""
+    assert is_excluded(("vendor", "github.com", "pkg", "go.mod")) is True
+    assert is_excluded((".tox", "py312", "lib")) is True
+    assert is_excluded(("target", "debug", "build")) is True
+
+
 def test_is_excluded_matches_egg_info_suffix() -> None:
     assert is_excluded(("foo.egg-info",)) is True
 

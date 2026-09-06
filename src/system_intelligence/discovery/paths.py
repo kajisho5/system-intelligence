@@ -12,18 +12,32 @@ from __future__ import annotations
 from pathlib import Path
 
 #: Directories never descended into. Not user-configurable in Phase 2.
+#: `vendor` (Go's `go mod vendor` / PHP Composer's own vendoring
+#: convention -- a full copy of every dependency's source tree, complete
+#: with its own go.mod/README/LICENSE files, checked in verbatim) is the
+#: single most direct example of this module's own docstring concern
+#: ("a vendored package's own SKILL.md" leaking into the discovered
+#: inventory) that wasn't actually excluded. `.tox` (Python's tox, same
+#: full-virtualenv shape as the already-excluded `.venv`/`venv`) and
+#: `target` (Rust/Cargo's and Maven's build-output directory) round out
+#: the same "dependency cache / build output" categories this frozenset
+#: already covers for other ecosystems, for two ecosystems this project
+#: now also discovers dependencies for (Cargo.toml, go.mod).
 EXCLUDED_DIRS = frozenset(
     {
         ".git",
         "node_modules",
         ".venv",
         "venv",
+        ".tox",
         "__pycache__",
         ".mypy_cache",
         ".ruff_cache",
         ".pytest_cache",
         "dist",
         "build",
+        "target",
+        "vendor",
         ".eggs",
     }
 )

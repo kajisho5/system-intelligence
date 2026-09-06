@@ -51,3 +51,23 @@ def test_scan_structure_detects_gradle_kotlin_dsl(tmp_path: Path) -> None:
 
     assert len(result.package_manifests) == 1
     assert result.package_manifests[0].ecosystem == "gradle"
+
+
+def test_scan_structure_excludes_vendored_go_modules(tmp_path: Path) -> None:
+    """A `go mod vendor`-managed project checks in a full copy of every
+    dependency's own source tree -- including its own go.mod -- under
+    vendor/. That vendored go.mod must never be reported as if it were the
+    target repository's own dependency manifest."""
+    (tmp_path / "go.mod").write_text(
+        "module example.com/x\n\nrequire github.com/pkg/errors v0.9.1\n", encoding="utf-8"
+    )
+    vendored = tmp_path / "vendor" / "github.com" / "pkg" / "errors"
+    vendored.mkdir(parents=True)
+    (vendored / "go.mod").write_text(
+        "module github.com/pkg/errors\n\nrequire golang.org/x/sys v0.5.0\n", encoding="utf-8"
+    )
+
+    result = scan_structure(tmp_path)
+
+    assert len(result.package_manifests) == 1
+    assert result.package_manifests[0].path == "go.mod"
