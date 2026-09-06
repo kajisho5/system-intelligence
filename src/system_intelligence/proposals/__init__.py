@@ -6,10 +6,15 @@ found? high-quality candidate with confirmed functional fit? adoption;
 high-quality but unconfirmed fit, or a lower-quality candidate? integration
 (partial); nothing found? creation. Proposals are never auto-executed.
 
-Not yet implemented: refactor proposals (need capability-gap/duplicate
-detection wired to this engine) and the "new Skill"/"new Agent" proposal
-templates docs/07 also lists — both need richer input than a bare research
-result currently provides.
+`propose_solution`'s optional `target_kind` (a `core.enums.ComponentKind`)
+shapes `test_strategy`/`documentation_requirements` to how that kind of
+component is actually verified in practice (e.g. a Skill's contract lives
+in its SKILL.md; an Agent is verified by running scenarios, not unit
+tests) — see `_TEST_STRATEGY_BY_KIND` in `engine.py`. Not yet implemented:
+refactor proposals (need capability-gap/duplicate detection wired to this
+engine) and per-kind `interfaces`/`capabilities` *shape* (docs/07's "new
+Skill"/"new Agent" templates go further than test/doc wording — both still
+need richer input than a bare research result currently provides).
 
 `propose_component_update` is a separate decision (not the adopt/create
 tree above): it turns a Component Update Intelligence `ImpactAssessment`

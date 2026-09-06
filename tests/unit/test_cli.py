@@ -414,6 +414,26 @@ def test_propose_command_handoff_out_without_target_fails_clearly() -> None:
     assert "--handoff-out requires --target" in result.stdout + (result.stderr or "")
 
 
+def test_propose_command_target_kind_shapes_test_strategy(tmp_path: Path) -> None:
+    out_path = tmp_path / "proposal.json"
+
+    result = runner.invoke(
+        app,
+        ["propose", "Need a linter Skill", "--target-kind", "skill", "--out", str(out_path)],
+    )
+
+    assert result.exit_code == 0
+    written = json.loads(out_path.read_text(encoding="utf-8"))
+    assert "SKILL.md" in written["test_strategy"]
+
+
+def test_propose_command_unknown_target_kind_fails_clearly() -> None:
+    result = runner.invoke(app, ["propose", "Need X", "--target-kind", "spaceship"])
+
+    assert result.exit_code == 1
+    assert "unknown --target-kind" in result.stdout + (result.stderr or "")
+
+
 def test_propose_command_with_research_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
