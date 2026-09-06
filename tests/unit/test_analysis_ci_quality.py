@@ -21,3 +21,47 @@ def test_audit_no_findings_when_ci_and_tests_present(tmp_path: Path) -> None:
     findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
 
     assert findings == []
+
+
+def test_audit_recognizes_go_test_files_colocated_with_source(tmp_path: Path) -> None:
+    """Go's own testing convention colocates `<name>_test.go` directly next
+    to the source file it tests -- never under a `tests/` directory at
+    all. A real, fully-tested Go project must not be flagged as having no
+    tests just because it has no `tests/` directory."""
+    (tmp_path / "main.go").write_text("package main\nfunc main() {}\n", encoding="utf-8")
+    (tmp_path / "main_test.go").write_text(
+        'package main\nimport "testing"\nfunc TestMain(t *testing.T) {}\n', encoding="utf-8"
+    )
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert findings == []
+
+
+def test_audit_recognizes_rust_integration_tests_under_tests_dir(tmp_path: Path) -> None:
+    """Every file under Cargo's own `tests/` directory is compiled as its
+    own integration-test crate -- a bare `*.rs` there is unambiguously a
+    test file, unlike the existing Python/JS/TS-only patterns."""
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "integration_test.rs").write_text(
+        "#[test]\nfn it_works() { assert!(true); }\n", encoding="utf-8"
+    )
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert findings == []
+
+
+def test_audit_flags_go_project_with_no_test_go_files(tmp_path: Path) -> None:
+    (tmp_path / "main.go").write_text("package main\nfunc main() {}\n", encoding="utf-8")
+    repository = Repository(name="repo", local_path=str(tmp_path))
+    ci_jobs = [CIJob(name="ci", provider="github-actions")]
+
+    findings = audit_ci_and_tests(repository, tmp_path, ci_jobs)
+
+    assert {f.category for f in findings} == {"test_gap"}
