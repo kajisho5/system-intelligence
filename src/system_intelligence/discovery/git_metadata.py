@@ -69,9 +69,27 @@ def collect_git_metadata(repo_path: Path) -> GitMetadata:
             )
         )
 
-    branch = _run_git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
-    if branch:
-        _observe(f"current branch is {branch!r}", "git rev-parse --abbrev-ref HEAD")
+    # `git symbolic-ref refs/remotes/origin/HEAD` names the remote's own
+    # default branch (set locally at clone time, e.g. "refs/remotes/
+    # origin/main") -- unlike `git rev-parse --abbrev-ref HEAD` (this
+    # working tree's *currently checked out* branch), it stays correct
+    # regardless of which branch is checked out, and -- critically --
+    # in a detached-HEAD checkout (the common case for a CI-checked-out
+    # commit, verified live against a real shallow clone), where
+    # `rev-parse --abbrev-ref HEAD` returns the literal, nonsensical
+    # string "HEAD" rather than a branch name at all. Never falls back to
+    # a network call (e.g. `git remote show origin`) to resolve this if
+    # the local symref is unset (no remote configured, or one added
+    # without ever being fetched) -- this collector is local-only, so
+    # that case leaves `default_branch` unset rather than guessed.
+    symbolic_ref = _run_git(repo_path, "symbolic-ref", "refs/remotes/origin/HEAD")
+    default_branch = None
+    if symbolic_ref:
+        default_branch = symbolic_ref.removeprefix("refs/remotes/origin/") or None
+    if default_branch:
+        _observe(
+            f"default branch is {default_branch!r}", "git symbolic-ref refs/remotes/origin/HEAD"
+        )
 
     remote_url = _run_git(repo_path, "remote", "get-url", "origin")
     if remote_url:
@@ -93,7 +111,7 @@ def collect_git_metadata(repo_path: Path) -> GitMetadata:
 
     return GitMetadata(
         is_git_repository=True,
-        default_branch=branch or None,
+        default_branch=default_branch,
         remote_url=remote_url or None,
         last_commit_sha=last_sha or None,
         last_commit_author=last_author or None,
