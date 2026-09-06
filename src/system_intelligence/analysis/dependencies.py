@@ -1,12 +1,14 @@
 """Dependency extraction from package manifests (R2, "dependency graph").
 
 Phase 3 scope: parse declared dependencies out of `pyproject.toml` (PEP 621
-`[project.dependencies]`), `package.json` (`dependencies`/
-`devDependencies`), `Cargo.toml` (`[dependencies]`/`[dev-dependencies]`/
-`[build-dependencies]`), `go.mod` (`require` directives), and `pom.xml`
-(the project's own direct `<dependencies>`, literal versions only). No
-dependency resolution, transitive graph, or version conflict detection
-yet — this only records what a manifest *declares*.
+`[project.dependencies]`), `requirements.txt` (each line as one PEP 508
+requirement, pip's own option flags and direct URL/VCS references
+skipped), `package.json` (`dependencies`/`devDependencies`), `Cargo.toml`
+(`[dependencies]`/`[dev-dependencies]`/`[build-dependencies]`), `go.mod`
+(`require` directives), and `pom.xml` (the project's own direct
+`<dependencies>`, literal versions only). No dependency resolution,
+transitive graph, or version conflict detection yet — this only records
+what a manifest *declares*.
 """
 
 from __future__ import annotations
@@ -64,6 +66,41 @@ def _extract_pyproject_dependencies(path: Path, rel_path: str) -> list[Dependenc
     requirements = data.get("project", {}).get("dependencies", [])
     dependencies = [_parse_pep508(r, rel_path) for r in requirements if isinstance(r, str)]
     return [d for d in dependencies if d is not None]
+
+
+#: A `#` starting a comment, per pip's own requirements-file convention --
+#: only when preceded by whitespace or at the very start of the line, so a
+#: `#` inside a URL fragment (`git+https://...#egg=name`) is never mistaken
+#: for one.
+_REQUIREMENTS_TXT_COMMENT_RE = re.compile(r"(?:^|\s)#.*$")
+
+
+def _extract_requirements_txt_dependencies(path: Path, rel_path: str) -> list[Dependency]:
+    """Parse a pip `requirements.txt`.
+
+    Each remaining line is treated as one PEP 508 requirement string, the
+    same as pyproject.toml's `[project.dependencies]` (`_parse_pep508`).
+    pip's own requirements-file-only syntax has no registry-resolvable
+    name/version pair a lookup could use, so it is skipped rather than
+    guessed at: a comment (stripped above); an option flag (`-r other.txt`,
+    `-e .`, `-c constraints.txt`, `--index-url ...`, a hash-pinning
+    continuation's `--hash=...`), always starting with `-`; and a direct
+    URL/VCS reference (`git+https://...`, `https://...`), identified by
+    `://` since it has no simple, safe general name extraction.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    dependencies: list[Dependency] = []
+    for raw_line in lines:
+        line = _REQUIREMENTS_TXT_COMMENT_RE.sub("", raw_line).strip()
+        if not line or line.startswith("-") or "://" in line:
+            continue
+        dependency = _parse_pep508(line.rstrip("\\").strip(), rel_path)
+        if dependency is not None:
+            dependencies.append(dependency)
+    return dependencies
 
 
 def _extract_package_json_dependencies(path: Path, rel_path: str) -> list[Dependency]:
@@ -258,6 +295,7 @@ def _extract_pom_dependencies(path: Path, rel_path: str) -> list[Dependency]:
 
 _EXTRACTORS = {
     "pyproject.toml": _extract_pyproject_dependencies,
+    "requirements.txt": _extract_requirements_txt_dependencies,
     "package.json": _extract_package_json_dependencies,
     "Cargo.toml": _extract_cargo_dependencies,
     "pom.xml": _extract_pom_dependencies,
