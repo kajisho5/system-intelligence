@@ -112,6 +112,60 @@ si --help      # lists the full planned command surface;
                # commands not yet implemented say so explicitly
 ```
 
+## Quickstart
+
+Point it at any repository — your own, or a local clone — no configuration
+required beyond the install above. Run these from inside that repository
+(the examples below all target it as `.`):
+
+```bash
+cd your-repo
+si diagnose .                              # read-only: discovery + findings, nothing written
+si report . --out ./si-out                 # same, plus a static HTML report at ./si-out/report.html
+si check-updates . --plan-out ./si-plans   # network: pypi/npm dependency freshness;
+                                            # writes a ready-to-run ChangePlan for any exact-pin bump found
+```
+
+A generated `ChangePlan` needs its own permission level (`CREATE_BRANCH_OR_
+DRAFT_PR`), above the default ceiling — `si execute --approve` alone is
+denied without a matching `Approval` record. `target` in the approval must
+match the `<target>` you pass to `si execute` **exactly** (as a literal
+string, not a resolved path) — keep both as `.`:
+
+```bash
+cat > approval.json <<'EOF'
+{"actor": "human:you", "scope": "repository", "action": "create_local_branch_and_commit",
+ "target": ".", "permission_level": 4}
+EOF
+si execute ./si-plans/<file>.json . --approve --approval-file approval.json
+```
+
+This only ever creates a local branch and commit — nothing above touches a
+remote. Pushing that branch and opening a Draft PR is a separate step,
+`si execute ... --push --repo owner/repo`, gated by its own separate
+Approval — see [Safety](#safety).
+
+### GitHub authentication (optional, but recommended)
+
+`si research`, `si propose --research-query`, and `si execute --push` all
+call the GitHub API. Without a token they still work, but as unauthenticated
+requests capped at 60/hour by GitHub — easy to hit during normal use.
+`si execute --push` requires a token outright (to actually push a branch
+and open a Draft PR).
+
+```bash
+export GITHUB_TOKEN=ghp_...   # a fine-grained PAT; public-repo read access is enough
+                               # for research/propose. execute --push additionally
+                               # pushes a branch and opens a PR, so it needs
+                               # "Contents: write" and "Pull requests: write"
+                               # on the target repo.
+```
+
+Only ever set this as an environment variable — no `si` command accepts a
+token as a CLI argument, so it never ends up in shell history or a process
+list (`ps`). This is a deliberate, load-bearing design choice, not an
+oversight: keep it that way in any change that touches token handling.
+
 ## Development
 
 ```bash
