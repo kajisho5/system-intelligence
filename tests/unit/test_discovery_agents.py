@@ -21,6 +21,7 @@ def test_detect_agents_standard_format(tmp_path: Path) -> None:
     assert agent.tool_names == ["Read", "Grep", "Glob"]
     assert agent.model_provider == "sonnet"
     assert agent.path == ".claude/agents/code-reviewer.md"
+    assert agent.is_standard_format is True
     assert agent.evidence
 
 
@@ -36,6 +37,7 @@ def test_detect_agents_missing_frontmatter_fields(tmp_path: Path) -> None:
     assert len(agents) == 1
     assert agents[0].name == "weird"
     assert agents[0].description is None
+    assert agents[0].is_standard_format is False
 
 
 def test_detect_agents_no_frontmatter_falls_back_to_filename(tmp_path: Path) -> None:

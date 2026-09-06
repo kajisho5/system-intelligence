@@ -113,7 +113,7 @@ def _run_dependency_extraction(ctx: _OrchestrationContext) -> None:
 
 
 def _run_capability_extraction(ctx: _OrchestrationContext) -> None:
-    ctx.capabilities = extract_capabilities(ctx.skills)
+    ctx.capabilities = extract_capabilities([*ctx.skills, *ctx.agents])
     ctx.findings.extend(detect_duplicate_capabilities(ctx.capabilities))
 
 

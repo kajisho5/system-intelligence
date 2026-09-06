@@ -97,6 +97,7 @@ def detect_agents(root: Path) -> list[Agent]:
                 name=name or agent_md.stem,
                 path=str(rel_path),
                 description=description,
+                is_standard_format=is_standard,
                 model_provider=model,
                 tool_names=tool_names,
                 evidence=evidence,

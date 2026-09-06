@@ -56,8 +56,8 @@ CAPABILITIES: dict[str, CapabilityDescriptor] = {
     ),
     "capability_extraction": CapabilityDescriptor(
         "capability_extraction",
-        "Extract Capabilities from Skills and flag duplicate names.",
-        requires=frozenset({"skill_detection"}),
+        "Extract Capabilities from Skills and Agents and flag duplicate names.",
+        requires=frozenset({"skill_detection", "agent_detection"}),
     ),
     "unused_skill_detection": CapabilityDescriptor(
         "unused_skill_detection",

@@ -215,3 +215,27 @@ def test_analyze_local_repository_reports_declared_capability_gap_end_to_end(
     gap_findings = [f for f in result.snapshot.findings if f.category == "capability_gap"]
     assert len(gap_findings) == 1
     assert "pdf export" in gap_findings[0].statement
+
+
+def test_analyze_local_repository_agent_satisfies_declared_capability(tmp_path: Path) -> None:
+    """A capability declared in `.si/requirements.json` and satisfied only
+    by an Agent (not a Skill) must not be falsely reported as a gap --
+    Agents are a capability-declaring component kind exactly like Skills
+    (discovery/agents.py), and must be extracted the same way."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "code-reviewer.md").write_text(
+        "---\nname: code-reviewer\ndescription: Reviews code for bugs\n---\n", encoding="utf-8"
+    )
+    (tmp_path / ".si").mkdir()
+    (tmp_path / ".si" / "requirements.json").write_text(
+        '{"capabilities": [{"name": "code-reviewer"}]}', encoding="utf-8"
+    )
+    _init_repo(tmp_path)
+
+    discovery = discover_local_repository(str(tmp_path))
+    result = analyze_local_repository(discovery)
+
+    gap_findings = [f for f in result.snapshot.findings if f.category == "capability_gap"]
+    assert gap_findings == []
+    assert any(c.name == "code-reviewer" for c in result.snapshot.capabilities)
