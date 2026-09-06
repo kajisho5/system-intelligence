@@ -375,6 +375,58 @@ def test_change_plan_for_component_update_none_for_poetry_table_form(tmp_path: P
     assert change_plan_for_component_update(assessment, tmp_path) is None
 
 
+def test_change_plan_for_component_update_success_for_requirements_txt(tmp_path: Path) -> None:
+    """requirements.txt has no surrounding quotes at all, unlike either
+    pyproject.toml form -- arguably the most common pypi pinning
+    convention (`pip freeze > requirements.txt`), and previously never
+    matched by any patcher at all since `_patch_pyproject_pin` was the
+    only one ever selected for the `pypi` ecosystem."""
+    assessment = _pypi_pin_assessment(
+        tmp_path,
+        manifest_path="requirements.txt",
+        manifest_text="click==1.0.0\nrequests==1.2.3\nflask==2.0.0\n",
+    )
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.files == {"requirements.txt": "click==1.0.0\nrequests==2.0.0\nflask==2.0.0\n"}
+
+
+def test_change_plan_for_component_update_requirements_txt_preserves_trailing_marker(
+    tmp_path: Path,
+) -> None:
+    """A trailing environment marker or comment is preserved verbatim --
+    only the version itself changes."""
+    assessment = _pypi_pin_assessment(
+        tmp_path,
+        manifest_path="requirements.txt",
+        manifest_text='requests==1.2.3; python_version >= "3.8"  # pinned\n',
+    )
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.files == {
+        "requirements.txt": 'requests==2.0.0; python_version >= "3.8"  # pinned\n'
+    }
+
+
+def test_change_plan_for_component_update_none_for_ambiguous_requirements_txt(
+    tmp_path: Path,
+) -> None:
+    """Two lines pinning the same name at the same version (a monorepo's
+    combined requirements file, or a duplicate) is ambiguous which
+    occurrence to rewrite -- returns None rather than guessing."""
+    assessment = _pypi_pin_assessment(
+        tmp_path,
+        manifest_path="requirements.txt",
+        manifest_text="requests==1.2.3\nrequests==1.2.3\n",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
 def test_change_plan_for_component_update_none_for_non_actionable_verdict(tmp_path: Path) -> None:
     assessment = _pypi_pin_assessment(tmp_path, verdict=UpdateVerdict.NOT_ADVISABLE)
     assert change_plan_for_component_update(assessment, tmp_path) is None

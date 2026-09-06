@@ -22,6 +22,10 @@ without guessing at intent: a `pypi`, `npm`, `go`, or `cargo` dependency
 whose *currently declared* constraint is an exact pin
 (`Confidence.HIGH`/`VERIFIED` on the current `ComponentState`, per
 `analysis.update_intelligence.build_current_state`'s own `_EXACT_PIN_RE`).
+`pypi` alone spans two manifest syntaxes -- pyproject.toml (both PEP 621's
+array and Poetry's native table form) and requirements.txt's bare,
+unquoted plain text -- dispatched by `_select_patcher` on the manifest's
+own filename, since neither text shape is a fuzzy match for the other.
 A range constraint (`>=1.2,<2.0`, `^1.2.3`, `1.x`) is deliberately never
 rewritten here — which number to bump is genuinely ambiguous, not a fact
 this module can determine. A Cargo dependency using its *table* form
@@ -39,6 +43,7 @@ this module (ADR-007: no model vendor or agent harness hard-coded here).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from system_intelligence.core.enums import ComponentKind, Confidence, PermissionLevel, UpdateVerdict
@@ -180,6 +185,17 @@ _PYPROJECT_PIN_RE_TEMPLATE = r'(["\'])({name})\s*(==?)\s*{version}\s*\1'
 #: }`) never satisfies -- that form is left untouched rather than guessed
 #: at, same as Cargo.toml's table form.
 _POETRY_PYPROJECT_PIN_RE_TEMPLATE = r'^([ \t]*{name}[ \t]*=[ \t]*)(["\']){version}\2[ \t]*$'
+
+#: Matches a bare, unquoted `name==version` line in raw requirements.txt
+#: text -- pip's own convention has no surrounding quotes at all, unlike
+#: either pyproject.toml form above. Captures everything up to and
+#: including the pin operator (group "prefix") and anything trailing the
+#: version -- a `;`-prefixed environment marker or a `#` comment (group
+#: "suffix") -- so a replacement preserves both exactly, changing only the
+#: version itself. Anchored to a line start/end (`re.MULTILINE`).
+_REQUIREMENTS_TXT_PIN_RE_TEMPLATE = (
+    r"^(?P<prefix>[ \t]*{name}[ \t]*==?[ \t]*){version}(?P<suffix>[ \t]*(?:[;#].*)?)$"
+)
 
 #: Matches a `"name": "version"` entry in raw package.json text, capturing
 #: everything up to (group 1) and after (group 3) the version digits so a
@@ -433,6 +449,35 @@ def _patch_pyproject_pin(text: str, name: str, from_version: str, to_version: st
     return text[: match.start()] + replacement + text[match.end() :]
 
 
+def _patch_requirements_txt_pin(
+    text: str, name: str, from_version: str, to_version: str
+) -> str | None:
+    """Rewrite one exact-pinned dependency's version in raw requirements.txt text.
+
+    Matches only a bare, unquoted `{name}=={from_version}` (or single `=`)
+    line — pip's own requirements-file convention has no surrounding
+    quotes at all, unlike either pyproject.toml form `_patch_pyproject_pin`
+    handles — optionally followed by a `;`-prefixed environment marker or
+    a `#` comment, preserved verbatim. Returns `None`, never a best guess,
+    when that exact text isn't found (the manifest may have changed since
+    the assessment ran) or appears more than once (ambiguous which
+    occurrence to rewrite).
+    """
+    pattern = re.compile(
+        _REQUIREMENTS_TXT_PIN_RE_TEMPLATE.format(
+            name=re.escape(name), version=re.escape(from_version)
+        ),
+        re.MULTILINE,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    prefix, suffix = match.group("prefix"), match.group("suffix")
+    replacement = f"{prefix}{to_version}{suffix}"
+    return text[: match.start()] + replacement + text[match.end() :]
+
+
 def _patch_package_json_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
     """Rewrite one exact-pinned dependency's version in raw package.json text.
 
@@ -510,6 +555,30 @@ def _patch_cargo_toml_pin(text: str, name: str, from_version: str, to_version: s
     return text[: match.start()] + replacement + text[match.end() :]
 
 
+_Patcher = Callable[[str, str, str, str], str | None]
+
+
+def _select_patcher(ecosystem: str, manifest_path: str) -> _Patcher | None:
+    """Pick the regex patcher for `ecosystem`'s manifest.
+
+    `pypi` alone spans two structurally different manifest syntaxes --
+    pyproject.toml's TOML (`_patch_pyproject_pin`, itself already covering
+    both PEP 621 and Poetry-native forms) and requirements.txt's bare,
+    unquoted plain text (`_patch_requirements_txt_pin`) -- so it dispatches
+    on the manifest's own filename rather than the ecosystem string alone.
+    Every other ecosystem here has exactly one supported manifest shape.
+    """
+    if ecosystem == "pypi":
+        if Path(manifest_path).name == "requirements.txt":
+            return _patch_requirements_txt_pin
+        return _patch_pyproject_pin
+    return {
+        "npm": _patch_package_json_pin,
+        "go": _patch_go_mod_pin,
+        "cargo": _patch_cargo_toml_pin,
+    }.get(ecosystem)
+
+
 def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -> ChangePlan | None:
     """Build an executable `ChangePlan` for a component-update `ImpactAssessment`.
 
@@ -538,15 +607,6 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
     identity = diff.identity
     from_state, to_state = diff.from_state, diff.to_state
 
-    patchers = {
-        "pypi": _patch_pyproject_pin,
-        "npm": _patch_package_json_pin,
-        "go": _patch_go_mod_pin,
-        "cargo": _patch_cargo_toml_pin,
-    }
-    patcher = patchers.get(identity.distribution_source or "")
-    if patcher is None:
-        return None
     if from_state.version_confidence not in (Confidence.HIGH, Confidence.VERIFIED):
         return None
     if not from_state.version or not to_state.version:
@@ -554,6 +614,10 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
 
     manifest_path = _manifest_path_from_evidence(from_state.evidence)
     if manifest_path is None:
+        return None
+
+    patcher = _select_patcher(identity.distribution_source or "", manifest_path)
+    if patcher is None:
         return None
 
     try:
