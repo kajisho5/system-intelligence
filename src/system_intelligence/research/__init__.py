@@ -15,27 +15,42 @@ research-engine.md, and docs/design/IMPLEMENTATION_BACKLOG.md Epic 5):
   is exposed for display only and never used to rank (ADR-009).
 - `cache.ResearchCache`: a TTL'd, file-backed cache keyed by
   (provider, query).
+- `update_provider.ComponentUpdateProvider`: a narrower Protocol for
+  Component Update Intelligence — "what is the latest available state of
+  *this* known identity?" rather than a free-text search. `providers/pypi.py`
+  and `providers/npm.py` implement it as pure ecosystem adapters.
 
-Not yet implemented: package-registry providers (PyPI/npm), standards/
-specification lookups, and general web search — docs/06 lists these as
-later steps in the search order.
+Not yet implemented: standards/specification lookups and general web
+search — docs/06 lists these as later steps in the search order.
 """
 
 from system_intelligence.research.cache import ResearchCache
 from system_intelligence.research.github import GitHubResearchError, GitHubResearchProvider
 from system_intelligence.research.provider import ResearchProvider
+from system_intelligence.research.providers import (
+    NpmUpdateError,
+    NpmUpdateProvider,
+    PyPIUpdateError,
+    PyPIUpdateProvider,
+)
 from system_intelligence.research.scoring import (
     UNSCORABLE_DIMENSIONS,
     CandidateAssessment,
     assess_candidate,
     rank_candidates,
 )
+from system_intelligence.research.update_provider import ComponentUpdateProvider
 
 __all__ = [
     "UNSCORABLE_DIMENSIONS",
     "CandidateAssessment",
+    "ComponentUpdateProvider",
     "GitHubResearchError",
     "GitHubResearchProvider",
+    "NpmUpdateError",
+    "NpmUpdateProvider",
+    "PyPIUpdateError",
+    "PyPIUpdateProvider",
     "ResearchCache",
     "ResearchProvider",
     "assess_candidate",

@@ -5,9 +5,15 @@ scripts, no build step, viewable offline via `file://`. The report and the
 canonical JSON snapshot share the same source of truth (`Snapshot`): this
 module only renders it, it never computes new facts.
 
-Sections not yet backed by an implemented engine (Recommendations,
-Research, Proposed Changes, Verification, History) are rendered as honest
-placeholders rather than left silently empty or faked.
+Recommendations/Research/Proposed Changes/Verification render whatever the
+given Snapshot actually carries in those lists — `si report` populates
+Recommendations from the same Findings it just computed, but Research and
+Proposals need an explicit query/problem statement `si report <target>`
+does not take, so those sections are commonly empty. An empty section is
+labeled with *why* it is empty (not computed vs. computed-and-nothing-
+found) rather than a blanket "planned for a later phase", which would
+misstate engines that already exist (see `research/`, `recommendations/`,
+`proposals/`, `verification/`).
 """
 
 from __future__ import annotations
@@ -188,6 +194,89 @@ def _render_findings(snapshot: Snapshot) -> str:
     """
 
 
+def _render_recommendations(snapshot: Snapshot) -> str:
+    if not snapshot.recommendations:
+        note = "No recommendations were generated for this snapshot."
+        return _render_placeholder_section("recommendations", "Recommendations", note)
+    items = []
+    for rec in snapshot.recommendations:
+        items.append(
+            f"<li><span class='badge confidence-{rec.confidence.value}'>{_e(rec.confidence.value)}"
+            f"</span> {_e(rec.objective)} <span class='evidence-count'>"
+            f"(effort: {_e(rec.estimated_effort or 'unknown')}, risk: {_e(rec.risk or 'unknown')})"
+            f"</span><p class='rationale'>{_e(rec.rationale)}</p></li>"
+        )
+    return f"""
+    <section id="recommendations">
+      <h2>Recommendations</h2>
+      <ul>{"".join(items)}</ul>
+    </section>
+    """
+
+
+def _render_research(snapshot: Snapshot) -> str:
+    if not snapshot.research:
+        note = (
+            "Not computed for this report — 'si report' does not take a research query. "
+            "Run 'si research <query>' separately."
+        )
+        return _render_placeholder_section("research", "Research", note)
+    items = []
+    for result in snapshot.research:
+        items.append(
+            f"<li>{_e(result.identifier)} — <span class='category'>{_e(result.provider)}</span> "
+            f"license: {_e(result.license or 'unknown')} "
+            f"({_e(result.license_confidence.value)})</li>"
+        )
+    return f"""
+    <section id="research">
+      <h2>Research</h2>
+      <ul>{"".join(items)}</ul>
+    </section>
+    """
+
+
+def _render_proposals(snapshot: Snapshot) -> str:
+    if not snapshot.proposals:
+        note = (
+            "Not computed for this report — 'si report' does not take a problem statement. "
+            "Run 'si propose <problem>' separately."
+        )
+        return _render_placeholder_section("proposed-changes", "Proposed Changes", note)
+    items = []
+    for proposal in snapshot.proposals:
+        items.append(
+            f"<li><span class='category'>{_e(proposal.kind)}</span> {_e(proposal.problem)} "
+            f"<span class='evidence-count'>(permission: "
+            f"{_e(proposal.required_permission_level.name)})</span></li>"
+        )
+    return f"""
+    <section id="proposed-changes">
+      <h2>Proposed Changes</h2>
+      <ul>{"".join(items)}</ul>
+    </section>
+    """
+
+
+def _render_verification(snapshot: Snapshot) -> str:
+    if not snapshot.verification:
+        note = "No approved changes have been verified against this target yet."
+        return _render_placeholder_section("verification", "Verification", note)
+    items = []
+    for verification in snapshot.verification:
+        status = "unknown" if verification.tests_passed is None else str(verification.tests_passed)
+        items.append(
+            f"<li>{_e(', '.join(verification.tests_run) or 'unnamed command')} — "
+            f"passed: {_e(status)}</li>"
+        )
+    return f"""
+    <section id="verification">
+      <h2>Verification</h2>
+      <ul>{"".join(items)}</ul>
+    </section>
+    """
+
+
 def _render_placeholder_section(section_id: str, title: str, note: str) -> str:
     return f"""
     <section id="{section_id}">
@@ -241,6 +330,7 @@ li.finding { margin-bottom: 0.6rem; list-style: none; }
 }
 .category { color: var(--muted); font-size: 0.85rem; margin-right: 0.3rem; }
 .evidence-count { color: var(--muted); font-size: 0.8rem; }
+p.rationale { margin: 0.2rem 0 0.6rem; color: var(--muted); font-size: 0.9rem; }
 h3.severity-critical, h3.severity-high { color: var(--high); }
 h3.severity-medium { color: var(--medium); }
 h3.severity-low, h3.severity-info { color: var(--info); }
@@ -260,31 +350,15 @@ def generate_html_report(snapshot: Snapshot) -> str:
         _render_capability_graph(snapshot),
         _render_dependency_graph(snapshot),
         _render_findings(snapshot),
-        _render_placeholder_section(
-            "recommendations",
-            "Recommendations",
-            "Not yet available — the recommendation engine is planned for a later phase.",
-        ),
-        _render_placeholder_section(
-            "research",
-            "Research",
-            "Not yet available — external research is planned for a later phase.",
-        ),
-        _render_placeholder_section(
-            "proposed-changes",
-            "Proposed Changes",
-            "Not yet available — proposal generation is planned for a later phase.",
-        ),
-        _render_placeholder_section(
-            "verification",
-            "Verification",
-            "Not yet available — no approved changes have been executed against this target.",
-        ),
+        _render_recommendations(snapshot),
+        _render_research(snapshot),
+        _render_proposals(snapshot),
+        _render_verification(snapshot),
         _render_placeholder_section(
             "history",
             "History",
             "This report reflects a single snapshot. Run 'si diff' between two snapshot "
-            "directories to compare them over time.",
+            "directories, or 'si dashboard --compare-with', to compare them over time.",
         ),
     ]
     body = "\n".join(sections)

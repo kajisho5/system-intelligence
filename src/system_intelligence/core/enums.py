@@ -142,3 +142,44 @@ class TrustLevel(StrEnum):
     COMMUNITY = "community"
     UNKNOWN = "unknown"
     BLOCKED = "blocked"
+
+
+class StateDiffCategory(StrEnum):
+    """Classification of one observed difference between two ComponentStates.
+
+    Component Update Intelligence (docs/design's Lifecycle detector family:
+    "release activity, dependency freshness") must never reduce a diff to a
+    single version-string comparison — every observed difference is
+    classified into one of these categories, each carrying its own Evidence
+    and Confidence, so "0.8.2 -> 0.9.2" is one data point among many rather
+    than the whole assessment.
+    """
+
+    ADDED = "added"
+    REMOVED = "removed"
+    CHANGED = "changed"
+    DEPRECATED = "deprecated"
+    BREAKING = "breaking"
+    DEPENDENCY_CHANGE = "dependency_change"
+    CAPABILITY_CHANGE = "capability_change"
+    INTERFACE_CHANGE = "interface_change"
+    INSTALLATION_CHANGE = "installation_change"
+    UNKNOWN = "unknown"
+
+
+class UpdateVerdict(StrEnum):
+    """The conclusion of an Impact Assessment for a candidate component update.
+
+    `UPDATE_RECOMMENDED` must never be reached from a version delta alone
+    (see ADR-009's "no popularity-only ranking" — the same anti-single-
+    signal principle applies here to version numbers). It requires that
+    every material dimension (capability/interface/dependency change) was
+    actually evaluated and found non-breaking; if any dimension stayed
+    `Confidence.UNKNOWN`, the verdict caps out at `REVIEW_REQUIRED`.
+    """
+
+    UPDATE_RECOMMENDED = "update_recommended"
+    REVIEW_REQUIRED = "review_required"
+    NOT_ADVISABLE = "not_advisable"
+    NO_UPDATE_AVAILABLE = "no_update_available"
+    UNKNOWN = "unknown"

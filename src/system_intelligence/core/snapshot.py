@@ -9,9 +9,11 @@ Mirrors the file layout from docs/design/docs/12-storage-and-state.md:
       relationships.json
       findings.json
       recommendations.json
+      proposals.json
       research.json
       approvals.json
       verification.json
+      executions.json
 
 `Snapshot` is the in-memory/serialization model; `write_to_directory` /
 `read_from_directory` implement that on-disk layout so HTML reports,
@@ -43,8 +45,10 @@ from system_intelligence.core.entities import (
     Workflow,
 )
 from system_intelligence.core.enums import ComponentKind, TargetKind
+from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval
+from system_intelligence.core.proposals import Proposal
 from system_intelligence.core.recommendations import Recommendation
 from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.research import ResearchResult
@@ -74,9 +78,11 @@ _FILES: dict[str, str] = {
     "relationships": "relationships.json",
     "findings": "findings.json",
     "recommendations": "recommendations.json",
+    "proposals": "proposals.json",
     "research": "research.json",
     "approvals": "approvals.json",
     "verification": "verification.json",
+    "executions": "executions.json",
 }
 
 
@@ -97,9 +103,11 @@ class Snapshot(BaseModel):
     relationships: list[Relationship] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     recommendations: list[Recommendation] = Field(default_factory=list)
+    proposals: list[Proposal] = Field(default_factory=list)
     research: list[ResearchResult] = Field(default_factory=list)
     approvals: list[Approval] = Field(default_factory=list)
     verification: list[Verification] = Field(default_factory=list)
+    executions: list[ExecutionRecord] = Field(default_factory=list)
 
     def manifest(self) -> SnapshotManifest:
         return SnapshotManifest(
@@ -180,7 +188,9 @@ class Snapshot(BaseModel):
             relationships=_load(_FILES["relationships"], Relationship),  # type: ignore[arg-type]
             findings=_load(_FILES["findings"], Finding),  # type: ignore[arg-type]
             recommendations=_load(_FILES["recommendations"], Recommendation),  # type: ignore[arg-type]
+            proposals=_load(_FILES["proposals"], Proposal),  # type: ignore[arg-type]
             research=_load(_FILES["research"], ResearchResult),  # type: ignore[arg-type]
             approvals=_load(_FILES["approvals"], Approval),  # type: ignore[arg-type]
             verification=_load(_FILES["verification"], Verification),  # type: ignore[arg-type]
+            executions=_load(_FILES["executions"], ExecutionRecord),  # type: ignore[arg-type]
         )

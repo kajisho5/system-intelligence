@@ -474,3 +474,271 @@ def test_verify_command_missing_executable_fails_clearly(tmp_path: Path) -> None
 
     assert result.exit_code == 1
     assert "not available on PATH" in result.stdout + (result.stderr or "")
+
+
+def test_verify_command_record_appends_to_snapshot(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["verify", "python3 -c print(1)", "--target", str(tmp_path), "--record", str(snapshot_dir)],
+    )
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "verification.json").read_text(encoding="utf-8"))
+    assert len(recorded) == 1
+    assert recorded[0]["tests_passed"] is True
+
+
+def test_execute_command_record_appends_to_snapshot(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            {
+                "actor": "human:test",
+                "scope": "repository",
+                "action": "create_local_branch_and_commit",
+                "target": str(tmp_path),
+                "permission_level": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(tmp_path),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+            "--record",
+            str(snapshot_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "executions.json").read_text(encoding="utf-8"))
+    assert len(recorded) == 1
+    assert recorded[0]["applied"] is True
+    assert recorded[0]["branch_name"] == "si/add-license"
+
+
+def test_propose_command_record_appends_to_snapshot(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(app, ["propose", "Need X", "--record", str(snapshot_dir)])
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "proposals.json").read_text(encoding="utf-8"))
+    assert len(recorded) == 1
+    assert recorded[0]["problem"] == "Need X"
+
+
+def test_research_command_record_appends_to_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response = {"items": [{"full_name": "psf/black", "html_url": "https://github.com/psf/black"}]}
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr("system_intelligence.research.github._default_http_get", _fake_http_get)
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "research",
+            "q",
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--record",
+            str(snapshot_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "research.json").read_text(encoding="utf-8"))
+    assert len(recorded) == 1
+    assert recorded[0]["identifier"] == "psf/black"
+
+
+def _fake_pypi_response(name: str, version: str) -> dict[str, object]:
+    return {"info": {"version": version}}
+
+
+def test_check_updates_command_reports_review_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "pydantic" in result.stdout
+    assert "current: 2.0.0" in result.stdout
+    assert "available: 2.9.0" in result.stdout
+    assert "review_required" in result.stdout
+
+
+def test_check_updates_command_reports_source_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _raise(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        raise OSError("no network")
+
+    monkeypatch.setattr("system_intelligence.research.providers.pypi._default_http_get", _raise)
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "could not be completed" in result.stdout
+
+
+def test_check_updates_command_no_matching_provider(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "No dependencies found in an ecosystem with a configured update provider" in (
+        result.stdout
+    )
+
+
+def test_check_updates_command_missing_target_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["check-updates", str(tmp_path / "nope")])
+
+    assert result.exit_code == 1
+    assert "does not exist" in result.stdout + (result.stderr or "")
+
+
+def test_dashboard_command_writes_html_and_snapshot(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "README.md").write_text("# Hi\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(app, ["dashboard", str(target_dir), "--out", str(out_dir)])
+
+    assert result.exit_code == 0
+    dashboard_html = (out_dir / "dashboard.html").read_text(encoding="utf-8")
+    assert "<!doctype html>" in dashboard_html
+    assert 'id="si-dashboard-data"' in dashboard_html
+    assert len(list(out_dir.glob("snapshot-*/manifest.json"))) == 1
+
+
+def test_dashboard_command_missing_target_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["dashboard", str(tmp_path / "nope")])
+
+    assert result.exit_code == 1
+    assert "does not exist" in result.stdout + (result.stderr or "")
+
+
+def test_dashboard_command_compare_with_populates_changes(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+
+    before_out = tmp_path / "before"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(before_out)])
+    before_dir = next(before_out.glob("snapshot-*"))
+
+    (target_dir / "README.md").write_text("# Hi\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app,
+        [
+            "dashboard",
+            str(target_dir),
+            "--out",
+            str(out_dir),
+            "--compare-with",
+            str(before_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    assert dashboard_json["overview"]["has_previous_snapshot"] is True
+
+
+def test_dashboard_command_compare_with_missing_manifest_fails_clearly(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    bad_compare = tmp_path / "not-a-snapshot"
+    bad_compare.mkdir()
+
+    result = runner.invoke(app, ["dashboard", str(target_dir), "--compare-with", str(bad_compare)])
+
+    assert result.exit_code == 1
+    assert "no manifest.json" in result.stdout + (result.stderr or "")
+
+
+def test_dashboard_command_check_updates_populates_update_intelligence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app, ["dashboard", str(target_dir), "--out", str(out_dir), "--check-updates"]
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    assert dashboard_json["overview"]["has_update_check"] is True
+    assert dashboard_json["overview"]["update_assessment_count"] == 1
