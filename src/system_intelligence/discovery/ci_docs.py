@@ -13,6 +13,7 @@ from pathlib import Path
 from system_intelligence.core.entities import CIJob, Document
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
+from system_intelligence.core.ids import stable_id
 
 _ROOT_DOCUMENTS: dict[str, str] = {
     "README.md": "README",
@@ -34,6 +35,7 @@ def detect_ci_jobs(root: Path) -> list[CIJob]:
         rel_path = str(workflow_path.relative_to(root))
         jobs.append(
             CIJob(
+                id=stable_id("cijob", rel_path),
                 name=workflow_path.stem,
                 provider="github-actions",
                 workflow_path=rel_path,
@@ -58,6 +60,7 @@ def detect_root_documents(root: Path) -> list[Document]:
             continue
         documents.append(
             Document(
+                id=stable_id("document", filename),
                 name=filename,
                 path=filename,
                 document_type=document_type,

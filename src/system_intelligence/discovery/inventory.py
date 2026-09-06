@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from system_intelligence.core.entities import CIJob, Component, Repository
+from system_intelligence.core.ids import stable_id
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
 from system_intelligence.discovery.git_metadata import collect_git_metadata
@@ -55,6 +56,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     skills = detect_skills(root)
 
     repository = Repository(
+        id=stable_id("repository", "root"),
         name=target.name,
         url=git_metadata.remote_url,
         default_branch=git_metadata.default_branch,

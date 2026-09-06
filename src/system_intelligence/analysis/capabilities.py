@@ -12,6 +12,7 @@ from system_intelligence.core.entities import Skill
 from system_intelligence.core.enums import CapabilityStatus, Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
+from system_intelligence.core.ids import stable_id
 
 
 def extract_capabilities(skills: list[Skill]) -> list[Capability]:
@@ -23,6 +24,7 @@ def extract_capabilities(skills: list[Skill]) -> list[Capability]:
         confidence = Confidence.HIGH if skill.is_standard_format else Confidence.LOW
         capabilities.append(
             Capability(
+                id=stable_id("capability", skill.id),
                 name=skill.name,
                 description=skill.description,
                 provider_ids=[skill.id],

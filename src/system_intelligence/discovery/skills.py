@@ -15,6 +15,7 @@ from pathlib import Path
 from system_intelligence.core.entities import Skill
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
+from system_intelligence.core.ids import stable_id
 from system_intelligence.discovery.paths import is_excluded
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -91,6 +92,7 @@ def detect_skills(root: Path) -> list[Skill]:
 
         skills.append(
             Skill(
+                id=stable_id("skill", str(rel_path)),
                 name=name or skill_dir.name,
                 path=str(rel_path),
                 description=description,

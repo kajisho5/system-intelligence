@@ -1,11 +1,11 @@
 """`si` command-line entry point.
 
-`si doctor`, `si version`, `si inspect`, and `si diagnose` are implemented.
-The remaining commands from docs/design/docs/13-cli-and-ux.md (`research`,
-`design`, `improve`, `propose`, `execute`, `verify`, `report`, `diff`,
-`watch`) are registered as explicit placeholders so `si --help` documents
-the intended surface without claiming functionality that does not exist
-yet.
+`si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`, and
+`si diff` are implemented. The remaining commands from
+docs/design/docs/13-cli-and-ux.md (`research`, `design`, `improve`,
+`propose`, `execute`, `verify`, `watch`) are registered as explicit
+placeholders so `si --help` documents the intended surface without
+claiming functionality that does not exist yet.
 """
 
 from __future__ import annotations
@@ -22,7 +22,9 @@ from system_intelligence.analysis import analyze_local_repository
 from system_intelligence.core.entities import Repository
 from system_intelligence.core.enums import ComponentKind, Severity
 from system_intelligence.core.findings import Finding
+from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
+from system_intelligence.reporting import diff_snapshots, generate_html_report
 
 app = typer.Typer(
     name="si",
@@ -39,8 +41,6 @@ _PLANNED_COMMANDS = {
     "propose": "Create a concrete change proposal. Planned for Phase 6.",
     "execute": "Perform an approved change. Planned for Phase 8 (human-approved execution).",
     "verify": "Validate a change and compare before/after state. Planned for Phase 8.",
-    "report": "Generate the static HTML intelligence report. Planned for Phase 4.",
-    "diff": "Compare two snapshots. Planned for Phase 4.",
     "watch": "Repeat diagnosis on an interval and detect drift. Planned for Phase 8.",
 }
 
@@ -155,6 +155,80 @@ def diagnose(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> 
         snapshot_dir = out / snapshot.id
         snapshot.write_to_directory(snapshot_dir)
         typer.echo(f"\nSnapshot written to {snapshot_dir}")
+
+
+_REPORT_OUT_OPTION = typer.Option(
+    Path("si-report"), "--out", help="Directory to write the HTML report and snapshot into."
+)
+
+
+@app.command()
+def report(target: str = _TARGET_ARGUMENT, out: Path = _REPORT_OUT_OPTION) -> None:
+    """Generate the static HTML intelligence report for a local target.
+
+    Runs discovery and analysis, then writes a self-contained
+    `report.html` (no CDN dependencies, viewable offline) plus the
+    canonical JSON snapshot into `--out` (default: './si-report').
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    snapshot = result.snapshot
+
+    out.mkdir(parents=True, exist_ok=True)
+    report_path = out / "report.html"
+    report_path.write_text(generate_html_report(snapshot), encoding="utf-8")
+    snapshot_dir = out / snapshot.id
+    snapshot.write_to_directory(snapshot_dir)
+
+    typer.echo(f"Report written to {report_path}")
+    typer.echo(f"Snapshot written to {snapshot_dir}")
+
+
+_FROM_DIR_ARGUMENT = typer.Argument(..., help="Directory of the earlier canonical snapshot.")
+_TO_DIR_ARGUMENT = typer.Argument(..., help="Directory of the later canonical snapshot.")
+
+
+@app.command(name="diff")
+def diff_command(from_dir: Path = _FROM_DIR_ARGUMENT, to_dir: Path = _TO_DIR_ARGUMENT) -> None:
+    """Compare two canonical snapshot directories (each written by --out on another command)."""
+    for label, path in (("from", from_dir), ("to", to_dir)):
+        if not (path / "manifest.json").is_file():
+            typer.echo(f"error: {label} directory {path} has no manifest.json", err=True)
+            raise typer.Exit(code=1)
+
+    before = Snapshot.read_from_directory(from_dir)
+    after = Snapshot.read_from_directory(to_dir)
+    result = diff_snapshots(before, after)
+
+    typer.echo(f"From: {result.from_snapshot_id}")
+    typer.echo(f"To:   {result.to_snapshot_id}")
+
+    if not result.has_changes:
+        typer.echo("No changes detected.")
+        return
+
+    def _section(label: str, lines: list[str]) -> None:
+        if not lines:
+            return
+        typer.echo(f"\n{label} ({len(lines)}):")
+        for line in lines:
+            typer.echo(f"  - {line}")
+
+    _section("Components added", [f"{c.kind.value}:{c.name}" for c in result.added_components])
+    _section("Components removed", [f"{c.kind.value}:{c.name}" for c in result.removed_components])
+    _section("Capabilities added", [c.name for c in result.added_capabilities])
+    _section("Capabilities removed", [c.name for c in result.removed_capabilities])
+    _section("Dependencies added", [f"{d.ecosystem}:{d.name}" for d in result.added_dependencies])
+    _section(
+        "Dependencies removed", [f"{d.ecosystem}:{d.name}" for d in result.removed_dependencies]
+    )
+    _section("Findings introduced", [f.statement for f in result.added_findings])
+    _section("Findings resolved", [f.statement for f in result.resolved_findings])
 
 
 @app.command()

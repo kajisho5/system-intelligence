@@ -37,3 +37,18 @@ def test_discover_local_repository(tmp_path: Path) -> None:
 
     repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
     assert "Python" in repository.languages  # type: ignore[attr-defined]
+
+
+def test_discover_local_repository_ids_are_stable_across_runs(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: x\n---\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    first = discover_local_repository(str(tmp_path))
+    second = discover_local_repository(str(tmp_path))
+
+    first_ids = {c.id for c in first.snapshot.components}
+    second_ids = {c.id for c in second.snapshot.components}
+    assert first_ids == second_ids

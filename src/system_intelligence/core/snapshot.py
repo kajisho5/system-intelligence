@@ -30,7 +30,19 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import Component, Target
+from system_intelligence.core.entities import (
+    Agent,
+    Component,
+    Document,
+    MCPServer,
+    Repository,
+    Skill,
+    Software,
+    Target,
+    Tool,
+    Workflow,
+)
+from system_intelligence.core.enums import ComponentKind, TargetKind
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval
 from system_intelligence.core.recommendations import Recommendation
@@ -39,6 +51,22 @@ from system_intelligence.core.research import ResearchResult
 from system_intelligence.core.verification import Verification
 
 _SNAPSHOT_VERSION = "0.1.0"
+
+#: Concrete Component subtype per kind, so a round trip through the
+#: canonical JSON layout doesn't collapse everything back to the base
+#: `Component` (which would silently drop subtype-only fields like
+#: `Repository.languages` or `Skill.is_standard_format`, and break any
+#: `isinstance` check downstream).
+_COMPONENT_MODEL_BY_KIND: dict[ComponentKind, type[Component]] = {
+    ComponentKind.REPOSITORY: Repository,
+    ComponentKind.PACKAGE: Software,
+    ComponentKind.AGENT: Agent,
+    ComponentKind.SKILL: Skill,
+    ComponentKind.MCP_SERVER: MCPServer,
+    ComponentKind.TOOL: Tool,
+    ComponentKind.WORKFLOW: Workflow,
+    ComponentKind.DOCUMENT: Document,
+}
 
 _FILES: dict[str, str] = {
     "components": "components.json",
@@ -101,15 +129,27 @@ class Snapshot(BaseModel):
             )
 
     @classmethod
-    def read_from_directory(cls, directory: Path, target: Target) -> Snapshot:
+    def read_from_directory(cls, directory: Path, target: Target | None = None) -> Snapshot:
         """Reconstruct a Snapshot from the on-disk canonical layout.
 
-        `target` must be supplied by the caller: the manifest only stores a
-        fingerprint, not the full Target (which may carry evidence not worth
-        duplicating on every snapshot).
+        The manifest only stores a target fingerprint (locator), not the
+        full `Target` (which may carry Evidence not worth duplicating on
+        every snapshot) — pass `target` when the caller has it. When it
+        doesn't (e.g. `si diff` reading two historical snapshots whose
+        original target may no longer even exist on disk), a minimal
+        `Target` is reconstructed from the fingerprint; its `kind` is a
+        best-effort guess (`LOCAL_PATH`), not a verified fact.
         """
         manifest_path = directory / "manifest.json"
         manifest = SnapshotManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+
+        if target is None:
+            fingerprint = manifest.target_fingerprint
+            target = Target(
+                name=Path(fingerprint).name or fingerprint,
+                kind=TargetKind.LOCAL_PATH,
+                locator=fingerprint,
+            )
 
         def _load(filename: str, model: type[BaseModel]) -> list[BaseModel]:
             path = directory / filename
@@ -118,12 +158,24 @@ class Snapshot(BaseModel):
             raw = json.loads(path.read_text(encoding="utf-8"))
             return [model.model_validate(item) for item in raw]
 
+        def _load_components() -> list[Component]:
+            path = directory / _FILES["components"]
+            if not path.exists():
+                return []
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            components: list[Component] = []
+            for item in raw:
+                kind = ComponentKind(item["kind"])
+                model = _COMPONENT_MODEL_BY_KIND.get(kind, Component)
+                components.append(model.model_validate(item))
+            return components
+
         return cls(
             id=manifest.scan_id,
             target=target,
             tool_version=manifest.tool_version,
             created_at=manifest.created_at,
-            components=_load(_FILES["components"], Component),  # type: ignore[arg-type]
+            components=_load_components(),
             capabilities=_load(_FILES["capabilities"], Capability),  # type: ignore[arg-type]
             relationships=_load(_FILES["relationships"], Relationship),  # type: ignore[arg-type]
             findings=_load(_FILES["findings"], Finding),  # type: ignore[arg-type]

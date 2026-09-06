@@ -16,6 +16,7 @@ from pathlib import Path
 from system_intelligence.core.entities import Dependency
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
+from system_intelligence.core.ids import stable_id
 from system_intelligence.discovery.structure import PackageManifest
 
 _PEP508_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(.*)$")
@@ -39,6 +40,7 @@ def _parse_pep508(requirement: str, rel_path: str) -> Dependency | None:
     # remainder as a version constraint.
     constraint = rest.split(";", 1)[0].strip()
     return Dependency(
+        id=stable_id("dependency", "pypi", name),
         name=name,
         ecosystem="pypi",
         version_constraint=constraint or None,
@@ -66,6 +68,7 @@ def _extract_package_json_dependencies(path: Path, rel_path: str) -> list[Depend
         for name, version in data.get(section, {}).items():
             dependencies.append(
                 Dependency(
+                    id=stable_id("dependency", "npm", name),
                     name=name,
                     ecosystem="npm",
                     version_constraint=str(version),
