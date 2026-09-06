@@ -22,13 +22,21 @@ from pathlib import Path
 #: `target` (Rust/Cargo's and Maven's build-output directory) round out
 #: the same "dependency cache / build output" categories this frozenset
 #: already covers for other ecosystems, for two ecosystems this project
-#: now also discovers dependencies for (Cargo.toml, go.mod).
+#: now also discovers dependencies for (Cargo.toml, go.mod). `env` is a
+#: third real, common `venv`-module naming convention (`python -m venv
+#: env`, widely used in older/tutorial-derived Django and Flask projects)
+#: alongside the already-excluded `.venv`/`venv` -- without it, an
+#: installed third-party package's own `setup.py`/`pyproject.toml` under
+#: `env/lib/pythonX.Y/site-packages/<pkg>/` is misattributed as the target
+#: repository's own manifest, verified live against a real virtualenv
+#: layout.
 EXCLUDED_DIRS = frozenset(
     {
         ".git",
         "node_modules",
         ".venv",
         "venv",
+        "env",
         ".tox",
         "__pycache__",
         ".mypy_cache",
