@@ -41,8 +41,8 @@ def test_extract_package_json_dependencies(tmp_path: Path) -> None:
 
 
 def test_extract_dependencies_unknown_manifest_type_ignored(tmp_path: Path) -> None:
-    (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
-    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
+    (tmp_path / "pom.xml").write_text("<project></project>\n", encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
 
     assert extract_dependencies(tmp_path, manifests) == []
 
@@ -131,7 +131,16 @@ def test_extract_dependencies_by_manifest_groups_by_directory(tmp_path: Path) ->
 def test_extract_dependencies_by_manifest_omits_directories_with_no_parsed_deps(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    (tmp_path / "pom.xml").write_text("<project></project>\n", encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
+
+    assert extract_dependencies_by_manifest(tmp_path, manifests) == {}
+
+
+def test_extract_go_dependencies_manifest_with_no_require_directive_returns_empty(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.21\n", encoding="utf-8")
     manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
 
     assert extract_dependencies_by_manifest(tmp_path, manifests) == {}
@@ -205,6 +214,72 @@ def test_extract_cargo_dependencies_path_and_git_deps_without_version_are_skippe
 def test_extract_cargo_dependencies_malformed_manifest_returns_empty(tmp_path: Path) -> None:
     (tmp_path / "Cargo.toml").write_text("not valid toml [[[", encoding="utf-8")
     manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    assert extract_dependencies(tmp_path, manifests) == []
+
+
+def test_extract_go_dependencies_single_line_and_block_form(tmp_path: Path) -> None:
+    (tmp_path / "go.mod").write_text(
+        "module example.com/x\n\ngo 1.21\n\n"
+        "require github.com/single/dep v1.2.3\n\n"
+        "require (\n"
+        "\tgithub.com/pkg/errors v0.9.1\n"
+        "\tgolang.org/x/crypto v0.7.0 // indirect\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    by_name = {d.name: d for d in dependencies}
+    assert set(by_name) == {
+        "github.com/single/dep",
+        "github.com/pkg/errors",
+        "golang.org/x/crypto",
+    }
+    assert by_name["github.com/single/dep"].version_constraint == "v1.2.3"
+    # An indirect dependency is still recorded -- it's a real, declared
+    # dependency in Go's own module graph, just not a direct import.
+    assert by_name["golang.org/x/crypto"].version_constraint == "v0.7.0"
+    assert all(d.ecosystem == "go" for d in dependencies)
+    assert all(d.evidence for d in dependencies)
+
+
+def test_extract_go_dependencies_pseudo_version_is_preserved(tmp_path: Path) -> None:
+    (tmp_path / "go.mod").write_text(
+        "module example.com/x\n\n"
+        "require (\n"
+        "\tgithub.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert dependencies[0].version_constraint == "v0.0.0-20180306012644-bacd9c7ef1dd"
+
+
+def test_extract_go_dependencies_ignores_module_go_and_toolchain_directives(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "go.mod").write_text(
+        "module example.com/x\n\ngo 1.21\ntoolchain go1.21.5\n\n"
+        "require github.com/only/real-dep v1.0.0\n",
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"github.com/only/real-dep"}
+
+
+def test_extract_go_dependencies_malformed_manifest_missing_file_returns_empty(
+    tmp_path: Path,
+) -> None:
+    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
 
     assert extract_dependencies(tmp_path, manifests) == []
 

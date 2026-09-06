@@ -2,10 +2,10 @@
 
 Phase 3 scope: parse declared dependencies out of `pyproject.toml` (PEP 621
 `[project.dependencies]`), `package.json` (`dependencies`/
-`devDependencies`), and `Cargo.toml` (`[dependencies]`/`[dev-dependencies]`/
-`[build-dependencies]`). No dependency resolution, transitive graph, or
-version conflict detection yet — this only records what a manifest
-*declares*.
+`devDependencies`), `Cargo.toml` (`[dependencies]`/`[dev-dependencies]`/
+`[build-dependencies]`), and `go.mod` (`require` directives). No dependency
+resolution, transitive graph, or version conflict detection yet — this
+only records what a manifest *declares*.
 """
 
 from __future__ import annotations
@@ -129,10 +129,73 @@ def _extract_cargo_dependencies(path: Path, rel_path: str) -> list[Dependency]:
     return dependencies
 
 
+def _parse_go_require_entry(entry: str, rel_path: str) -> Dependency | None:
+    """Parse one `require` entry (`<module path> <version>`), trailing
+    `// indirect` (or any other) comment already known to be stripped by
+    the caller. An indirect dependency is still a real declared dependency
+    -- Go's own module graph -- so it is recorded the same as a direct one,
+    matching how `package.json`'s `devDependencies` are recorded without a
+    separate "dev" flag today.
+    """
+    parts = entry.split()
+    if len(parts) != 2:
+        return None
+    name, version = parts
+    return Dependency(
+        id=stable_id("dependency", "go", rel_path, name),
+        name=name,
+        ecosystem="go",
+        version_constraint=version,
+        evidence=[_manifest_evidence(rel_path, name)],
+    )
+
+
+def _extract_go_dependencies(path: Path, rel_path: str) -> list[Dependency]:
+    """Parse `go.mod`'s `require` directives (single-line and block form).
+
+    Go's Minimal Version Selection means a `require` line is always an
+    exact, already-resolved version (`v1.2.3`, or a pseudo-version like
+    `v0.0.0-20210101000000-abcdef123456`) -- never a range -- so unlike
+    Cargo's bare-version convention there is no ambiguity to guess at
+    here. `module`/`go`/`toolchain`/`replace`/`exclude`/`retract`
+    directives are not dependencies and are ignored; `replace` in
+    particular means a resolved version can differ from what `require`
+    states, which this parser does not attempt to reconcile.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    dependencies: list[Dependency] = []
+    in_require_block = False
+    for raw_line in text.splitlines():
+        line = raw_line.split("//", 1)[0].strip()
+        if not line:
+            continue
+        if in_require_block:
+            if line == ")":
+                in_require_block = False
+                continue
+            dependency = _parse_go_require_entry(line, rel_path)
+            if dependency is not None:
+                dependencies.append(dependency)
+            continue
+        if line == "require (":
+            in_require_block = True
+            continue
+        if line.startswith("require "):
+            dependency = _parse_go_require_entry(line[len("require ") :].strip(), rel_path)
+            if dependency is not None:
+                dependencies.append(dependency)
+    return dependencies
+
+
 _EXTRACTORS = {
     "pyproject.toml": _extract_pyproject_dependencies,
     "package.json": _extract_package_json_dependencies,
     "Cargo.toml": _extract_cargo_dependencies,
+    "go.mod": _extract_go_dependencies,
 }
 
 
@@ -165,9 +228,9 @@ def extract_dependencies_by_manifest(
 def extract_dependencies(root: Path, manifests: list[PackageManifest]) -> list[Dependency]:
     """Parse every manifest System Intelligence knows how to read.
 
-    Manifests without a registered extractor (go.mod, pom.xml, build.gradle,
-    Gemfile) are still reported by `structure.scan_structure` as evidence of
-    the ecosystem, but their dependency lists are not parsed yet. Flattens
+    Manifests without a registered extractor (pom.xml, build.gradle, Gemfile)
+    are still reported by `structure.scan_structure` as evidence of the
+    ecosystem, but their dependency lists are not parsed yet. Flattens
     `extract_dependencies_by_manifest` — kept for callers that
     only need the combined list (e.g. a whole-repository dependency count),
     not per-Component attribution.

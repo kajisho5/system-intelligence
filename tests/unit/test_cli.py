@@ -1422,6 +1422,31 @@ def test_check_updates_command_reports_cargo_dependency(
     assert "available: 1.0.219" in result.stdout
 
 
+def test_check_updates_command_reports_go_dependency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "go.mod").write_text(
+        "module example.com/x\n\ngo 1.21\n\nrequire golang.org/x/crypto v0.7.0\n",
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps({"Version": "v0.31.0"}).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.go_proxy._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "golang.org/x/crypto" in result.stdout
+    assert "current: v0.7.0" in result.stdout
+    assert "available: v0.31.0" in result.stdout
+
+
 def test_check_updates_command_no_matching_provider(tmp_path: Path) -> None:
     target_dir = tmp_path / "target"
     target_dir.mkdir()
