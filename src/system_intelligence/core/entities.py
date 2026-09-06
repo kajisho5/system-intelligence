@@ -102,6 +102,7 @@ class Skill(Component):
     triggers: list[str] = Field(default_factory=list)
     scripts: list[str] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
+    assets: list[str] = Field(default_factory=list)
 
 
 class MCPServer(Component):

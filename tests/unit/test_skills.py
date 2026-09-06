@@ -12,6 +12,8 @@ def test_detect_skills_standard_format(tmp_path: Path) -> None:
     )
     (skill_dir / "scripts").mkdir()
     (skill_dir / "scripts" / "run.py").write_text("", encoding="utf-8")
+    (skill_dir / "assets").mkdir()
+    (skill_dir / "assets" / "logo.png").write_text("", encoding="utf-8")
 
     skills = detect_skills(tmp_path)
 
@@ -21,7 +23,29 @@ def test_detect_skills_standard_format(tmp_path: Path) -> None:
     assert skill.description == "Does a thing"
     assert skill.is_standard_format is True
     assert skill.scripts == ["scripts/run.py"]
+    assert skill.assets == ["assets/logo.png"]
     assert skill.evidence
+
+
+def test_detect_skills_assets_only(tmp_path: Path) -> None:
+    """A Skill bundling only `assets/` (no `scripts/`/`references/`) is
+    exactly as valid as one with only `scripts/` -- each of the three
+    optional subdirectories is listed independently."""
+    skill_dir = tmp_path / "skills" / "asset-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: asset-skill\ndescription: Ships only assets\n---\n", encoding="utf-8"
+    )
+    (skill_dir / "assets").mkdir()
+    (skill_dir / "assets" / "template.docx").write_text("", encoding="utf-8")
+
+    skills = detect_skills(tmp_path)
+
+    assert len(skills) == 1
+    skill = skills[0]
+    assert skill.assets == ["assets/template.docx"]
+    assert skill.scripts == []
+    assert skill.references == []
 
 
 def test_detect_skills_missing_frontmatter_fields(tmp_path: Path) -> None:
