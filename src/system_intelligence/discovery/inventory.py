@@ -1,7 +1,7 @@
 """Discovery orchestrator: turn a local path into a populated `Snapshot`.
 
-Wires together git metadata, structure scanning, Skill detection, and
-CI/document detection (docs/design/IMPLEMENTATION_BACKLOG.md, Epic 3) into
+Wires together git metadata, structure scanning, Skill/Agent detection,
+and CI/document detection (docs/design/IMPLEMENTATION_BACKLOG.md, Epic 3) into
 the canonical `Snapshot` (docs/design/docs/12-storage-and-state.md). This is
 intentionally the only place that knows about all of the individual
 detectors — callers (the CLI) depend on this module, not on each detector.
@@ -28,6 +28,7 @@ from system_intelligence.core.entities import CIJob, Component, Repository
 from system_intelligence.core.ids import stable_id
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.adr import detect_adrs
+from system_intelligence.discovery.agents import detect_agents
 from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
@@ -59,6 +60,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     ci_jobs = detect_ci_jobs(root)
     documents = detect_root_documents(root)
     skills = detect_skills(root)
+    agents = detect_agents(root)
     adrs = detect_adrs(root)
 
     repository = Repository(
@@ -72,7 +74,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
         evidence=[*git_metadata.evidence, *structure.evidence],
     )
 
-    components: list[Component] = [repository, *skills, *documents]
+    components: list[Component] = [repository, *skills, *agents, *documents]
 
     snapshot = Snapshot(target=target, components=components, adrs=adrs)
     return DiscoveryResult(
