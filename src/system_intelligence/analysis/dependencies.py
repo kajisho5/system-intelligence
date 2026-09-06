@@ -1,9 +1,11 @@
 """Dependency extraction from package manifests (R2, "dependency graph").
 
 Phase 3 scope: parse declared dependencies out of `pyproject.toml` (PEP 621
-`[project.dependencies]`) and `package.json` (`dependencies`/
-`devDependencies`). No dependency resolution, transitive graph, or version
-conflict detection yet — this only records what a manifest *declares*.
+`[project.dependencies]`), `package.json` (`dependencies`/
+`devDependencies`), and `Cargo.toml` (`[dependencies]`/`[dev-dependencies]`/
+`[build-dependencies]`). No dependency resolution, transitive graph, or
+version conflict detection yet — this only records what a manifest
+*declares*.
 """
 
 from __future__ import annotations
@@ -84,9 +86,53 @@ def _extract_package_json_dependencies(path: Path, rel_path: str) -> list[Depend
     return dependencies
 
 
+def _cargo_version_constraint(spec: object) -> str | None:
+    """The registry version requirement `spec` declares, if any.
+
+    A Cargo dependency table without a `version` key (`{ path = "..." }`,
+    `{ git = "..." }`, `{ workspace = true }`) has nothing a registry
+    lookup could resolve against — that case returns `None` so the caller
+    skips it rather than recording a `Dependency` with a fabricated or
+    absent constraint.
+    """
+    if isinstance(spec, str):
+        return spec
+    if isinstance(spec, dict):
+        version = spec.get("version")
+        return version if isinstance(version, str) else None
+    return None
+
+
+def _extract_cargo_dependencies(path: Path, rel_path: str) -> list[Dependency]:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return []
+    dependencies: list[Dependency] = []
+    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+        section_value = data.get(section, {})
+        if not isinstance(section_value, dict):
+            continue  # malformed manifest: not the conventional name->spec table
+        for name, spec in section_value.items():
+            constraint = _cargo_version_constraint(spec)
+            if constraint is None:
+                continue
+            dependencies.append(
+                Dependency(
+                    id=stable_id("dependency", "cargo", rel_path, name),
+                    name=name,
+                    ecosystem="cargo",
+                    version_constraint=constraint,
+                    evidence=[_manifest_evidence(rel_path, name)],
+                )
+            )
+    return dependencies
+
+
 _EXTRACTORS = {
     "pyproject.toml": _extract_pyproject_dependencies,
     "package.json": _extract_package_json_dependencies,
+    "Cargo.toml": _extract_cargo_dependencies,
 }
 
 
@@ -119,10 +165,10 @@ def extract_dependencies_by_manifest(
 def extract_dependencies(root: Path, manifests: list[PackageManifest]) -> list[Dependency]:
     """Parse every manifest System Intelligence knows how to read.
 
-    Manifests without a registered extractor (Cargo.toml, go.mod, pom.xml,
-    build.gradle, Gemfile) are still reported by `structure.scan_structure`
-    as evidence of the ecosystem, but their dependency lists are not parsed
-    yet. Flattens `extract_dependencies_by_manifest` — kept for callers that
+    Manifests without a registered extractor (go.mod, pom.xml, build.gradle,
+    Gemfile) are still reported by `structure.scan_structure` as evidence of
+    the ecosystem, but their dependency lists are not parsed yet. Flattens
+    `extract_dependencies_by_manifest` — kept for callers that
     only need the combined list (e.g. a whole-repository dependency count),
     not per-Component attribution.
     """

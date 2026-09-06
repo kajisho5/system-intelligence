@@ -9,11 +9,17 @@ project's own internal registry or Capability Contract format) belong in
 `system_intelligence.integrations`, not here.
 """
 
+from system_intelligence.research.providers.crates_io import (
+    CratesIoUpdateError,
+    CratesIoUpdateProvider,
+)
 from system_intelligence.research.providers.npm import NpmUpdateError, NpmUpdateProvider
 from system_intelligence.research.providers.osv import OSVLookupError, OSVVulnerabilityProvider
 from system_intelligence.research.providers.pypi import PyPIUpdateError, PyPIUpdateProvider
 
 __all__ = [
+    "CratesIoUpdateError",
+    "CratesIoUpdateProvider",
     "NpmUpdateError",
     "NpmUpdateProvider",
     "OSVLookupError",
