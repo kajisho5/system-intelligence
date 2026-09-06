@@ -505,6 +505,29 @@ def test_propose_command_target_kind_shapes_test_strategy(tmp_path: Path) -> Non
     assert result.exit_code == 0
     written = json.loads(out_path.read_text(encoding="utf-8"))
     assert "SKILL.md" in written["test_strategy"]
+    assert len(written["interfaces"]) == 1
+    assert "SKILL.md" in written["interfaces"][0]
+
+
+def test_propose_command_prints_capabilities_interfaces_and_strategies(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "propose",
+            "Need a linter Skill",
+            "--requirement",
+            "lints Python",
+            "--target-kind",
+            "skill",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Capabilities: lints Python" in result.stdout
+    assert "Interfaces: " in result.stdout and "SKILL.md" in result.stdout
+    assert "Test strategy: " in result.stdout
+    assert "Documentation requirements: " in result.stdout
+    assert "Rollback strategy: " in result.stdout
 
 
 def test_propose_command_unknown_target_kind_fails_clearly() -> None:
