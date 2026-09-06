@@ -533,6 +533,154 @@ def test_execute_command_applies_with_matching_approval(tmp_path: Path) -> None:
     assert (tmp_path / "LICENSE").read_text(encoding="utf-8") == "MIT\n"
 
 
+def _local_approval(
+    target: str, action: str = "create_local_branch_and_commit"
+) -> dict[str, object]:
+    return {
+        "actor": "human:test",
+        "scope": "repository",
+        "action": action,
+        "target": target,
+        "permission_level": 4,
+    }
+
+
+def test_execute_command_push_requires_repo_option(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(json.dumps(_local_approval(str(tmp_path))), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(tmp_path),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+            "--push",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--repo" in result.stdout + (result.stderr or "")
+
+
+def test_execute_command_push_requires_github_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(json.dumps(_local_approval(str(tmp_path))), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(tmp_path),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+            "--push",
+            "--repo",
+            "o/r",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "GITHUB_TOKEN" in result.stdout + (result.stderr or "")
+
+
+def test_execute_command_push_denied_without_a_create_draft_pr_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    # Only the local action is approved -- the remote action needs its own.
+    approval_file.write_text(json.dumps(_local_approval(str(tmp_path))), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(tmp_path),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+            "--push",
+            "--repo",
+            "o/r",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Draft PR denied" in result.stdout
+    # The local step still succeeded and is not rolled back.
+    assert (tmp_path / "LICENSE").read_text(encoding="utf-8") == "MIT\n"
+
+
+def test_execute_command_push_opens_a_draft_pr_with_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    subprocess.run(["git", "init", "-q", "--bare"], cwd=remote, check=True)
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _init_repo(repo_dir)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo_dir, check=True)
+
+    plan_file = _write_plan_file(repo_dir)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            [
+                _local_approval(str(repo_dir)),
+                _local_approval("o/r", action="create_draft_pr"),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def _fake_post(url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        return 201, json.dumps(
+            {"number": 9, "html_url": "https://github.com/o/r/pull/9", "draft": True}
+        ).encode()
+
+    monkeypatch.setattr("system_intelligence.execution.github_pr._default_http_post", _fake_post)
+
+    result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(repo_dir),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+            "--push",
+            "--repo",
+            "o/r",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Draft PR opened: https://github.com/o/r/pull/9" in result.stdout
+    branches = subprocess.run(
+        ["git", "branch"], cwd=remote, capture_output=True, text=True, check=True
+    ).stdout
+    assert "si/add-license" in branches
+
+
 def test_execute_command_invalid_plan_file_fails_clearly(tmp_path: Path) -> None:
     plan_file = tmp_path / "plan.json"
     plan_file.write_text(json.dumps({"branch_name": "x"}), encoding="utf-8")

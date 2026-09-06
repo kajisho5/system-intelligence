@@ -1,25 +1,42 @@
 """Execution adapters: plan/preview/apply for approved Changes.
 
-Phase 8 scope: `plan.ChangePlan` (a pure, side-effect-free description of
-a local change) and `local_git.apply_plan` — creates a local branch and
-commits specific files, gated by `policy.evaluate`. This never pushes to
-any remote and never runs `git` with anything but a fixed, hardcoded
-subcommand.
+`plan.ChangePlan` is a pure, side-effect-free description of a local
+change. Two adapters apply it, matching docs/design/docs/11-github-
+integration.md's "Preferred first write" (create branch -> create commit
+-> open Draft PR) as two separately governed steps:
 
-Deliberately not implemented yet: the remote half of docs/design/docs/11-
-github-integration.md's "Preferred first write" (create branch → create
-commit → open Draft PR, on the actual remote). Opening a Draft PR touches
-shared state on GitHub, which is a materially different risk than writing
-to a throwaway local branch; it needs its own adapter, its own explicit
-approval action name, and — per the task's own safety principle — should
-not be added just because it appears on the long-term roadmap. Merge,
-close, delete, force-push, visibility, credential, and deployment
+- `local_git.apply_plan` — creates a local branch and commits specific
+  files, gated by `policy.evaluate` under `create_local_branch_and_commit`.
+  Never touches any remote; never runs `git` with anything but a fixed,
+  hardcoded subcommand.
+- `github_pr.open_draft_pr_for_plan` — pushes that already-created branch
+  and opens it as a Draft PR, gated independently under `create_draft_pr`
+  (its own action name, its own `Approval` requirement — covering the
+  local step does not also cover this one). Never merges, closes,
+  approves, or force-pushes.
+
+Merge, close, delete, force-push, visibility, credential, and deployment
 operations are never implemented as automatic actions at all (see
 `core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS`, enforced independently by both
 `Approval`'s validator and `policy.evaluate`).
 """
 
+from system_intelligence.execution.github_pr import (
+    DraftPRResult,
+    DraftPullRequest,
+    GitHubPRError,
+    open_draft_pr_for_plan,
+)
 from system_intelligence.execution.local_git import ExecutionResult, LocalGitError, apply_plan
 from system_intelligence.execution.plan import ChangePlan
 
-__all__ = ["ChangePlan", "ExecutionResult", "LocalGitError", "apply_plan"]
+__all__ = [
+    "ChangePlan",
+    "DraftPRResult",
+    "DraftPullRequest",
+    "ExecutionResult",
+    "GitHubPRError",
+    "LocalGitError",
+    "apply_plan",
+    "open_draft_pr_for_plan",
+]

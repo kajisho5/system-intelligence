@@ -61,14 +61,14 @@ Registry, was added beyond this epic's original PyPI/npm-agnostic scope.)
 - [x] recommendation engine — `recommendations/engine.py`
 - [x] proposal schema — `core/proposals.py`
 - [ ] new Skill proposal / [ ] new Agent proposal / [ ] new software proposal — `proposals/engine.py::propose_solution` is generic across whatever a caller names as the problem; it does not branch into Skill-specific vs. Agent-specific vs. software-specific proposal shapes (partly because Epic 3's agent detector doesn't exist yet to discover Agents at all)
-- [x] implementation plan generator — `execution/plan.py::ChangePlan` (local branch/commit plan; a remote Draft PR plan is future work, see Epic 8)
+- [x] implementation plan generator — `execution/plan.py::ChangePlan` (local branch/commit plan; the remote Draft PR step is `execution/github_pr.py`, see Epic 8)
 
 ## Epic 8 — Governance
 - [x] policy schema — `core/enums.py` (`PermissionLevel`, `FORBIDDEN_BY_DEFAULT_ACTIONS`), `policy/engine.py`
 - [x] approval records — `core/governance.py::Approval`
 - [x] audit log — `policy/engine.py::audit_log_entry` builds an `AuditLogEntry` per policy decision; `Snapshot.audit_log`/`audit_log.json`; wired into `si execute --record`
-- [ ] GitHub write scopes — no remote-write code exists yet to scope in the first place
-- [ ] Draft PR adapter — `execution/local_git.py`'s own docstring: "the remote half (opening a Draft PR) is deliberately not implemented yet"
+- [x] GitHub write scopes — `execution/github_pr.py::push_branch`/`open_draft_pull_request`, gated by `policy.evaluate` under `create_draft_pr` (a distinct action/Approval from the local `create_local_branch_and_commit` step); token via the `GITHUB_TOKEN` environment variable, never a CLI argument
+- [x] Draft PR adapter — `execution/github_pr.py::open_draft_pr_for_plan`; pushes the branch `local_git.apply_plan` already created and opens it as a Draft PR via the GitHub REST API. `si execute --push --repo owner/repo`. Live-validated: `push_branch` against a real throwaway branch on this repo (pushed, verified via the GitHub API, branch left for manual cleanup since even a scratch `git push --delete` was blocked by this session's own safety classifier); the REST "open PR" call itself could not be validated live from this sandbox (raw HTTP to `api.github.com` is blocked here), so it's covered by mocked-HTTP unit tests only, matching every other GitHub-API-touching adapter in this codebase
 
 ## Epic 9 — Verification
 - [x] test runner adapter — `verification/engine.py::run_verification`

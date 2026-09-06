@@ -3,8 +3,9 @@
 This never touches any remote — no `git push`, no network access at all.
 It implements the "create branch"/"create commit" half of
 docs/design/docs/11-github-integration.md's "Preferred first write"; the
-remote half (opening a Draft PR) is deliberately not implemented yet (see
-`execution/__init__.py`) — this stops at the local-repository boundary.
+remote half (pushing that branch and opening a Draft PR) is
+`execution.github_pr.open_draft_pr_for_plan`, gated independently — this
+module stops at the local-repository boundary on purpose.
 
 Every `apply_plan` call is gated by `policy.evaluate`: this action needs
 `PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR` by default, above the read-only

@@ -47,7 +47,13 @@ from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
-from system_intelligence.execution import ChangePlan, LocalGitError, apply_plan
+from system_intelligence.execution import (
+    ChangePlan,
+    GitHubPRError,
+    LocalGitError,
+    apply_plan,
+    open_draft_pr_for_plan,
+)
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
 from system_intelligence.policy import audit_log_entry
 from system_intelligence.proposals import propose_component_update, propose_solution
@@ -814,6 +820,24 @@ _EXECUTE_RECORD_OPTION = typer.Option(
         "is only ever printed, not persisted."
     ),
 )
+_PUSH_OPTION = typer.Option(
+    False,
+    "--push",
+    help=(
+        "After applying locally, also push the branch and open it as a Draft PR "
+        "(execution.github_pr, gated separately from the local step — see --repo). "
+        "Requires the GITHUB_TOKEN environment variable and --repo. Never merges, "
+        "closes, approves, or force-pushes."
+    ),
+)
+_PUSH_REPO_OPTION = typer.Option(
+    None,
+    "--repo",
+    help="'owner/repo' to push to and open the Draft PR against. Required with --push.",
+)
+_PUSH_BASE_OPTION = typer.Option(
+    "main", "--base", help="Base branch for the Draft PR (only used with --push)."
+)
 
 
 @app.command()
@@ -823,16 +847,27 @@ def execute(
     approve: bool = _APPROVE_OPTION,
     approval_file: Path | None = _APPROVAL_FILE_OPTION,
     record: Path | None = _EXECUTE_RECORD_OPTION,
+    push: bool = _PUSH_OPTION,
+    repo: str | None = _PUSH_REPO_OPTION,
+    base: str = _PUSH_BASE_OPTION,
 ) -> None:
-    """Preview, or apply, a local ChangePlan (branch + commit) — never a remote change.
+    """Preview, or apply, a local ChangePlan (branch + commit), optionally pushed as a Draft PR.
 
     Without `--approve` this only prints what would happen
     (`ChangePlan.preview_lines()`) and touches nothing. With `--approve`,
     `execution.local_git.apply_plan` still requires a matching `Approval`
     record via `--approval-file` unless the plan's required permission
     level is within the default maximum — human approval is never
-    bypassed. This never pushes to a remote and never performs a
-    `core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS` action.
+    bypassed. Without `--push`, this never touches a remote at all.
+
+    `--push` additionally pushes the branch and opens it as a Draft PR
+    (`execution.github_pr.open_draft_pr_for_plan`) against `--repo`
+    (required, `owner/repo`) — gated by its **own** `create_draft_pr`
+    policy check, separate from the local step's: an `--approval-file`
+    covering only the local action does not also authorize the push.
+    Requires the `GITHUB_TOKEN` environment variable. This never merges,
+    closes, approves, or force-pushes, and never performs a
+    `core.enums.FORBIDDEN_BY_DEFAULT_ACTIONS` action either way.
     """
     try:
         raw_plan = json.loads(plan_file.read_text(encoding="utf-8"))
@@ -920,6 +955,68 @@ def execute(
 
     typer.echo(f"\nApplied: branch {result.branch_name!r}, commit {result.commit_sha}")
     typer.echo(f"Files written: {', '.join(result.files_written)}")
+
+    if not push:
+        return
+
+    if not repo or "/" not in repo:
+        typer.echo("error: --push requires --repo in the form 'owner/repo'", err=True)
+        raise typer.Exit(code=1)
+    owner, repo_name = repo.split("/", 1)
+
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        typer.echo("error: --push requires the GITHUB_TOKEN environment variable", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        pr_result = open_draft_pr_for_plan(
+            plan,
+            Path(target),
+            owner=owner,
+            repo=repo_name,
+            base=base,
+            token=token,
+            approvals=approvals,
+        )
+    except GitHubPRError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    pull_request = pr_result.pull_request
+    if record is not None:
+        _append_json_record(
+            record,
+            "executions.json",
+            ExecutionRecord(
+                action="create_draft_pr",
+                target=f"{owner}/{repo_name}",
+                plan_description=plan.description,
+                branch_name=plan.branch_name,
+                pull_request_number=pull_request.number if pull_request else None,
+                pull_request_url=pull_request.html_url if pull_request else None,
+                applied=pr_result.applied,
+                decision_reason=pr_result.decision.reason,
+            ),
+        )
+        _append_json_record(
+            record,
+            "audit_log.json",
+            audit_log_entry(
+                pr_result.decision,
+                action="create_draft_pr",
+                target=f"{owner}/{repo_name}",
+                intent=plan.description or plan.commit_message,
+                actor=approvals[0].actor if approvals else "system:cli",
+                correlation_id=str(pull_request.number) if pull_request else None,
+            ),
+        )
+
+    if not pr_result.applied or pull_request is None:
+        typer.echo(f"\nDraft PR denied: {pr_result.decision.reason}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"\nDraft PR opened: {pull_request.html_url}")
 
 
 _VERIFY_COMMAND_ARGUMENT = typer.Argument(
