@@ -1,10 +1,10 @@
 """Test/CI presence audit (docs/design/docs/05-analysis-engine.md, "Quality").
 
 Phase 3 scope: whether any CI job was detected and whether any test files
-exist under a conventional `tests/` directory, or (Go only) anywhere in
-the tree at all. Not in scope: coverage percentages, lint/type-check
-configuration quality, or CI run history — those need richer signals
-than local discovery provides.
+exist under a conventional `tests/` directory, (Go) anywhere in the tree
+at all, or (Java/Maven/Gradle) under `src/test/java`. Not in scope:
+coverage percentages, lint/type-check configuration quality, or CI run
+history — those need richer signals than local discovery provides.
 """
 
 from __future__ import annotations
@@ -48,8 +48,26 @@ def _has_go_test_files(root: Path) -> bool:
     return any(iter_files(root, "*_test.go"))
 
 
+def _has_maven_layout_test_files(root: Path) -> bool:
+    """Maven's own "Standard Directory Layout" convention (verified against
+    maven.apache.org's own docs) places test sources at `src/test/java`,
+    never under a root-level `tests/` directory -- Gradle's Java plugin
+    defaults to the same layout. A real Maven/Gradle Java project (already
+    a first-class ecosystem here -- `discovery/structure.py` detects
+    `pom.xml`/`build.gradle(.kts)`, and `analysis/dependencies.py` parses
+    `pom.xml`) with full test coverage under `src/test/java` was previously
+    unconditionally flagged with a `test_gap` finding.
+    """
+    test_dir = root / "src" / "test" / "java"
+    return test_dir.is_dir() and any(test_dir.rglob("*.java"))
+
+
 def _has_test_files(root: Path) -> bool:
-    return _has_directory_test_files(root) or _has_go_test_files(root)
+    return (
+        _has_directory_test_files(root)
+        or _has_go_test_files(root)
+        or _has_maven_layout_test_files(root)
+    )
 
 
 def audit_ci_and_tests(repository: Repository, root: Path, ci_jobs: list[CIJob]) -> list[Finding]:
