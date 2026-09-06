@@ -32,9 +32,51 @@ OBSERVE → UNDERSTAND → ANALYZE → RESEARCH → AUDIT → DESIGN
 
 ## Status
 
-Pre-alpha. Phase 1 (repository foundation and base domain schemas) is in
-progress — see `docs/design/docs/16-roadmap.md` for the full roadmap and
-`docs/design/IMPLEMENTATION_BACKLOG.md` for the current backlog.
+Pre-alpha, but functional. Discovery, deterministic analysis, the
+Relationship graph, external research, the recommendation/proposal
+engines, Component Update Intelligence, human-approved local execution,
+the static HTML report, and the interactive Dashboard are all implemented
+and covered by tests — see `docs/design/docs/16-roadmap.md` for the full
+roadmap and [Commands](#commands) below for what `si` can do today. Not
+yet implemented: Draft PR creation (local branch/commit only), a plugin
+loader for external Skills/Agents (the capability registry is a static
+Python dict), and package-registry/Capability-Contract adapters beyond
+PyPI/npm.
+
+## Commands
+
+Read-only unless noted:
+
+| Command | What it does |
+|---|---|
+| `si inspect <target>` | Repository/Skill/CI/doc inventory |
+| `si diagnose <target>` | Discovery + deterministic analysis → Findings |
+| `si report <target>` | Static, offline-viewable HTML report |
+| `si dashboard <target>` | Interactive "System Intelligence Console" (see below) |
+| `si diff <from> <to>` | Diff two canonical snapshot directories |
+| `si research <query>` | Search GitHub for existing solutions (network) |
+| `si check-updates <target>` | Component Update Intelligence: current vs. available state (network) |
+| `si improve <target>` | Findings → ranked Recommendations |
+| `si propose <problem>` | Adopt/integrate/create decision → a Proposal |
+| `si plan <intent-or-text>` | Preview which capabilities a request would run |
+| `si execute <plan> <target>` | Apply a local `ChangePlan` (dry-run unless `--approve`; local branch/commit only, never a remote write) |
+| `si verify <command>` | Run a test command and record pass/fail |
+| `si doctor`, `si version` | Environment check, installed version |
+
+`si execute`/`si verify`/`si research`/`si propose`/`si check-updates` all
+accept `--record <snapshot-dir>` to attach their result to an existing
+canonical snapshot so a later `si dashboard` can show it.
+
+`si dashboard` renders 13 sections (Overview, Findings, Updates,
+Recommendations, Proposals, Executions, Components, Capabilities,
+Dependencies, Changes, Research, Evidence, Settings/Governance) from one
+or more snapshots as a single dependency-free HTML file — `--compare-with
+<snapshot-dir>` populates Changes, `--check-updates` populates Updates.
+Nothing it renders can merge, delete, force-push, or write to a remote.
+
+`si design` and `si watch` are registered as explicit placeholders (`si
+--help` documents them; running them fails clearly rather than silently
+doing nothing) — they are not implemented yet.
 
 ## Documentation
 
