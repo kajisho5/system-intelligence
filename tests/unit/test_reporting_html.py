@@ -1,5 +1,5 @@
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import Dependency, Repository, Skill, Target
+from system_intelligence.core.entities import Agent, Dependency, Repository, Skill, Target
 from system_intelligence.core.enums import (
     CapabilityStatus,
     Confidence,
@@ -69,3 +69,32 @@ def test_generate_html_report_no_findings_message() -> None:
     snapshot = Snapshot(target=_target())
     html = generate_html_report(snapshot)
     assert "No findings." in html
+
+
+def test_generate_html_report_renders_agent_detail() -> None:
+    """An Agent is a peer Component to Skill with the same `is_standard_format`
+    signal -- previously fell through `_render_components`'s isinstance
+    dispatch entirely, rendering an empty Detail column."""
+    agent = Agent(
+        id="a1",
+        name="code-reviewer",
+        path=".claude/agents/code-reviewer.md",
+        is_standard_format=True,
+        model_provider="sonnet",
+    )
+    snapshot = Snapshot(target=_target(), components=[agent])
+
+    html = generate_html_report(snapshot)
+
+    assert "code-reviewer" in html
+    assert "standard format" in html
+    assert "model: sonnet" in html
+
+
+def test_generate_html_report_renders_non_standard_agent_detail() -> None:
+    agent = Agent(id="a1", name="mystery-agent", is_standard_format=False)
+    snapshot = Snapshot(target=_target(), components=[agent])
+
+    html = generate_html_report(snapshot)
+
+    assert "non-standard format" in html

@@ -21,7 +21,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
-from system_intelligence.core.entities import Document, Repository, Skill
+from system_intelligence.core.entities import Agent, Document, Repository, Skill
 from system_intelligence.core.enums import Severity
 from system_intelligence.core.snapshot import Snapshot
 
@@ -73,6 +73,10 @@ def _render_components(snapshot: Snapshot) -> str:
         extra = ""
         if isinstance(component, Skill):
             extra = "standard format" if component.is_standard_format else "non-standard format"
+        elif isinstance(component, Agent):
+            extra = "standard format" if component.is_standard_format else "non-standard format"
+            if component.model_provider:
+                extra += f" (model: {component.model_provider})"
         elif isinstance(component, Document):
             extra = component.document_type or ""
         elif isinstance(component, Repository):
