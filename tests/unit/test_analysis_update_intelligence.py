@@ -191,6 +191,168 @@ def test_assess_impact_relationships_take_precedence_over_dependency_scan() -> N
     assert assessment.affected_entity_ids == []
 
 
+def test_assess_impact_multi_hop_reaches_capability_and_consumer() -> None:
+    """Change -> Component (DEPENDS_ON) -> Capability (PROVIDES) ->
+    Consumer (USES): a 3-hop chain, using only relationship types the
+    pipeline already materializes."""
+    dep = _dependency(resolved_version="0.8.2")
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    current = build_current_state(dep)
+    diff = diff_states(current, available)
+
+    relationships = [
+        Relationship(type=RelationshipType.DEPENDS_ON, source_id="provider-1", target_id=dep.id),
+        Relationship(
+            type=RelationshipType.PROVIDES, source_id="provider-1", target_id="capability-1"
+        ),
+        Relationship(type=RelationshipType.USES, source_id="consumer-1", target_id="capability-1"),
+    ]
+
+    assessment = assess_impact(diff, [], relationships=relationships)
+
+    # Level-order (BFS), not a global sort: direct dependents first, then
+    # the capabilities they provide, then those capabilities' consumers.
+    assert assessment.affected_entity_ids == ["provider-1", "capability-1", "consumer-1"]
+
+
+def test_assess_impact_multi_hop_cascades_through_a_second_capability() -> None:
+    """A reached consumer that itself provides a further capability keeps
+    the walk going (Component -> Capability -> Consumer -> Capability ->
+    further Consumer), not just a fixed number of hops."""
+    dep = _dependency(resolved_version="0.8.2")
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    current = build_current_state(dep)
+    diff = diff_states(current, available)
+
+    relationships = [
+        Relationship(type=RelationshipType.DEPENDS_ON, source_id="mid", target_id=dep.id),
+        Relationship(type=RelationshipType.PROVIDES, source_id="mid", target_id="cap-1"),
+        Relationship(type=RelationshipType.USES, source_id="downstream", target_id="cap-1"),
+        Relationship(type=RelationshipType.PROVIDES, source_id="downstream", target_id="cap-2"),
+        Relationship(type=RelationshipType.USES, source_id="far-downstream", target_id="cap-2"),
+    ]
+
+    assessment = assess_impact(diff, [], relationships=relationships)
+
+    assert set(assessment.affected_entity_ids) == {
+        "mid",
+        "cap-1",
+        "downstream",
+        "cap-2",
+        "far-downstream",
+    }
+
+
+def test_assess_impact_multi_hop_is_cycle_safe_and_deterministic() -> None:
+    """A cycle (provider <-> capability <-> the same provider as a
+    consumer) must not infinite-loop, and results must be reproducible."""
+    dep = _dependency(resolved_version="0.8.2")
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    current = build_current_state(dep)
+    diff = diff_states(current, available)
+
+    relationships = [
+        Relationship(type=RelationshipType.DEPENDS_ON, source_id="a", target_id=dep.id),
+        Relationship(type=RelationshipType.PROVIDES, source_id="a", target_id="cap-1"),
+        Relationship(type=RelationshipType.USES, source_id="a", target_id="cap-1"),
+        # "a" both provides and uses "cap-1" -- a direct cycle back to itself.
+    ]
+
+    first = assess_impact(diff, [], relationships=relationships)
+    second = assess_impact(diff, [], relationships=relationships)
+
+    assert first.affected_entity_ids == ["a", "cap-1"]
+    assert first.affected_entity_ids == second.affected_entity_ids
+
+
+def test_assess_impact_multi_hop_ignores_unrelated_component() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    current = build_current_state(dep)
+    diff = diff_states(current, available)
+
+    relationships = [
+        Relationship(type=RelationshipType.DEPENDS_ON, source_id="a", target_id=dep.id),
+        # Entirely disconnected from the changed identity or "a".
+        Relationship(type=RelationshipType.PROVIDES, source_id="unrelated", target_id="cap-x"),
+    ]
+
+    assessment = assess_impact(diff, [], relationships=relationships)
+
+    assert assessment.affected_entity_ids == ["a"]
+    assert "unrelated" not in assessment.affected_entity_ids
+    assert "cap-x" not in assessment.affected_entity_ids
+
+
+def test_assess_impact_multi_hop_ignores_unrecognized_relationship_types() -> None:
+    """Only DEPENDS_ON/PROVIDES/USES propagate impact — other relationship
+    types (e.g. DUPLICATES) must never be treated as an impact path."""
+    dep = _dependency(resolved_version="0.8.2")
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    current = build_current_state(dep)
+    diff = diff_states(current, available)
+
+    relationships = [
+        Relationship(type=RelationshipType.DEPENDS_ON, source_id="a", target_id=dep.id),
+        Relationship(type=RelationshipType.DUPLICATES, source_id="a", target_id="b"),
+    ]
+
+    assessment = assess_impact(diff, [], relationships=relationships)
+
+    assert assessment.affected_entity_ids == ["a"]
+
+
+def test_assess_impact_multi_hop_falls_back_when_identity_has_no_component_id() -> None:
+    """Even with a non-empty relationship list, a StateDiff whose identity
+    never got a `component_id` (e.g. no DEPENDS_ON edge could be keyed to
+    it) has nothing to start the graph walk from, so it must fall back to
+    the same-Snapshot dependency-name scan rather than silently returning
+    no affected entities."""
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    current = build_current_state(dep)
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill", distribution_source="npm"
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+    relationship = Relationship(type=RelationshipType.DEPENDS_ON, source_id="other", target_id="x")
+
+    assessment = assess_impact(diff, [repo], relationships=[relationship])
+
+    assert assessment.affected_entity_ids == ["r1"]
+
+
 def test_assess_impact_falls_back_to_dependency_scan_without_relationships() -> None:
     dep = _dependency(resolved_version="0.8.2")
     repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])

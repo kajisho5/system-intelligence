@@ -29,7 +29,13 @@ class ImpactAssessment(BaseModel):
     state_diff: StateDiff
     affected_entity_ids: list[str] = Field(
         default_factory=list,
-        description="Component ids in the same Snapshot observed to depend on this identity.",
+        description=(
+            "Ids of entities that relationship topology says could be affected by a change "
+            "to this identity — Component ids that directly depend on it, plus any Capability "
+            "and consumer-Component ids reached by following PROVIDES/USES edges onward from "
+            "there. Reachable-in-the-graph, not confirmed-to-break; only 1-hop (direct "
+            "dependents) when no relationship graph was supplied."
+        ),
     )
     breaking_items: list[StateDiffItem] = Field(default_factory=list)
     capability_impact: list[StateDiffItem] = Field(default_factory=list)

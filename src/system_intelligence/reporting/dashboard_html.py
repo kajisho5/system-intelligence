@@ -442,6 +442,8 @@ _SCRIPT = r"""
     var findings = DATA.findings.filter(function (f) { return (f.affected_entity_ids || []).indexOf(c.id) !== -1; });
     var assessments = DATA.update_assessments.filter(function (a) { return a.state_diff.identity.component_id === c.id; });
     var block = el("div", { class: "detail-block" },
+      el("h4", null, "Trust level"),
+      el("p", null, c.trust_level),
       el("h4", null, "Interfaces"),
       c.interfaces.length ? el("ul", null, c.interfaces.map(function (i) { return el("li", null, i.kind + ": " + (i.description || "")); })) : el("p", null, "None recorded."),
       el("h4", null, "Dependencies"),

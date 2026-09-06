@@ -828,6 +828,70 @@ def test_dashboard_command_without_compare_with_never_shows_recorded_data(tmp_pa
     assert dashboard_json["overview"]["proposal_count"] == 0
 
 
+def test_dashboard_command_compare_with_derives_trust_level_from_research(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end P1-4 wiring: `si research --record` accumulates a
+    ResearchResult identifying the same repository `si diagnose` discovers;
+    `si dashboard --compare-with` must derive `Component.trust_level` from
+    it (COMMUNITY, licensed + not archived) rather than leaving it UNKNOWN."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+
+    snap_out = tmp_path / "snap"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+
+    response = {
+        "items": [
+            {
+                # "target_dir.name" is "target" -- the repo-name suffix must
+                # match the locally discovered Repository's own short name.
+                "full_name": "someowner/target",
+                "html_url": "https://github.com/someowner/target",
+                "license": {"spdx_id": "MIT"},
+                "pushed_at": "2026-08-01T00:00:00Z",
+                "stargazers_count": 1,
+                "archived": False,
+            }
+        ]
+    }
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr("system_intelligence.research.github._default_http_get", _fake_http_get)
+
+    research_result = runner.invoke(
+        app,
+        [
+            "research",
+            "target",
+            "--record",
+            str(snap_dir),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ],
+    )
+    assert research_result.exit_code == 0
+
+    out_dir = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        ["dashboard", str(target_dir), "--out", str(out_dir), "--compare-with", str(snap_dir)],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    repository = next(c for c in dashboard_json["components"] if c["kind"] == "repository")
+    assert repository["trust_level"] == "community"
+
+
 def test_dashboard_command_compare_with_missing_manifest_fails_clearly(tmp_path: Path) -> None:
     target_dir = tmp_path / "target"
     target_dir.mkdir()

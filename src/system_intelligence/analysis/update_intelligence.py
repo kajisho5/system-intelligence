@@ -142,16 +142,74 @@ def diff_states(current: ComponentState, available: AvailableState) -> StateDiff
     )
 
 
+def _traverse_affected(start_id: str, relationships: list[Relationship]) -> list[str]:
+    """Breadth-first walk of DEPENDS_ON -> PROVIDES -> USES edges from `start_id`.
+
+    `start_id` (the changed identity's own Component/Dependency id) is never
+    itself included in the result. Each relationship type only propagates
+    impact in the direction its own meaning supports:
+
+    - DEPENDS_ON (`source depends_on target`): a change to an id already
+      reached can affect `source_id` wherever `target_id` is that id — the
+      direct-dependents hop this function replaces (still exactly 1-hop
+      when no PROVIDES/USES edges continue the chain, so existing 1-hop
+      behavior is unchanged).
+    - PROVIDES (`source provides target`, source=Component,
+      target=Capability): a change to a Component already reached can
+      affect `target_id` (the Capability it provides).
+    - USES (`source uses target`, source=consumer Component,
+      target=Capability): a change to a Capability already reached can
+      affect `source_id` (its consumer), which may itself provide further
+      Capabilities — the walk continues from there.
+
+    Deterministic (each level's newly-reached ids are sorted before being
+    added) and cycle-safe: a `visited` set stops any id from being
+    re-expanded, however many relationship types loop back to it, and the
+    walk always terminates once no new id is reached (bounded by the
+    number of distinct entities in the relationship list).
+
+    The result is "entities relationship topology says could be affected",
+    not "entities that will break" — `ImpactAssessment.breaking_items`,
+    `unknown_dimensions`, and `verdict` are what carry that judgment; this
+    function only ever expands *which* ids are worth attaching that
+    judgment to.
+    """
+    by_type: dict[RelationshipType, list[Relationship]] = {}
+    for rel in relationships:
+        by_type.setdefault(rel.type, []).append(rel)
+
+    visited: set[str] = {start_id}
+    frontier: set[str] = {start_id}
+    order: list[str] = []
+
+    while frontier:
+        next_frontier: set[str] = set()
+        for rel in by_type.get(RelationshipType.DEPENDS_ON, ()):
+            if rel.target_id in frontier and rel.source_id not in visited:
+                next_frontier.add(rel.source_id)
+        for rel in by_type.get(RelationshipType.PROVIDES, ()):
+            if rel.source_id in frontier and rel.target_id not in visited:
+                next_frontier.add(rel.target_id)
+        for rel in by_type.get(RelationshipType.USES, ()):
+            if rel.target_id in frontier and rel.source_id not in visited:
+                next_frontier.add(rel.source_id)
+
+        newly_reached = sorted(next_frontier - visited)
+        if not newly_reached:
+            break
+        visited.update(newly_reached)
+        order.extend(newly_reached)
+        frontier = set(newly_reached)
+
+    return order
+
+
 def _affected_by_relationships(
     identity: ComponentIdentity, relationships: list[Relationship]
 ) -> list[str] | None:
     if identity.component_id is None:
         return None
-    return [
-        rel.source_id
-        for rel in relationships
-        if rel.type == RelationshipType.DEPENDS_ON and rel.target_id == identity.component_id
-    ]
+    return _traverse_affected(identity.component_id, relationships)
 
 
 def _affected_by_dependency_scan(

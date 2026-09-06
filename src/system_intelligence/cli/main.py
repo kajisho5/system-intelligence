@@ -38,6 +38,7 @@ from pydantic import BaseModel
 
 from system_intelligence import __version__
 from system_intelligence.analysis import analyze_local_repository
+from system_intelligence.analysis.trust import infer_trust_levels
 from system_intelligence.analysis.update_intelligence import check_dependency_updates
 from system_intelligence.core.entities import Repository
 from system_intelligence.core.enums import ComponentKind, PermissionLevel, Severity
@@ -332,13 +333,18 @@ def dashboard(
         # untouched `previous_snapshot` — merging accumulated audit-trail
         # records here never affects that, since diff_snapshots only looks
         # at components/capabilities/dependencies/findings.
+        merged_research = _merge_by_id(snapshot.research, previous_snapshot.research)
         snapshot = snapshot.model_copy(
             update={
                 "proposals": _merge_by_id(snapshot.proposals, previous_snapshot.proposals),
                 "executions": _merge_by_id(snapshot.executions, previous_snapshot.executions),
                 "verification": _merge_by_id(snapshot.verification, previous_snapshot.verification),
                 "approvals": _merge_by_id(snapshot.approvals, previous_snapshot.approvals),
-                "research": _merge_by_id(snapshot.research, previous_snapshot.research),
+                "research": merged_research,
+                # A fresh scan never has research to derive Component.trust_level
+                # from (si diagnose alone never populates it) — re-derive now
+                # that --compare-with may have brought some in.
+                "components": infer_trust_levels(snapshot.components, merged_research),
             }
         )
 
