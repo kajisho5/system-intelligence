@@ -40,3 +40,9 @@ The analyzer must not create a second incompatible source of truth merely for UI
 ## Reference implementation integration
 
 AI Video Production OS's dashboard should be able to consume System Intelligence outputs through a documented adapter/export format.
+
+That boundary is `reporting.dashboard_data.DashboardData` / the canonical
+snapshot directory — see 12-storage-and-state.md, "External consumer
+boundary" — not a second, separately-versioned export model. AI Video
+Production OS remains a reference consumer of that boundary, never a
+hard-coded dependency of System Intelligence.

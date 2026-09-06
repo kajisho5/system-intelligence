@@ -15,6 +15,19 @@ this module could have computed — the frontend has no business logic.
 
 Generic across `ComponentKind` (ADR-001, ADR-007): nothing here references
 any specific component, repository, or organization.
+
+This is also the read model an external consumer outside SI's own Python
+process should read (docs/design/docs/12-storage-and-state.md, "External
+consumer boundary") — e.g. a different dashboard, CI tooling, another
+agent, or the AI Video Production OS's own ecosystem-level control plane
+(a reference consumer, never a hard dependency of SI). No second export
+format is introduced for that: this is the same `Snapshot` state already
+written to the canonical snapshot directory (`core.snapshot.Snapshot.
+write_to_directory`), just aggregated with the counts/rankings/evidence-
+cross-references a UI or external reader would otherwise have to
+re-derive itself. `Snapshot.tool_version` (surfaced here on
+`OverviewCounts`) remains the one compatibility marker — see
+12-storage-and-state.md rather than a second version number here.
 """
 
 from __future__ import annotations
@@ -23,7 +36,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializeAsAny
 
 from system_intelligence.analysis.update_intelligence import UpdateCheckResult
 from system_intelligence.core.capability import Capability
@@ -39,6 +52,7 @@ from system_intelligence.core.governance import Approval
 from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.proposals import Proposal
 from system_intelligence.core.recommendations import Recommendation
+from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.research import ResearchResult
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.core.verification import Verification
@@ -50,6 +64,7 @@ class OverviewCounts(BaseModel):
     target_name: str
     target_locator: str
     snapshot_id: str
+    tool_version: str
     generated_at: datetime
     component_count: int
     component_counts_by_kind: dict[str, int]
@@ -125,8 +140,17 @@ class DashboardData(BaseModel):
     id: str = Field(default_factory=lambda: f"dashboard-{uuid4().hex[:12]}")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     overview: OverviewCounts
-    components: list[Component]
+    # `SerializeAsAny`: without it, pydantic serializes every item in this
+    # list using `Component`'s own declared schema when this *containing*
+    # model is dumped as a whole (exactly what dashboard_html.py's
+    # `_json_script` does) — silently dropping subclass-only fields like
+    # `Repository.url` or `Skill.is_standard_format` from the JSON an
+    # external consumer reads. Dumping each Component individually (as
+    # `Snapshot.write_to_directory` does) never had this problem; this
+    # field needs the same runtime-type-aware serialization explicitly.
+    components: list[SerializeAsAny[Component]]
     capabilities: list[Capability]
+    relationships: list[Relationship]
     dependencies: list[Dependency]
     findings: list[Finding]
     research: list[ResearchResult]
@@ -303,6 +327,7 @@ def build_dashboard_data(
         target_name=snapshot.target.name,
         target_locator=snapshot.target.locator,
         snapshot_id=snapshot.id,
+        tool_version=snapshot.tool_version,
         generated_at=snapshot.created_at,
         component_count=len(snapshot.components),
         component_counts_by_kind=dict(Counter(c.kind.value for c in snapshot.components)),
@@ -342,6 +367,7 @@ def build_dashboard_data(
         overview=overview,
         components=snapshot.components,
         capabilities=snapshot.capabilities,
+        relationships=snapshot.relationships,
         dependencies=dependencies,
         findings=snapshot.findings,
         research=snapshot.research,

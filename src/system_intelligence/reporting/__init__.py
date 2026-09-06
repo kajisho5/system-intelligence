@@ -17,6 +17,11 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 6):
   only renders it. Distinct from `html.generate_html_report` in role, not
   in source of truth: report is static/export-oriented, dashboard is
   interactive/drill-down-oriented, and both consume the same `Snapshot`.
+  `DashboardData` is also the read model an external consumer outside SI's
+  own process should read (docs/design/docs/12-storage-and-state.md,
+  "External consumer boundary") — no second export format, just this same
+  `Snapshot` state aggregated for a reader that shouldn't have to re-derive
+  counts/rankings/evidence cross-references itself.
 
 The canonical JSON snapshot itself (`core.snapshot.Snapshot`) is the
 machine-readable export this module renders — no second, incompatible

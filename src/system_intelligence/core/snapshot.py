@@ -29,7 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializeAsAny
 
 from system_intelligence.core.capability import Capability
 from system_intelligence.core.entities import (
@@ -98,7 +98,16 @@ class Snapshot(BaseModel):
     target: Target
     tool_version: str = _SNAPSHOT_VERSION
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    components: list[Component] = Field(default_factory=list)
+    # `SerializeAsAny`: `write_to_directory` dumps each Component individually
+    # (`item.model_dump(...)`), which is unaffected either way, but a whole-
+    # `Snapshot` dump (`model_dump()`/`model_dump_json()` called directly,
+    # e.g. by an external consumer that wants one JSON blob instead of the
+    # directory layout) would otherwise serialize every item using the base
+    # `Component` schema and silently drop subclass-only fields such as
+    # `Repository.url` or `Skill.is_standard_format` — see
+    # `reporting.dashboard_data.DashboardData.components` for the same fix,
+    # found the same way (a real, verified pydantic v2 default behavior).
+    components: list[SerializeAsAny[Component]] = Field(default_factory=list)
     capabilities: list[Capability] = Field(default_factory=list)
     relationships: list[Relationship] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)

@@ -1,3 +1,5 @@
+import json
+
 from system_intelligence.analysis.update_intelligence import UpdateCheckResult, UpdateLookupFailure
 from system_intelligence.core.component_state import (
     AvailableState,
@@ -18,7 +20,7 @@ from system_intelligence.core.findings import Finding
 from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.core.state_diff import StateDiff, StateDiffItem
-from system_intelligence.reporting.dashboard_data import build_dashboard_data
+from system_intelligence.reporting.dashboard_data import DashboardData, build_dashboard_data
 
 
 def _target() -> Target:
@@ -57,6 +59,82 @@ def test_build_dashboard_data_counts_relationships() -> None:
     data = build_dashboard_data(snapshot)
 
     assert data.overview.relationship_count == 1
+
+
+def test_build_dashboard_data_preserves_relationship_objects_and_types() -> None:
+    """The export contract carries the actual typed Relationship objects,
+    not just a count — distinct RelationshipTypes (DEPENDS_ON/PROVIDES/USES/
+    DUPLICATES) must never collapse into a generic dependency count."""
+    from system_intelligence.core.enums import RelationshipType
+    from system_intelligence.core.relationships import Relationship
+
+    depends_on = Relationship(type=RelationshipType.DEPENDS_ON, source_id="r1", target_id="d1")
+    provides = Relationship(type=RelationshipType.PROVIDES, source_id="r1", target_id="c1")
+    snapshot = Snapshot(target=_target(), relationships=[depends_on, provides])
+
+    data = build_dashboard_data(snapshot)
+
+    assert len(data.relationships) == 2
+    assert {r.type for r in data.relationships} == {
+        RelationshipType.DEPENDS_ON,
+        RelationshipType.PROVIDES,
+    }
+    assert data.relationships[0].id == depends_on.id
+
+
+def test_build_dashboard_data_surfaces_tool_version_for_compatibility() -> None:
+    """`Snapshot.tool_version` is the one existing compatibility marker
+    (docs/design/docs/12-storage-and-state.md) -- an external reader of
+    this read model needs it too, so it is surfaced here rather than
+    inventing a second, parallel version number."""
+    snapshot = Snapshot(target=_target())
+
+    data = build_dashboard_data(snapshot)
+
+    assert data.overview.tool_version == snapshot.tool_version
+
+
+def test_dashboard_data_component_subclass_fields_survive_whole_object_dump() -> None:
+    """Regression test for a real pydantic v2 default behavior: serializing
+    `DashboardData` as a whole (exactly what `dashboard_html.py`'s
+    `_json_script` does) used to serialize every `components` entry using
+    the base `Component` schema, silently dropping subclass-only fields
+    like `Repository.url` from the JSON an external consumer reads --
+    dumping a Component individually (as `Snapshot.write_to_directory`
+    does) never showed this, since that never goes through a *containing*
+    model's own `model_dump`. Fixed via `SerializeAsAny`."""
+    repo = Repository(id="r1", name="repo", path=".", url="https://example.com/repo.git")
+    snapshot = Snapshot(target=_target(), components=[repo])
+
+    data = build_dashboard_data(snapshot)
+    payload = json.loads(data.model_dump_json())
+
+    assert payload["components"][0]["url"] == "https://example.com/repo.git"
+
+
+def test_dashboard_data_reload_restores_fields_but_not_the_component_subclass() -> None:
+    """The JSON itself is complete (previous test); reconstructing the
+    exact original Python subclass from generic `DashboardData.
+    model_validate_json` is a separate, pre-existing limitation shared
+    with `Snapshot` itself when not read via `Snapshot.read_from_directory`
+    (which explicitly dispatches on `kind`) -- documented here rather than
+    silently assumed away."""
+    repo = Repository(id="r1", name="repo", path=".", url="https://example.com/repo.git")
+    snapshot = Snapshot(target=_target(), components=[repo])
+
+    data = build_dashboard_data(snapshot)
+    reloaded = DashboardData.model_validate_json(data.model_dump_json())
+
+    assert reloaded.overview == data.overview
+    assert reloaded.components[0].name == repo.name
+    assert type(reloaded.components[0]) is not type(repo)
+
+
+def test_dashboard_data_json_serialization_is_stable_for_a_fixed_object() -> None:
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    assert data.model_dump_json() == data.model_dump_json()
 
 
 def test_build_dashboard_data_flattens_and_dedupes_dependencies() -> None:

@@ -51,6 +51,26 @@ def test_snapshot_round_trips_through_directory(tmp_path: Path) -> None:
     assert restored.capabilities[0].status == CapabilityStatus.PARTIAL
 
 
+def test_snapshot_whole_object_json_dump_preserves_component_subclass_fields() -> None:
+    """`write_to_directory` dumps each Component individually and was never
+    affected, but calling `model_dump_json()` on the whole `Snapshot` (e.g.
+    an external consumer wanting one JSON blob instead of the directory
+    layout) used to serialize every `components` entry using the base
+    `Component` schema, silently dropping subclass-only fields like
+    `Repository.url` -- a real pydantic v2 default behavior, fixed via
+    `SerializeAsAny`."""
+    import json
+
+    snapshot = Snapshot(
+        target=_target(),
+        components=[Repository(id="r1", name="repo", path=".", url="https://example.com/x.git")],
+    )
+
+    payload = json.loads(snapshot.model_dump_json())
+
+    assert payload["components"][0]["url"] == "https://example.com/x.git"
+
+
 def test_snapshot_manifest_uses_target_locator_as_fingerprint() -> None:
     snapshot = Snapshot(target=_target())
     manifest = snapshot.manifest()
