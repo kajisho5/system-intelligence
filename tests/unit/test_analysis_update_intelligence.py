@@ -124,6 +124,25 @@ def test_build_current_state_go_pseudo_version_still_matches() -> None:
     assert state.version_confidence == Confidence.HIGH
 
 
+def test_build_current_state_maven_bare_version_is_an_exact_pin() -> None:
+    """Maven's own convention: a literal `<version>1.2.3</version>` in
+    pom.xml means exactly that version -- `_extract_pom_dependencies` only
+    ever extracts literal versions in the first place, never a
+    `${property}` placeholder."""
+    state = build_current_state(_dependency(ecosystem="maven", version_constraint="33.6.0-jre"))
+    assert state.version == "33.6.0-jre"
+    assert state.version_confidence == Confidence.HIGH
+
+
+def test_build_current_state_maven_range_syntax_leaves_version_unknown() -> None:
+    """Maven's own version-range syntax (`[1.0,2.0)`, `(,2.0]`) starts with
+    a bracket/paren character `_EXACT_PIN_RE` does not match -- excluded
+    without needing a Maven-specific range parser."""
+    state = build_current_state(_dependency(ecosystem="maven", version_constraint="[1.0,2.0)"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
 def test_build_current_state_pep440_prerelease_pin_still_matches() -> None:
     """A regression guard: widening the exact-pin regex for npm must not
     stop matching pypi's already-supported bare PEP 440 suffixes."""

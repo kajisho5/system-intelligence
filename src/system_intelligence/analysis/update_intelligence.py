@@ -61,16 +61,21 @@ _EXACT_PIN_RE = re.compile(r"^(?:==?\s*)?v?[0-9][0-9A-Za-z.+_-]*$")
 
 #: Ecosystems whose own manifest convention treats a **bare** version
 #: constraint (no operator) as pinning that exact version -- npm's
-#: package.json ("18.2.0" means exactly that version), and Go's go.mod
+#: package.json ("18.2.0" means exactly that version), Go's go.mod
 #: (every `require` line is already an exact, MVS-resolved version, or a
 #: pseudo-version -- Go has no bare-caret-range convention at all, unlike
-#: Cargo). Never assumed for an ecosystem where a bare version means
-#: something else: Cargo.toml's own convention treats a bare "1.2.3" as a
-#: caret requirement (`^1.2.3`, a compatible-updates range), not an exact
-#: pin, so a bare Cargo constraint is only ever exact when explicitly
-#: prefixed with "=" (Cargo's own exact-pin operator) -- never guessed
-#: from the bare form.
-_BARE_CONSTRAINT_IS_EXACT_PIN = frozenset({"npm", "go"})
+#: Cargo), and Maven's pom.xml (a literal "1.2.3" is that exact version;
+#: `analysis.dependencies._extract_pom_dependencies` already only ever
+#: extracts literal versions, never a `${property}` placeholder -- and
+#: Maven's own range syntax, e.g. "[1.0,2.0)" or "(,2.0]", starts with a
+#: bracket/paren character `_EXACT_PIN_RE` does not match, so it is
+#: correctly excluded here without special-casing). Never assumed for an
+#: ecosystem where a bare version means something else: Cargo.toml's own
+#: convention treats a bare "1.2.3" as a caret requirement (`^1.2.3`, a
+#: compatible-updates range), not an exact pin, so a bare Cargo constraint
+#: is only ever exact when explicitly prefixed with "=" (Cargo's own
+#: exact-pin operator) -- never guessed from the bare form.
+_BARE_CONSTRAINT_IS_EXACT_PIN = frozenset({"npm", "go", "maven"})
 
 
 def _has_wildcard_segment(constraint: str) -> bool:
