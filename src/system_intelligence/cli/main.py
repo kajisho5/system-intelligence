@@ -1,11 +1,15 @@
 """`si` command-line entry point.
 
 `si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`,
-`si diff`, `si research`, `si improve`, and `si propose` are implemented.
-The remaining commands from docs/design/docs/13-cli-and-ux.md (`design`,
-`execute`, `verify`, `watch`) are registered as explicit placeholders so
-`si --help` documents the intended surface without claiming functionality
-that does not exist yet.
+`si diff`, `si research`, `si improve`, `si propose`, and `si plan` are
+implemented. `si plan` is not in docs/design/docs/13-cli-and-ux.md's
+original command list; it exposes the Phase 7 capability-selection
+planner (docs/design/docs/10-plugin-skill-system.md, "Dynamic selection")
+so the capability set a request would run is visible before anything
+executes. The remaining commands from docs/13 (`design`, `execute`,
+`verify`, `watch`) are registered as explicit placeholders so `si --help`
+documents the intended surface without claiming functionality that does
+not exist yet.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from system_intelligence.core.enums import ComponentKind, Severity
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
+from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
 from system_intelligence.proposals import propose_solution
 from system_intelligence.recommendations import generate_recommendations
 from system_intelligence.reporting import diff_snapshots, generate_html_report
@@ -395,6 +400,49 @@ def propose(
     if out is not None:
         out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
         typer.echo(f"\nProposal written to {out}")
+
+
+_REQUEST_ARGUMENT = typer.Argument(
+    None,
+    help=(
+        "A known intent name (see 'si plan --list') or free text, e.g. 'Diagnose this repository.'"
+    ),
+)
+_LIST_INTENTS_OPTION = typer.Option(
+    False, "--list", help="List known intent names and exit, ignoring REQUEST."
+)
+
+
+@app.command()
+def plan(
+    request: str | None = _REQUEST_ARGUMENT, list_intents: bool = _LIST_INTENTS_OPTION
+) -> None:
+    """Show which capabilities a request would run, without running any of them.
+
+    docs/design/docs/10-plugin-skill-system.md: "Given an intent, select
+    the minimum capability set required. ... It should not blindly
+    activate every installed capability." This command makes that
+    selection visible and auditable before anything executes.
+    """
+    if list_intents:
+        for name in sorted(INTENTS):
+            typer.echo(name)
+        return
+
+    if request is None:
+        typer.echo("error: REQUEST is required unless --list is given.", err=True)
+        raise typer.Exit(code=1)
+
+    if request in INTENTS:
+        intent = request
+    else:
+        intent = classify_intent(request)
+        typer.echo(f"Classified {request!r} as intent {intent!r}.")
+
+    capability_ids = resolve_intent(intent)
+    typer.echo(f"\nIntent {intent!r} would run {len(capability_ids)} capabilit(y/ies):")
+    for capability_id in capability_ids:
+        typer.echo(f"  - {capability_id}: {CAPABILITIES[capability_id].description}")
 
 
 @app.command()

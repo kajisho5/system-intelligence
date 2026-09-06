@@ -320,3 +320,35 @@ def test_propose_command_research_error_fails_clearly(
 
     assert result.exit_code == 1
     assert "error" in result.stdout + (result.stderr or "")
+
+
+def test_plan_command_with_known_intent_name() -> None:
+    result = runner.invoke(app, ["plan", "documentation_only"])
+
+    assert result.exit_code == 0
+    assert "Classified" not in result.stdout  # it's already a known intent
+    assert "documentation_audit" in result.stdout
+    assert "structure_scan" not in result.stdout
+
+
+def test_plan_command_classifies_free_text() -> None:
+    result = runner.invoke(app, ["plan", "Diagnose this repository."])
+
+    assert result.exit_code == 0
+    assert "Classified 'Diagnose this repository.' as intent 'diagnose'" in result.stdout
+    assert "circular_dependency_detection" in result.stdout
+
+
+def test_plan_command_list_intents() -> None:
+    result = runner.invoke(app, ["plan", "--list"])
+
+    assert result.exit_code == 0
+    assert "diagnose" in result.stdout
+    assert "documentation_only" in result.stdout
+
+
+def test_plan_command_requires_request_without_list() -> None:
+    result = runner.invoke(app, ["plan"])
+
+    assert result.exit_code == 1
+    assert "required" in result.stdout + (result.stderr or "")
