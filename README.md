@@ -54,7 +54,7 @@ Read-only unless noted:
 | `si report <target>` | Static, offline-viewable HTML report |
 | `si dashboard <target>` | Interactive "System Intelligence Console" (see below) |
 | `si diff <from> <to>` | Diff two canonical snapshot directories |
-| `si research <query>` | Search GitHub for existing solutions (network) |
+| `si research <query>` | Search for existing solutions — `--provider github` (default) or `--provider mcp-registry` (network) |
 | `si check-updates <target>` | Component Update Intelligence: current vs. available state (network) |
 | `si improve <target>` | Findings → ranked Recommendations |
 | `si propose <problem>` | Adopt/integrate/create decision → a Proposal |
