@@ -182,3 +182,36 @@ def test_analyze_local_repository_populates_capability_consumers(tmp_path: Path)
     assert len(uses) == 1
     assert uses[0].source_id == subtitle_skill.id
     assert uses[0].target_id == ffmpeg_capability.id
+
+
+def test_analyze_local_repository_without_requirements_file_has_no_capability_gap(
+    tmp_path: Path,
+) -> None:
+    """The overwhelming common case: no `.si/requirements.json` at all
+    must never produce an inferred capability_gap finding."""
+    (tmp_path / "main.py").write_text("print('hi')\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    discovery = discover_local_repository(str(tmp_path))
+    result = analyze_local_repository(discovery)
+
+    categories = {f.category for f in result.snapshot.findings}
+    assert "capability_gap" not in categories
+
+
+def test_analyze_local_repository_reports_declared_capability_gap_end_to_end(
+    tmp_path: Path,
+) -> None:
+    _write_skill(tmp_path, "skills/ffmpeg-skill", "ffmpeg-skill")
+    (tmp_path / ".si").mkdir()
+    (tmp_path / ".si" / "requirements.json").write_text(
+        '{"capabilities": [{"name": "ffmpeg-skill"}, {"name": "pdf export"}]}', encoding="utf-8"
+    )
+    _init_repo(tmp_path)
+
+    discovery = discover_local_repository(str(tmp_path))
+    result = analyze_local_repository(discovery)
+
+    gap_findings = [f for f in result.snapshot.findings if f.category == "capability_gap"]
+    assert len(gap_findings) == 1
+    assert "pdf export" in gap_findings[0].statement

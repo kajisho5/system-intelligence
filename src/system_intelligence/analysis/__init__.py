@@ -11,11 +11,13 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 4), orchestrated by
 - unreferenced-Skill detection (never `verified_unused` from a static
   search alone — see ADR-010)
 - circular-import detection across local Python modules (AST-based)
+- capability *gap* detection (`gaps.py`) — opt-in: a project declares
+  required capabilities in `.si/requirements.json`; a repository with no
+  such file contributes zero gap findings, never an inferred one
 
-Not yet implemented: capability *gap* detection (needs a declared
-requirements/desired-capabilities input this phase does not have), semantic
-architecture heuristics beyond import cycles, and documentation *content*
-quality (only presence/absence is checked).
+Not yet implemented: semantic architecture heuristics beyond import
+cycles, and documentation *content* quality (only presence/absence is
+checked).
 """
 
 from system_intelligence.analysis.engine import AnalysisResult, analyze_local_repository
