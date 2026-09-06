@@ -771,6 +771,63 @@ def test_dashboard_command_compare_with_populates_changes(tmp_path: Path) -> Non
     assert dashboard_json["overview"]["has_previous_snapshot"] is True
 
 
+def test_dashboard_command_compare_with_surfaces_recorded_proposals(tmp_path: Path) -> None:
+    """--record accumulates into a snapshot dir; --compare-with is how the
+    dashboard actually reads that accumulator back — without it, a
+    freshly-scanned snapshot has empty proposals/executions/etc. by
+    construction, regardless of what was ever --record'ed anywhere."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+
+    snap_out = tmp_path / "snap"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+
+    propose_result = runner.invoke(app, ["propose", "Need X", "--record", str(snap_dir)])
+    assert propose_result.exit_code == 0
+
+    out_dir = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        ["dashboard", str(target_dir), "--out", str(out_dir), "--compare-with", str(snap_dir)],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    assert dashboard_json["overview"]["proposal_count"] == 1
+    assert dashboard_json["proposals"][0]["problem"] == "Need X"
+
+
+def test_dashboard_command_without_compare_with_never_shows_recorded_data(tmp_path: Path) -> None:
+    """The inverse of the above: no --compare-with means no accumulator was
+    read, so proposals/executions stay empty even if some exist on disk
+    elsewhere — a fresh scan must never silently show stale prior state."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+
+    snap_out = tmp_path / "snap"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+    runner.invoke(app, ["propose", "Need X", "--record", str(snap_dir)])
+
+    out_dir = tmp_path / "out"
+    result = runner.invoke(app, ["dashboard", str(target_dir), "--out", str(out_dir)])
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    assert dashboard_json["overview"]["proposal_count"] == 0
+
+
 def test_dashboard_command_compare_with_missing_manifest_fails_clearly(tmp_path: Path) -> None:
     target_dir = tmp_path / "target"
     target_dir.mkdir()

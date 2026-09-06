@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Protocol, TypeVar
 
 import typer
 from pydantic import BaseModel
@@ -276,7 +277,9 @@ _DASHBOARD_COMPARE_OPTION = typer.Option(
     None,
     "--compare-with",
     help="An earlier canonical snapshot directory (from --out on another command) to diff "
-    "against, populating the Changes screen.",
+    "against for the Changes screen. Also the accumulator directory to read: any "
+    "Proposal/ExecutionRecord/Verification/Approval/ResearchResult recorded into it via "
+    "--record on other commands is merged into the rendered snapshot, deduplicated by id.",
 )
 _DASHBOARD_CHECK_UPDATES_OPTION = typer.Option(
     False,
@@ -297,10 +300,16 @@ def dashboard(
     Runs discovery and analysis, then writes a self-contained `dashboard.html`
     (no CDN, viewable offline via file://) plus the canonical JSON snapshot
     into `--out`. This is read-heavy by design: nothing it renders can merge,
-    delete, force-push, or write to any remote. `--compare-with` populates the
-    Changes screen from an earlier snapshot directory; `--check-updates` adds
-    a network request per pypi/npm dependency (skipped by default, unlike
-    `si report`/`si diagnose`, which never touch the network at all).
+    delete, force-push, or write to any remote. `--compare-with` both
+    populates the Changes screen (diffed against that earlier snapshot's
+    components/findings) and supplies the Proposals/Executions/
+    Verifications/Approvals/Research screens: a fresh scan never carries
+    those forward on its own, so without `--compare-with` pointed at
+    whatever directory `--record` on other commands has been accumulating
+    into, those screens are correctly empty rather than showing stale data.
+    `--check-updates` adds a network request per pypi/npm dependency
+    (skipped by default, unlike `si report`/`si diagnose`, which never
+    touch the network at all).
     """
     try:
         discovery = discover_local_repository(target)
@@ -319,6 +328,19 @@ def dashboard(
             typer.echo(f"error: {compare_with} has no manifest.json", err=True)
             raise typer.Exit(code=1)
         previous_snapshot = Snapshot.read_from_directory(compare_with)
+        # The Changes diff below compares this fresh `snapshot` against the
+        # untouched `previous_snapshot` — merging accumulated audit-trail
+        # records here never affects that, since diff_snapshots only looks
+        # at components/capabilities/dependencies/findings.
+        snapshot = snapshot.model_copy(
+            update={
+                "proposals": _merge_by_id(snapshot.proposals, previous_snapshot.proposals),
+                "executions": _merge_by_id(snapshot.executions, previous_snapshot.executions),
+                "verification": _merge_by_id(snapshot.verification, previous_snapshot.verification),
+                "approvals": _merge_by_id(snapshot.approvals, previous_snapshot.approvals),
+                "research": _merge_by_id(snapshot.research, previous_snapshot.research),
+            }
+        )
 
     update_check = None
     if check_updates:
@@ -665,6 +687,25 @@ def plan(
     typer.echo(f"\nIntent {intent!r} would run {len(capability_ids)} capabilit(y/ies):")
     for capability_id in capability_ids:
         typer.echo(f"  - {capability_id}: {CAPABILITIES[capability_id].description}")
+
+
+class _Identifiable(Protocol):
+    id: str
+
+
+_T = TypeVar("_T", bound=_Identifiable)
+
+
+def _merge_by_id(current: list[_T], accumulated: list[_T]) -> list[_T]:
+    """Combine two lists of the same record type, deduplicated by `.id`.
+
+    Used to fold a `--record`-accumulated snapshot directory's Proposals/
+    ExecutionRecords/Verifications/Approvals/ResearchResults into a freshly
+    scanned Snapshot for `si dashboard`. `current` wins on an id collision.
+    """
+    merged: dict[str, _T] = {record.id: record for record in accumulated}
+    merged.update({record.id: record for record in current})
+    return list(merged.values())
 
 
 def _append_json_record(directory: Path, filename: str, record: BaseModel) -> None:
