@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from system_intelligence.core.enums import ComponentKind
+from system_intelligence.core.enums import ComponentKind, RelationshipType
 from system_intelligence.intelligence.intents import resolve_intent
 from system_intelligence.intelligence.orchestrator import run_capabilities
 
@@ -58,6 +58,27 @@ def test_improve_intent_populates_recommendations(tmp_path: Path) -> None:
 
     assert len(snapshot.recommendations) == len(snapshot.findings)
     assert len(snapshot.recommendations) > 0
+
+
+def test_relationship_graph_construction_produces_depends_on_edges(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["pydantic"]\n', encoding="utf-8"
+    )
+
+    snapshot = run_capabilities(str(tmp_path), ["relationship_graph_construction"])
+
+    depends_on = [r for r in snapshot.relationships if r.type == RelationshipType.DEPENDS_ON]
+    assert len(depends_on) == 1
+
+
+def test_diagnose_intent_includes_relationship_graph(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["pydantic"]\n', encoding="utf-8"
+    )
+
+    snapshot = run_capabilities(str(tmp_path), resolve_intent("diagnose"))
+
+    assert any(r.type == RelationshipType.DEPENDS_ON for r in snapshot.relationships)
 
 
 def test_dependency_extraction_without_skill_detection(tmp_path: Path) -> None:

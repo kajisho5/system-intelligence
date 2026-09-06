@@ -6,7 +6,13 @@ from system_intelligence.analysis.update_intelligence import (
 )
 from system_intelligence.core.component_state import AvailableState, ComponentIdentity
 from system_intelligence.core.entities import Dependency, Repository
-from system_intelligence.core.enums import ComponentKind, Confidence, UpdateVerdict
+from system_intelligence.core.enums import (
+    ComponentKind,
+    Confidence,
+    RelationshipType,
+    UpdateVerdict,
+)
+from system_intelligence.core.relationships import Relationship
 from system_intelligence.research.update_provider import ComponentUpdateError
 
 
@@ -145,6 +151,61 @@ def test_assess_impact_finds_affected_components() -> None:
     assert assessment.affected_entity_ids == ["r1"]
 
 
+def test_assess_impact_uses_relationships_when_given() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    current = build_current_state(dep)
+    # identity.component_id is the dependency id (as _identity_for produces),
+    # matching how a real DEPENDS_ON edge's target_id is keyed.
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+    relationship = Relationship(type=RelationshipType.DEPENDS_ON, source_id="r1", target_id=dep.id)
+
+    assessment = assess_impact(diff, [], relationships=[relationship])
+
+    assert assessment.affected_entity_ids == ["r1"]
+
+
+def test_assess_impact_relationships_take_precedence_over_dependency_scan() -> None:
+    """An empty but *provided* relationship list means "computed, no matches" —
+    it must not fall back to the (here, matching) dependency-name scan."""
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    current = build_current_state(dep)
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+
+    assessment = assess_impact(diff, [repo], relationships=[])
+
+    assert assessment.affected_entity_ids == []
+
+
+def test_assess_impact_falls_back_to_dependency_scan_without_relationships() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    current = build_current_state(dep)
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill", distribution_source="npm"
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+
+    assessment = assess_impact(diff, [repo], relationships=None)
+
+    assert assessment.affected_entity_ids == ["r1"]
+
+
 class _FakeProvider:
     name = "npm"
 
@@ -201,6 +262,35 @@ def test_check_dependency_updates_produces_assessment_on_success() -> None:
 
     assert len(check.assessments) == 1
     assert check.assessments[0].state_diff.identity.name == "ffmpeg-skill"
+
+
+def test_check_dependency_updates_forwards_relationships_to_impact_assessment() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    repo = Repository(id="r1", name="repo", path=".", dependencies=[dep])
+    # Mirrors what `_identity_for(dep)` (called internally) actually
+    # produces, since `_FakeProvider` returns this `available` verbatim
+    # regardless of the identity it's called with.
+    identity = ComponentIdentity(
+        component_id=dep.id,
+        component_kind=ComponentKind.PACKAGE,
+        name="ffmpeg-skill",
+        distribution_source="npm",
+    )
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    relationship = Relationship(
+        type=RelationshipType.DEPENDS_ON, source_id="other-component", target_id=dep.id
+    )
+
+    check = check_dependency_updates(
+        [repo],
+        providers={"npm": _FakeProvider(available=available)},
+        relationships=[relationship],
+    )
+
+    assert len(check.assessments) == 1
+    # The relationship graph says "other-component" depends on this — not
+    # "repo" (which would be found by the dependency-name-scan fallback).
+    assert check.assessments[0].affected_entity_ids == ["other-component"]
 
 
 def test_check_dependency_updates_deduplicates_shared_dependency() -> None:

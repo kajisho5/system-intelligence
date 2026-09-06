@@ -28,11 +28,13 @@ from system_intelligence.core.entities import Component, Dependency
 from system_intelligence.core.enums import (
     ComponentKind,
     Confidence,
+    RelationshipType,
     StateDiffCategory,
     UpdateVerdict,
 )
 from system_intelligence.core.evidence import Evidence
 from system_intelligence.core.impact import ImpactAssessment
+from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.state_diff import StateDiff, StateDiffItem
 from system_intelligence.research.update_provider import (
     ComponentUpdateError,
@@ -140,17 +142,22 @@ def diff_states(current: ComponentState, available: AvailableState) -> StateDiff
     )
 
 
-def assess_impact(state_diff: StateDiff, components: list[Component]) -> ImpactAssessment:
-    """Assess what a StateDiff would mean for the rest of the observed system.
+def _affected_by_relationships(
+    identity: ComponentIdentity, relationships: list[Relationship]
+) -> list[str] | None:
+    if identity.component_id is None:
+        return None
+    return [
+        rel.source_id
+        for rel in relationships
+        if rel.type == RelationshipType.DEPENDS_ON and rel.target_id == identity.component_id
+    ]
 
-    `affected_entity_ids` only ever lists components in `components` that
-    declare a matching Dependency in *this same Snapshot* — this is a
-    deliberately narrow, deterministic substitute for a full Relationship
-    graph (R4), which nothing in this codebase populates yet. It will
-    under-report indirect/transitive consumers; it never over-reports.
-    """
-    identity = state_diff.identity
-    affected_entity_ids = [
+
+def _affected_by_dependency_scan(
+    identity: ComponentIdentity, components: list[Component]
+) -> list[str]:
+    return [
         component.id
         for component in components
         if any(
@@ -158,6 +165,29 @@ def assess_impact(state_diff: StateDiff, components: list[Component]) -> ImpactA
             for dep in component.dependencies
         )
     ]
+
+
+def assess_impact(
+    state_diff: StateDiff,
+    components: list[Component],
+    relationships: list[Relationship] | None = None,
+) -> ImpactAssessment:
+    """Assess what a StateDiff would mean for the rest of the observed system.
+
+    When `relationships` is given (a Snapshot with `relationship_graph_
+    construction` already run), `affected_entity_ids` is computed from real
+    DEPENDS_ON edges keyed by the Dependency's own id — precise even across
+    a monorepo with multiple manifests declaring the same package name.
+    Without it, this falls back to a same-Snapshot dependency name/ecosystem
+    scan, which will under-report indirect/transitive consumers but never
+    over-reports.
+    """
+    identity = state_diff.identity
+    affected_entity_ids = (
+        _affected_by_relationships(identity, relationships) if relationships is not None else None
+    )
+    if affected_entity_ids is None:
+        affected_entity_ids = _affected_by_dependency_scan(identity, components)
 
     breaking_items = [i for i in state_diff.items if i.category == StateDiffCategory.BREAKING]
     capability_impact = [
@@ -255,7 +285,9 @@ class UpdateCheckResult:
 
 
 def check_dependency_updates(
-    components: list[Component], providers: dict[str, ComponentUpdateProvider]
+    components: list[Component],
+    providers: dict[str, ComponentUpdateProvider],
+    relationships: list[Relationship] | None = None,
 ) -> UpdateCheckResult:
     """Run Update Intelligence for every Dependency whose ecosystem has a provider.
 
@@ -266,7 +298,10 @@ def check_dependency_updates(
     fact, not a fact about the dependency itself. A provider that raises
     `ComponentUpdateError` (network/HTTP/parse failure) is recorded in
     `UpdateCheckResult.unavailable` rather than aborting the whole check or
-    being silently dropped.
+    being silently dropped. `relationships` (from `analysis.relationships.
+    build_relationships`) is forwarded to `assess_impact` for precise
+    affected-component lookup; omit it to fall back to the same-Snapshot
+    dependency scan.
     """
     seen: set[tuple[str, str]] = set()
     assessments: list[ImpactAssessment] = []
@@ -293,5 +328,5 @@ def check_dependency_updates(
                 continue
             current = build_current_state(dependency)
             diff = diff_states(current, available)
-            assessments.append(assess_impact(diff, components))
+            assessments.append(assess_impact(diff, components, relationships))
     return UpdateCheckResult(assessments=assessments, unavailable=unavailable)

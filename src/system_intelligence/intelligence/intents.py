@@ -28,6 +28,7 @@ _DIAGNOSE_CAPABILITIES: frozenset[str] = frozenset(
         "capability_extraction",
         "unused_skill_detection",
         "circular_dependency_detection",
+        "relationship_graph_construction",
     }
 )
 

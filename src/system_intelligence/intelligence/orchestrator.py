@@ -23,12 +23,14 @@ from system_intelligence.analysis.capabilities import (
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
 from system_intelligence.analysis.dependencies import extract_dependencies
 from system_intelligence.analysis.documentation import audit_documentation
+from system_intelligence.analysis.relationships import build_relationships
 from system_intelligence.analysis.unused import audit_unused_skills
 from system_intelligence.core.capability import Capability
 from system_intelligence.core.entities import CIJob, Component, Document, Repository, Skill
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.ids import stable_id
 from system_intelligence.core.recommendations import Recommendation
+from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
 from system_intelligence.discovery.git_metadata import collect_git_metadata
@@ -50,6 +52,7 @@ class _OrchestrationContext:
     capabilities: list[Capability] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     recommendations: list[Recommendation] = field(default_factory=list)
+    relationships: list[Relationship] = field(default_factory=list)
 
 
 def _run_git_metadata(ctx: _OrchestrationContext) -> None:
@@ -101,6 +104,11 @@ def _run_circular_dependency_detection(ctx: _OrchestrationContext) -> None:
     ctx.findings.extend(detect_circular_dependencies(ctx.root))
 
 
+def _run_relationship_graph_construction(ctx: _OrchestrationContext) -> None:
+    components: list[Component] = [ctx.repository, *ctx.skills, *ctx.documents]
+    ctx.relationships = build_relationships(components, ctx.capabilities)
+
+
 def _run_recommendation_ranking(ctx: _OrchestrationContext) -> None:
     ctx.recommendations = generate_recommendations(ctx.findings)
 
@@ -116,6 +124,7 @@ _RUNNERS: dict[str, Callable[[_OrchestrationContext], None]] = {
     "capability_extraction": _run_capability_extraction,
     "unused_skill_detection": _run_unused_skill_detection,
     "circular_dependency_detection": _run_circular_dependency_detection,
+    "relationship_graph_construction": _run_relationship_graph_construction,
     "recommendation_ranking": _run_recommendation_ranking,
 }
 
@@ -140,6 +149,7 @@ def run_capabilities(locator: str, capability_ids: list[str]) -> Snapshot:
         target=target,
         components=components,
         capabilities=ctx.capabilities,
+        relationships=ctx.relationships,
         findings=ctx.findings,
         recommendations=ctx.recommendations,
     )

@@ -271,6 +271,7 @@ _SCRIPT = r"""
       ["Components", o.component_count],
       ["Capabilities", o.capability_count],
       ["Dependencies", o.dependency_count],
+      ["Relationships", o.relationship_count],
       ["Findings", o.finding_count],
       ["Recommendations", o.recommendation_count],
       ["Proposals", o.proposal_count],

@@ -322,7 +322,9 @@ def dashboard(
 
     update_check = None
     if check_updates:
-        update_check = check_dependency_updates(snapshot.components, _update_providers())
+        update_check = check_dependency_updates(
+            snapshot.components, _update_providers(), snapshot.relationships
+        )
 
     data = build_dashboard_data(
         snapshot, previous_snapshot=previous_snapshot, update_check=update_check
@@ -445,7 +447,9 @@ def check_updates(target: str = _TARGET_ARGUMENT) -> None:
 
     result = analyze_local_repository(discovery)
     providers = _update_providers()
-    check = check_dependency_updates(result.snapshot.components, providers)
+    check = check_dependency_updates(
+        result.snapshot.components, providers, result.snapshot.relationships
+    )
 
     if not check.assessments and not check.unavailable:
         typer.echo(

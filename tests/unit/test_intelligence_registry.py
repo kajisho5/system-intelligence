@@ -46,3 +46,10 @@ def test_resolve_dependencies_recommendation_ranking_pulls_everything_it_needs()
 def test_resolve_dependencies_unknown_capability_raises() -> None:
     with pytest.raises(KeyError):
         resolve_dependencies({"nonexistent"})
+
+
+def test_resolve_dependencies_relationship_graph_construction_pulls_prerequisites() -> None:
+    resolved = resolve_dependencies({"relationship_graph_construction"})
+    assert "dependency_extraction" in resolved
+    assert "capability_extraction" in resolved
+    assert resolved[-1] == "relationship_graph_construction"

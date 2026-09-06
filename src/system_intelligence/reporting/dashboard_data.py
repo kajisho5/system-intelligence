@@ -55,6 +55,7 @@ class OverviewCounts(BaseModel):
     component_counts_by_kind: dict[str, int]
     capability_count: int
     dependency_count: int
+    relationship_count: int
     finding_count: int
     finding_counts_by_severity: dict[str, int]
     recommendation_count: int
@@ -307,6 +308,7 @@ def build_dashboard_data(
         component_counts_by_kind=dict(Counter(c.kind.value for c in snapshot.components)),
         capability_count=len(snapshot.capabilities),
         dependency_count=len(dependencies),
+        relationship_count=len(snapshot.relationships),
         finding_count=len(snapshot.findings),
         finding_counts_by_severity=dict(Counter(f.severity.value for f in snapshot.findings)),
         recommendation_count=len(snapshot.recommendations),

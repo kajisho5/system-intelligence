@@ -18,6 +18,7 @@ from system_intelligence.analysis.capabilities import (
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
 from system_intelligence.analysis.dependencies import extract_dependencies
 from system_intelligence.analysis.documentation import audit_documentation
+from system_intelligence.analysis.relationships import build_relationships
 from system_intelligence.analysis.unused import audit_unused_skills
 from system_intelligence.core.entities import Document, Repository, Skill
 from system_intelligence.core.snapshot import Snapshot
@@ -53,11 +54,13 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
     updated_components = [
         updated_repository if c.id == repository.id else c for c in snapshot.components
     ]
+    relationships = build_relationships(updated_components, capabilities)
 
     updated_snapshot = snapshot.model_copy(
         update={
             "components": updated_components,
             "capabilities": capabilities,
+            "relationships": relationships,
             "findings": findings,
         }
     )

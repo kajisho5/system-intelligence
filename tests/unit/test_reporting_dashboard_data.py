@@ -47,6 +47,18 @@ def test_build_dashboard_data_counts_components_by_kind() -> None:
     assert data.overview.component_counts_by_kind == {"repository": 1}
 
 
+def test_build_dashboard_data_counts_relationships() -> None:
+    from system_intelligence.core.enums import RelationshipType
+    from system_intelligence.core.relationships import Relationship
+
+    relationship = Relationship(type=RelationshipType.DEPENDS_ON, source_id="r1", target_id="d1")
+    snapshot = Snapshot(target=_target(), relationships=[relationship])
+
+    data = build_dashboard_data(snapshot)
+
+    assert data.overview.relationship_count == 1
+
+
 def test_build_dashboard_data_flattens_and_dedupes_dependencies() -> None:
     dep = Dependency(id="d1", name="react", ecosystem="npm")
     repo_a = Repository(id="r1", name="repo-a", path="a", dependencies=[dep])

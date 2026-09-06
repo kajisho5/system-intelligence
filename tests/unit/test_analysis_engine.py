@@ -3,6 +3,7 @@ from pathlib import Path
 
 from system_intelligence.analysis.engine import analyze_local_repository
 from system_intelligence.core.entities import Repository
+from system_intelligence.core.enums import RelationshipType
 from system_intelligence.discovery.inventory import discover_local_repository
 
 
@@ -33,6 +34,10 @@ def test_analyze_local_repository_populates_findings_and_dependencies(tmp_path: 
     repository = next(c for c in result.snapshot.components if isinstance(c, Repository))
     dependency_names = {d.name for d in repository.dependencies}
     assert dependency_names == {"pydantic"}
+
+    depends_on = [r for r in result.snapshot.relationships if r.type == RelationshipType.DEPENDS_ON]
+    assert len(depends_on) == 1
+    assert depends_on[0].source_id == repository.id
 
 
 def test_analyze_local_repository_healthy_project_has_no_gap_findings(tmp_path: Path) -> None:

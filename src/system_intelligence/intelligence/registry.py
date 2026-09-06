@@ -61,6 +61,12 @@ CAPABILITIES: dict[str, CapabilityDescriptor] = {
     "circular_dependency_detection": CapabilityDescriptor(
         "circular_dependency_detection", "AST-based circular-import detection."
     ),
+    "relationship_graph_construction": CapabilityDescriptor(
+        "relationship_graph_construction",
+        "Materialize DEPENDS_ON/PROVIDES/USES/DUPLICATES edges already implicit "
+        "in Component and Capability records (R4).",
+        requires=frozenset({"dependency_extraction", "capability_extraction"}),
+    ),
     "recommendation_ranking": CapabilityDescriptor(
         "recommendation_ranking",
         "Rank accumulated findings into Recommendation records.",
