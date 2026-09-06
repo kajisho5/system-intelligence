@@ -53,6 +53,17 @@ def test_scan_structure_detects_gradle_kotlin_dsl(tmp_path: Path) -> None:
     assert result.package_manifests[0].ecosystem == "gradle"
 
 
+def test_scan_structure_detects_requirements_txt(tmp_path: Path) -> None:
+    """Many non-packaged Python projects (scripts, container images) have
+    only a requirements.txt -- no pyproject.toml/setup.py/Pipfile at all."""
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
+
+    result = scan_structure(tmp_path)
+
+    assert len(result.package_manifests) == 1
+    assert result.package_manifests[0].ecosystem == "pypi"
+
+
 def test_scan_structure_excludes_vendored_go_modules(tmp_path: Path) -> None:
     """A `go mod vendor`-managed project checks in a full copy of every
     dependency's own source tree -- including its own go.mod -- under
