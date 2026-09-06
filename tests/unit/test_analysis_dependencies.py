@@ -41,8 +41,8 @@ def test_extract_package_json_dependencies(tmp_path: Path) -> None:
 
 
 def test_extract_dependencies_unknown_manifest_type_ignored(tmp_path: Path) -> None:
-    (tmp_path / "pom.xml").write_text("<project></project>\n", encoding="utf-8")
-    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
+    (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n", encoding="utf-8")
+    manifests = [PackageManifest(path="Gemfile", ecosystem="rubygems", language="Ruby")]
 
     assert extract_dependencies(tmp_path, manifests) == []
 
@@ -131,7 +131,16 @@ def test_extract_dependencies_by_manifest_groups_by_directory(tmp_path: Path) ->
 def test_extract_dependencies_by_manifest_omits_directories_with_no_parsed_deps(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "pom.xml").write_text("<project></project>\n", encoding="utf-8")
+    (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n", encoding="utf-8")
+    manifests = [PackageManifest(path="Gemfile", ecosystem="rubygems", language="Ruby")]
+
+    assert extract_dependencies_by_manifest(tmp_path, manifests) == {}
+
+
+def test_extract_pom_dependencies_manifest_with_no_dependencies_section_returns_empty(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pom.xml").write_text("<project><groupId>x</groupId></project>\n", encoding="utf-8")
     manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
 
     assert extract_dependencies_by_manifest(tmp_path, manifests) == {}
@@ -280,6 +289,126 @@ def test_extract_go_dependencies_malformed_manifest_missing_file_returns_empty(
     tmp_path: Path,
 ) -> None:
     manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
+
+    assert extract_dependencies(tmp_path, manifests) == []
+
+
+_POM_XML_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>demo</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>33.6.0-jre</version>
+    </dependency>
+    <dependency>
+      <groupId>org.hamcrest</groupId>
+      <artifactId>hamcrest-core</artifactId>
+      <version>${{hamcrestVersion}}</version>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  {extra}
+</project>
+"""
+
+
+def test_extract_pom_dependencies_literal_version_extracted(tmp_path: Path) -> None:
+    """Shape verified against real pom.xml files (google/gson, junit-team/
+    junit4): a literal version, a ${property}-templated one, and a
+    parent/dependencyManagement-resolved one with no <version> at all
+    commonly appear side by side in the same <dependencies> block."""
+    (tmp_path / "pom.xml").write_text(_POM_XML_TEMPLATE.format(extra=""), encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert len(dependencies) == 1
+    dep = dependencies[0]
+    assert dep.name == "com.google.guava:guava"
+    assert dep.ecosystem == "maven"
+    assert dep.version_constraint == "33.6.0-jre"
+
+
+def test_extract_pom_dependencies_ignores_plugin_and_profile_dependencies(
+    tmp_path: Path,
+) -> None:
+    """A <dependencies> block nested under <build>/<plugins>/<plugin> (a
+    build tool's own dependency, not the project's) or under <profiles>
+    must never be mistaken for the project's direct dependencies -- only
+    depth-1 <dependencies> under <project> counts."""
+    extra = """
+    <build>
+      <plugins>
+        <plugin>
+          <dependencies>
+            <dependency>
+              <groupId>com.guardsquare</groupId>
+              <artifactId>proguard-base</artifactId>
+              <version>7.9.1</version>
+            </dependency>
+          </dependencies>
+        </plugin>
+      </plugins>
+    </build>
+    <profiles>
+      <profile>
+        <dependencies>
+          <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>profile-only</artifactId>
+            <version>1.0.0</version>
+          </dependency>
+        </dependencies>
+      </profile>
+    </profiles>
+    """
+    (tmp_path / "pom.xml").write_text(_POM_XML_TEMPLATE.format(extra=extra), encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"com.google.guava:guava"}
+
+
+def test_extract_pom_dependencies_ignores_dependency_management(tmp_path: Path) -> None:
+    extra = """
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>com.example</groupId>
+          <artifactId>managed-only</artifactId>
+          <version>2.0.0</version>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+    """
+    (tmp_path / "pom.xml").write_text(_POM_XML_TEMPLATE.format(extra=extra), encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"com.google.guava:guava"}
+
+
+def test_extract_pom_dependencies_malformed_xml_returns_empty(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("not valid xml <<<", encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
+
+    assert extract_dependencies(tmp_path, manifests) == []
+
+
+def test_extract_pom_dependencies_non_project_root_returns_empty(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<not-a-pom></not-a-pom>", encoding="utf-8")
+    manifests = [PackageManifest(path="pom.xml", ecosystem="maven", language="Java")]
 
     assert extract_dependencies(tmp_path, manifests) == []
 

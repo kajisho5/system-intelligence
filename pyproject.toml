@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
   "pydantic>=2.6,<3",
   "typer>=0.12,<1",
+  "defusedxml>=0.7,<1",
 ]
 
 [project.urls]
@@ -38,6 +39,7 @@ dev = [
   "mypy>=1.11",
   "bandit[toml]>=1.7",
   "pip-audit>=2.7",
+  "types-defusedxml>=0.7",
 ]
 
 [tool.hatch.build.targets.wheel]
