@@ -1,7 +1,9 @@
 import subprocess
 from pathlib import Path
 
-from system_intelligence.core.enums import ComponentKind
+import pytest
+
+from system_intelligence.core.enums import ComponentKind, TargetKind
 from system_intelligence.discovery.inventory import discover_local_repository
 
 
@@ -52,6 +54,26 @@ def test_discover_local_repository_populates_adrs(tmp_path: Path) -> None:
     assert len(result.snapshot.adrs) == 1
     assert result.snapshot.adrs[0].number == 1
     assert result.snapshot.adrs[0].status == "Accepted"
+
+
+def test_discover_local_repository_resolves_a_github_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone_dir = tmp_path / "cloned"
+    clone_dir.mkdir()
+    (clone_dir / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(clone_dir)
+
+    monkeypatch.setattr(
+        "system_intelligence.discovery.target.clone_github_repository", lambda _spec: clone_dir
+    )
+
+    result = discover_local_repository("octocat/Hello-World")
+
+    assert result.snapshot.target.kind == TargetKind.GITHUB_REPOSITORY
+    assert result.snapshot.target.name == "octocat/Hello-World"
+    documents = [c for c in result.snapshot.components if c.kind == ComponentKind.DOCUMENT]
+    assert len(documents) == 1
 
 
 def test_discover_local_repository_ids_are_stable_across_runs(tmp_path: Path) -> None:

@@ -32,7 +32,7 @@ from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_do
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
 from system_intelligence.discovery.structure import PackageManifest, scan_structure
-from system_intelligence.discovery.target import resolve_local_target
+from system_intelligence.discovery.target import resolve_target
 
 
 @dataclass(frozen=True)
@@ -43,14 +43,15 @@ class DiscoveryResult:
 
 
 def discover_local_repository(locator: str) -> DiscoveryResult:
-    """Run every Phase 2 discovery detector against a local path.
+    """Run every Phase 2 discovery detector against a local path or a
+    GitHub repository (`discovery.target.resolve_target`).
 
     Returns a `Snapshot` with `components` populated (the repository itself,
     any detected Skills, and a Document per detected root doc) and `adrs`
     populated, plus the detected `CIJob` list. `findings`/`recommendations`/
     etc. stay empty — those belong to later phases.
     """
-    target = resolve_local_target(locator)
+    target = resolve_target(locator)
     root = Path(target.locator)
 
     git_metadata = collect_git_metadata(root)

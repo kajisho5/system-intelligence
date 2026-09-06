@@ -32,20 +32,25 @@ OBSERVE → UNDERSTAND → ANALYZE → RESEARCH → AUDIT → DESIGN
 
 ## Status
 
-Pre-alpha, but functional. Discovery, deterministic analysis, the
-Relationship graph, external research, the recommendation/proposal
-engines, Component Update Intelligence, human-approved local execution,
-the static HTML report, and the interactive Dashboard are all implemented
-and covered by tests — see `docs/design/docs/16-roadmap.md` for the full
-roadmap and [Commands](#commands) below for what `si` can do today. Not
-yet implemented: Draft PR creation (local branch/commit only), a plugin
+Pre-alpha, but functional. Discovery (local paths and, read-only,
+GitHub repositories), deterministic analysis, the Relationship graph,
+external research, the recommendation/proposal engines, Component Update
+Intelligence, human-approved local execution, the static HTML report, and
+the interactive Dashboard are all implemented and covered by tests — see
+`docs/design/docs/16-roadmap.md` for the full roadmap and
+[Commands](#commands) below for what `si` can do today. Not yet
+implemented: Draft PR creation (local branch/commit only), a plugin
 loader for external Skills/Agents (the capability registry is a static
 Python dict), and package-registry/Capability-Contract adapters beyond
 PyPI/npm.
 
 ## Commands
 
-Read-only unless noted:
+Read-only unless noted. Every `<target>` below except `si execute`'s
+(which writes a local branch/commit, so it only makes sense against a
+real local checkout) accepts a local path or a GitHub repository
+(`owner/repo`, or a `https://github.com/...` URL — shallow-cloned
+read-only into a temp directory first):
 
 | Command | What it does |
 |---|---|
