@@ -3,9 +3,10 @@
 Phase 3 scope: parse declared dependencies out of `pyproject.toml` (PEP 621
 `[project.dependencies]`), `package.json` (`dependencies`/
 `devDependencies`), `Cargo.toml` (`[dependencies]`/`[dev-dependencies]`/
-`[build-dependencies]`), and `go.mod` (`require` directives). No dependency
-resolution, transitive graph, or version conflict detection yet — this
-only records what a manifest *declares*.
+`[build-dependencies]`), `go.mod` (`require` directives), and `pom.xml`
+(the project's own direct `<dependencies>`, literal versions only). No
+dependency resolution, transitive graph, or version conflict detection
+yet — this only records what a manifest *declares*.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import json
 import re
 import tomllib
 from pathlib import Path
+
+from defusedxml import ElementTree as SafeElementTree
 
 from system_intelligence.core.entities import Dependency
 from system_intelligence.core.enums import Confidence
@@ -191,10 +194,73 @@ def _extract_go_dependencies(path: Path, rel_path: str) -> list[Dependency]:
     return dependencies
 
 
+def _strip_xml_namespace(tag: str) -> str:
+    """`{http://maven.apache.org/POM/4.0.0}dependencies` -> `dependencies`.
+
+    Maven POM XML declares a default namespace almost universally; matching
+    tag names without stripping it would silently match nothing.
+    """
+    return tag.rsplit("}", 1)[-1]
+
+
+def _extract_pom_dependencies(path: Path, rel_path: str) -> list[Dependency]:
+    """Parse `pom.xml`'s own direct `<project><dependencies>` entries.
+
+    Deliberately scoped to exactly `/project/dependencies/dependency` --
+    iterating only `pom.xml`'s root-level children naturally excludes
+    `/project/dependencyManagement/dependencies` (constraints, not
+    necessarily used), `/project/build/plugins/*/dependencies` (a build
+    plugin's own dependencies, not the project's), and
+    `/project/profiles/*/dependencies` (profile-conditional). A
+    `<dependency>` with no `<version>` at all (parent/dependencyManagement-
+    resolved) or a `${property}`-templated one (resolved via `<properties>`
+    or a parent POM, possibly in another file) is skipped -- never
+    guessed or partially resolved.
+    """
+    try:
+        # A GitHub-target scan (si diagnose owner/repo) can point at an
+        # arbitrary, untrusted repository's pom.xml -- defusedxml (not the
+        # stdlib xml.etree.ElementTree directly) guards against XML bombs
+        # and external entity expansion.
+        root = SafeElementTree.parse(path).getroot()
+    except (SafeElementTree.ParseError, OSError):
+        return []
+    if root is None or _strip_xml_namespace(root.tag) != "project":
+        return []
+
+    dependencies: list[Dependency] = []
+    for section in root:
+        if _strip_xml_namespace(section.tag) != "dependencies":
+            continue
+        for dep_element in section:
+            if _strip_xml_namespace(dep_element.tag) != "dependency":
+                continue
+            fields = {_strip_xml_namespace(f.tag): (f.text or "").strip() for f in dep_element}
+            group_id, artifact_id, version = (
+                fields.get("groupId"),
+                fields.get("artifactId"),
+                fields.get("version"),
+            )
+            if not group_id or not artifact_id or not version or "${" in version:
+                continue
+            name = f"{group_id}:{artifact_id}"
+            dependencies.append(
+                Dependency(
+                    id=stable_id("dependency", "maven", rel_path, name),
+                    name=name,
+                    ecosystem="maven",
+                    version_constraint=version,
+                    evidence=[_manifest_evidence(rel_path, name)],
+                )
+            )
+    return dependencies
+
+
 _EXTRACTORS = {
     "pyproject.toml": _extract_pyproject_dependencies,
     "package.json": _extract_package_json_dependencies,
     "Cargo.toml": _extract_cargo_dependencies,
+    "pom.xml": _extract_pom_dependencies,
     "go.mod": _extract_go_dependencies,
 }
 
