@@ -74,6 +74,11 @@ read-only into a temp directory first):
 accept `--record <snapshot-dir>` to attach their result to an existing
 canonical snapshot so a later `si dashboard` can show it.
 
+`si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
+declaring capabilities the target requires by name (`{"capabilities":
+[{"name": "pdf export"}]}`) — opt-in only; a target with no such file gets
+zero `capability_gap` findings, never an inferred one.
+
 `si dashboard` renders 14 sections (Overview, Findings, Updates,
 Recommendations, Proposals, Executions, Components, Capabilities,
 Dependencies, Architecture Decisions, Changes, Research, Evidence,

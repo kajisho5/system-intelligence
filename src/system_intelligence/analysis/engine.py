@@ -19,6 +19,7 @@ from system_intelligence.analysis.capabilities import (
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
 from system_intelligence.analysis.dependencies import extract_dependencies_by_manifest
 from system_intelligence.analysis.documentation import audit_documentation
+from system_intelligence.analysis.gaps import audit_capability_gaps
 from system_intelligence.analysis.relationships import build_relationships
 from system_intelligence.analysis.unused import audit_unused_skills
 from system_intelligence.core.entities import Component, Dependency, Document, Repository, Skill
@@ -98,6 +99,7 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
         *detect_duplicate_capabilities(capabilities),
         *audit_unused_skills(skills, root),
         *detect_circular_dependencies(root),
+        *audit_capability_gaps(root, capabilities),
     ]
 
     updated_components = _attach_dependencies_by_component(

@@ -36,7 +36,7 @@ named on each `[x]` line for the actual code, not just the schema.
 - [x] capability extraction — `analysis/capabilities.py`
 - [x] unused candidate analysis — `analysis/unused.py`
 - [x] duplication detection — `analysis/capabilities.py::detect_duplicate_capabilities`
-- [ ] gap detection — needs a declared requirements/desired-capabilities input this phase does not have (see `analysis/__init__.py`'s own docstring)
+- [x] gap detection — `analysis/gaps.py::audit_capability_gaps`; opt-in via `.si/requirements.json` (the same `.si/` convention `si research`'s cache directory already uses) declaring required capabilities by name. A repository with no such file contributes zero `capability_gap` findings, never an inferred one; a malformed one surfaces as its own `invalid_requirements_file` finding rather than crashing `si diagnose`. Wired into `analyze_local_repository`, so it runs automatically wherever `si diagnose`/`si report`/`si dashboard` already do
 - [x] documentation audit — `analysis/documentation.py`
 - [x] test/CI audit — `analysis/ci_quality.py`
 
