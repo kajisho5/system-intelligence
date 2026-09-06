@@ -468,9 +468,10 @@ def extract_dependencies_by_manifest(
 def extract_dependencies(root: Path, manifests: list[PackageManifest]) -> list[Dependency]:
     """Parse every manifest System Intelligence knows how to read.
 
-    Manifests without a registered extractor (build.gradle, Gemfile) are
-    still reported by `structure.scan_structure` as evidence of the
-    ecosystem, but their dependency lists are not parsed yet. Flattens
+    Manifests without a registered extractor (build.gradle, Gemfile,
+    composer.json) are still reported by `structure.scan_structure` as
+    evidence of the ecosystem, but their dependency lists are not parsed
+    yet. Flattens
     `extract_dependencies_by_manifest` — kept for callers that
     only need the combined list (e.g. a whole-repository dependency count),
     not per-Component attribution.

@@ -55,7 +55,9 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
 #: non-packaged Python projects -- scripts, notebooks, container images --
 #: have at all, with no pyproject.toml/setup.py/Pipfile in sight) round out
 #: that same pattern for real, common conventions this table would
-#: otherwise silently miss.
+#: otherwise silently miss. composer.json (Packagist/Composer, PHP's de
+#: facto standard package manager -- LANGUAGE_EXTENSIONS already recognizes
+#: .php, but this table had no matching manifest) is the same gap for PHP.
 PACKAGE_MANIFESTS: dict[str, tuple[str, str]] = {
     "pyproject.toml": ("pypi", "Python"),
     "setup.py": ("pypi", "Python"),
@@ -68,6 +70,7 @@ PACKAGE_MANIFESTS: dict[str, tuple[str, str]] = {
     "build.gradle": ("gradle", "Java"),
     "build.gradle.kts": ("gradle", "Java"),
     "Gemfile": ("rubygems", "Ruby"),
+    "composer.json": ("packagist", "PHP"),
 }
 
 
