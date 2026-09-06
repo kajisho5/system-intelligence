@@ -23,15 +23,26 @@ from system_intelligence.analysis.capabilities import (
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
 from system_intelligence.analysis.dependencies import extract_dependencies
 from system_intelligence.analysis.documentation import audit_documentation
+from system_intelligence.analysis.gaps import audit_capability_gaps
 from system_intelligence.analysis.relationships import build_relationships
 from system_intelligence.analysis.unused import audit_unused_skills
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import CIJob, Component, Document, Repository, Skill
+from system_intelligence.core.entities import (
+    ADR,
+    Agent,
+    CIJob,
+    Component,
+    Document,
+    Repository,
+    Skill,
+)
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.ids import stable_id
 from system_intelligence.core.recommendations import Recommendation
 from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.snapshot import Snapshot
+from system_intelligence.discovery.adr import detect_adrs
+from system_intelligence.discovery.agents import detect_agents
 from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
@@ -47,6 +58,8 @@ class _OrchestrationContext:
     repository: Repository
     structure: StructureScanResult | None = None
     skills: list[Skill] = field(default_factory=list)
+    agents: list[Agent] = field(default_factory=list)
+    adrs: list[ADR] = field(default_factory=list)
     ci_jobs: list[CIJob] = field(default_factory=list)
     documents: list[Document] = field(default_factory=list)
     capabilities: list[Capability] = field(default_factory=list)
@@ -71,6 +84,14 @@ def _run_structure_scan(ctx: _OrchestrationContext) -> None:
 
 def _run_skill_detection(ctx: _OrchestrationContext) -> None:
     ctx.skills = detect_skills(ctx.root)
+
+
+def _run_agent_detection(ctx: _OrchestrationContext) -> None:
+    ctx.agents = detect_agents(ctx.root)
+
+
+def _run_adr_detection(ctx: _OrchestrationContext) -> None:
+    ctx.adrs = detect_adrs(ctx.root)
 
 
 def _run_ci_docs_detection(ctx: _OrchestrationContext) -> None:
@@ -100,12 +121,16 @@ def _run_unused_skill_detection(ctx: _OrchestrationContext) -> None:
     ctx.findings.extend(audit_unused_skills(ctx.skills, ctx.root))
 
 
+def _run_capability_gap_detection(ctx: _OrchestrationContext) -> None:
+    ctx.findings.extend(audit_capability_gaps(ctx.root, ctx.capabilities))
+
+
 def _run_circular_dependency_detection(ctx: _OrchestrationContext) -> None:
     ctx.findings.extend(detect_circular_dependencies(ctx.root))
 
 
 def _run_relationship_graph_construction(ctx: _OrchestrationContext) -> None:
-    components: list[Component] = [ctx.repository, *ctx.skills, *ctx.documents]
+    components: list[Component] = [ctx.repository, *ctx.skills, *ctx.agents, *ctx.documents]
     ctx.relationships = build_relationships(components, ctx.capabilities)
 
 
@@ -117,6 +142,8 @@ _RUNNERS: dict[str, Callable[[_OrchestrationContext], None]] = {
     "git_metadata": _run_git_metadata,
     "structure_scan": _run_structure_scan,
     "skill_detection": _run_skill_detection,
+    "agent_detection": _run_agent_detection,
+    "adr_detection": _run_adr_detection,
     "ci_docs_detection": _run_ci_docs_detection,
     "documentation_audit": _run_documentation_audit,
     "ci_test_audit": _run_ci_test_audit,
@@ -125,6 +152,7 @@ _RUNNERS: dict[str, Callable[[_OrchestrationContext], None]] = {
     "unused_skill_detection": _run_unused_skill_detection,
     "circular_dependency_detection": _run_circular_dependency_detection,
     "relationship_graph_construction": _run_relationship_graph_construction,
+    "capability_gap_detection": _run_capability_gap_detection,
     "recommendation_ranking": _run_recommendation_ranking,
 }
 
@@ -144,7 +172,7 @@ def run_capabilities(locator: str, capability_ids: list[str]) -> Snapshot:
     for capability_id in resolve_dependencies(set(capability_ids)):
         _RUNNERS[capability_id](ctx)
 
-    components: list[Component] = [ctx.repository, *ctx.skills, *ctx.documents]
+    components: list[Component] = [ctx.repository, *ctx.skills, *ctx.agents, *ctx.documents]
     return Snapshot(
         target=target,
         components=components,
@@ -152,4 +180,5 @@ def run_capabilities(locator: str, capability_ids: list[str]) -> Snapshot:
         relationships=ctx.relationships,
         findings=ctx.findings,
         recommendations=ctx.recommendations,
+        adrs=ctx.adrs,
     )

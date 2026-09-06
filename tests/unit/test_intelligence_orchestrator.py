@@ -92,3 +92,61 @@ def test_dependency_extraction_without_skill_detection(tmp_path: Path) -> None:
     assert ComponentKind.SKILL not in kinds
     repository = next(c for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
     assert {d.name for d in repository.dependencies} == {"pydantic"}
+
+
+def test_agent_detection_runs_independently(tmp_path: Path) -> None:
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: reviews code\n---\nBody.\n", encoding="utf-8"
+    )
+
+    snapshot = run_capabilities(str(tmp_path), ["agent_detection"])
+
+    kinds = {c.kind for c in snapshot.components}
+    assert ComponentKind.AGENT in kinds
+
+
+def test_adr_detection_runs_independently(tmp_path: Path) -> None:
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "ADR-001-use-python.md").write_text("# ADR-001\n", encoding="utf-8")
+
+    snapshot = run_capabilities(str(tmp_path), ["adr_detection"])
+
+    assert len(snapshot.adrs) == 1
+
+
+def test_diagnose_intent_runs_agent_and_adr_detection(tmp_path: Path) -> None:
+    """`si diagnose` (`discover_local_repository` + `analyze_local_repository`)
+    always runs agent/ADR detection -- the `diagnose` intent's plan must
+    match, or `si plan diagnose`'s preview would silently omit them."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: reviews code\n---\nBody.\n", encoding="utf-8"
+    )
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "ADR-001-use-python.md").write_text("# ADR-001\n", encoding="utf-8")
+
+    snapshot = run_capabilities(str(tmp_path), resolve_intent("diagnose"))
+
+    kinds = {c.kind for c in snapshot.components}
+    assert ComponentKind.AGENT in kinds
+    assert len(snapshot.adrs) == 1
+
+
+def test_capability_gap_detection_runs_independently(tmp_path: Path) -> None:
+    """Mirrors `analysis.gaps.audit_capability_gaps`'s own opt-in
+    `.si/requirements.json` contract: a declared-but-missing capability
+    must surface even when this capability is requested on its own."""
+    si_dir = tmp_path / ".si"
+    si_dir.mkdir()
+    (si_dir / "requirements.json").write_text(
+        '{"capabilities": [{"name": "nonexistent_capability"}]}\n', encoding="utf-8"
+    )
+
+    snapshot = run_capabilities(str(tmp_path), ["capability_gap_detection"])
+
+    assert any(f.category == "capability_gap" for f in snapshot.findings)

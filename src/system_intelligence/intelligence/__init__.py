@@ -1,5 +1,12 @@
 """Orchestration: given an intent, select and run the minimum capability set.
 
+`registry.CAPABILITIES` names every independently-runnable capability,
+including the discovery/analysis detectors that `discover_local_repository`/
+`analyze_local_repository` always run unconditionally (agent detection, ADR
+detection, capability-gap auditing) -- these must stay registered here too,
+or `si plan`'s preview and `run_capabilities`'s selective execution silently
+diverge from what those two commands actually do.
+
 Phase 7 scope (docs/design/docs/10-plugin-skill-system.md, "Dynamic
 selection"; docs/design/IMPLEMENTATION_BACKLOG.md):
 
