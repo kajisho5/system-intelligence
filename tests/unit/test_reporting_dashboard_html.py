@@ -54,6 +54,20 @@ def test_generate_dashboard_html_escapes_closing_script_tag_in_data() -> None:
     assert payload["components"][0]["name"] == malicious_name
 
 
+def test_generate_dashboard_html_wires_proposal_detail_toggle() -> None:
+    """The Proposals table renders capabilities/interfaces/test_strategy/etc.
+    (all already on `Proposal`) via a click-to-expand detail row, the same
+    pattern already used for Components -- confirmed interactively with a
+    real browser (Playwright/Chromium) during development, since this
+    project's test suite doesn't execute the embedded JavaScript itself."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "toggleProposalDetail" in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)

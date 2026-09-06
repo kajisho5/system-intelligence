@@ -416,11 +416,56 @@ _SCRIPT = r"""
       return emptyState("No proposals recorded for this snapshot.",
         "Run si propose <problem> --record <snapshot-dir> to attach one.");
     }
-    return table(["Kind", "Problem", "Required permission", "Why not sufficient as-is"],
+    var body = table(["Kind", "Problem", "Required permission", "Why not sufficient as-is"],
       DATA.proposals.map(function (p) {
         return [p.kind, p.problem, permissionLevelName(p.required_permission_level),
           p.why_existing_solutions_insufficient || "—"];
       }));
+    body.querySelectorAll("tbody tr").forEach(function (tr, i) {
+      tr.classList.add("clickable");
+      tr.tabIndex = 0;
+      tr.setAttribute("role", "button");
+      var toggle = function () { toggleProposalDetail(tr, DATA.proposals[i]); };
+      tr.addEventListener("click", toggle);
+      tr.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); } });
+    });
+    return body;
+  }
+
+  function toggleProposalDetail(tr, p) {
+    var next = tr.nextSibling;
+    if (next && next.classList && next.classList.contains("detail-row")) { next.remove(); return; }
+    function listOrNone(items) {
+      return items && items.length ? el("ul", null, items.map(function (i) { return el("li", null, i); })) : el("p", null, "None recorded.");
+    }
+    var block = el("div", { class: "detail-block" },
+      p.proposed_component_name ? el("h4", null, "Proposed component") : null,
+      p.proposed_component_name ? el("p", null, p.proposed_component_name) : null,
+      el("h4", null, "Requirements"),
+      listOrNone(p.requirements),
+      el("h4", null, "Alternatives considered"),
+      listOrNone(p.alternatives_considered),
+      el("h4", null, "Capabilities"),
+      listOrNone(p.capabilities),
+      el("h4", null, "Interfaces"),
+      listOrNone(p.interfaces),
+      el("h4", null, "Dependencies"),
+      listOrNone(p.dependencies),
+      el("h4", null, "Implementation stages"),
+      listOrNone(p.implementation_stages),
+      el("h4", null, "Test strategy"),
+      el("p", null, p.test_strategy || "None recorded."),
+      el("h4", null, "Security considerations"),
+      el("p", null, p.security_considerations || "None recorded."),
+      el("h4", null, "Documentation requirements"),
+      el("p", null, p.documentation_requirements || "None recorded."),
+      el("h4", null, "Rollback strategy"),
+      el("p", null, p.rollback_strategy || "None recorded."),
+      el("h4", null, "Evidence"),
+      p.evidence.length ? el("ul", null, p.evidence.map(function (e) { return el("li", null, "[" + e.kind + "] " + e.observation); })) : el("p", null, "None recorded."));
+    var td = el("td", { colspan: "4" }, block);
+    var row = el("tr", { class: "detail-row" }, td);
+    tr.parentNode.insertBefore(row, tr.nextSibling);
   }
 
   function renderExecutions() {
