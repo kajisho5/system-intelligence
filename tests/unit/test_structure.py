@@ -87,6 +87,25 @@ def test_scan_structure_detects_additional_languages(tmp_path: Path) -> None:
     }
 
 
+def test_scan_structure_excludes_bare_env_venv_dir(tmp_path: Path) -> None:
+    """`python -m venv env` (no leading dot, unlike .venv) is a real, common
+    convention -- an installed third-party package's own setup.py under it
+    must never be misattributed as the target repository's own manifest."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["requests"]\n', encoding="utf-8"
+    )
+    installed = tmp_path / "env" / "lib" / "python3.11" / "site-packages" / "somepkg"
+    installed.mkdir(parents=True)
+    (installed / "setup.py").write_text(
+        "from setuptools import setup\nsetup(name='somepkg')\n", encoding="utf-8"
+    )
+
+    result = scan_structure(tmp_path)
+
+    assert len(result.package_manifests) == 1
+    assert result.package_manifests[0].path == "pyproject.toml"
+
+
 def test_scan_structure_excludes_vendored_go_modules(tmp_path: Path) -> None:
     """A `go mod vendor`-managed project checks in a full copy of every
     dependency's own source tree -- including its own go.mod -- under

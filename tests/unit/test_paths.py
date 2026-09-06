@@ -20,6 +20,13 @@ def test_is_excluded_matches_vendor_tox_and_target_dirs() -> None:
     assert is_excluded(("target", "debug", "build")) is True
 
 
+def test_is_excluded_matches_bare_env_venv_dir() -> None:
+    """`python -m venv env` is a real, common convention (widely used in
+    older/tutorial-derived Django and Flask projects) alongside the
+    already-excluded .venv/venv."""
+    assert is_excluded(("env", "lib", "python3.11", "site-packages")) is True
+
+
 def test_is_excluded_matches_egg_info_suffix() -> None:
     assert is_excluded(("foo.egg-info",)) is True
 
