@@ -704,8 +704,9 @@ _EXECUTE_RECORD_OPTION = typer.Option(
     "--record",
     help=(
         "An existing canonical snapshot directory (from --out on another command) to append "
-        "this run's ExecutionRecord to, so 'si dashboard' can show it later. Optional — "
-        "without it, this run's result is only ever printed, not persisted."
+        "this run's ExecutionRecord (and any Approval actually supplied via --approval-file) "
+        "to, so 'si dashboard' can show them later. Optional — without it, this run's result "
+        "is only ever printed, not persisted."
     ),
 )
 
@@ -790,6 +791,11 @@ def execute(
                 decision_reason=result.decision.reason,
             ),
         )
+        # Records the Approval(s) actually supplied via --approval-file, not
+        # a fabricated one — an execution denied for lack of an approval
+        # writes no approvals.json entry.
+        for approval in approvals:
+            _append_json_record(record, "approvals.json", approval)
 
     if not result.applied:
         typer.echo(f"\nDenied: {result.decision.reason}")

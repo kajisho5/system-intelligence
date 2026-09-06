@@ -530,6 +530,27 @@ def test_execute_command_record_appends_to_snapshot(tmp_path: Path) -> None:
     assert recorded[0]["applied"] is True
     assert recorded[0]["branch_name"] == "si/add-license"
 
+    recorded_approvals = json.loads((snapshot_dir / "approvals.json").read_text(encoding="utf-8"))
+    assert len(recorded_approvals) == 1
+    assert recorded_approvals[0]["actor"] == "human:test"
+
+
+def test_execute_command_denied_does_not_record_a_fabricated_approval(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["execute", str(plan_file), str(tmp_path), "--approve", "--record", str(snapshot_dir)],
+    )
+
+    assert result.exit_code == 1
+    recorded = json.loads((snapshot_dir / "executions.json").read_text(encoding="utf-8"))
+    assert recorded[0]["applied"] is False
+    assert not (snapshot_dir / "approvals.json").exists()
+
 
 def test_propose_command_record_appends_to_snapshot(tmp_path: Path) -> None:
     snapshot_dir = tmp_path / "snap"
