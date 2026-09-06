@@ -7,8 +7,8 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 4), orchestrated by
 - documentation gaps (missing README/LICENSE/CONTRIBUTING)
 - CI/test presence
 - dependency extraction from pyproject.toml/package.json
-- capability extraction from Skills, and duplicate-name detection
-- unreferenced-Skill detection (never `verified_unused` from a static
+- capability extraction from Skills and Agents, and duplicate-name detection
+- unreferenced Skill/Agent detection (never `verified_unused` from a static
   search alone — see ADR-010)
 - circular-import detection across local Python modules (AST-based)
 - capability *gap* detection (`gaps.py`) — opt-in: a project declares

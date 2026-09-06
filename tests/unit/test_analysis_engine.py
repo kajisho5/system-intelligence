@@ -239,3 +239,23 @@ def test_analyze_local_repository_agent_satisfies_declared_capability(tmp_path: 
     gap_findings = [f for f in result.snapshot.findings if f.category == "capability_gap"]
     assert gap_findings == []
     assert any(c.name == "code-reviewer" for c in result.snapshot.capabilities)
+
+
+def test_analyze_local_repository_flags_unreferenced_agent(tmp_path: Path) -> None:
+    """An unreferenced Agent must get the same `unused_candidate` finding an
+    unreferenced Skill already does -- previously excluded entirely from
+    `audit_unused_skills`."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "orphan-agent.md").write_text(
+        "---\nname: orphan-agent\ndescription: x\n---\n", encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text("Nothing about it here.\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    discovery = discover_local_repository(str(tmp_path))
+    result = analyze_local_repository(discovery)
+
+    unused_findings = [f for f in result.snapshot.findings if f.category == "unused_candidate"]
+    assert len(unused_findings) == 1
+    assert "orphan-agent" in unused_findings[0].statement
