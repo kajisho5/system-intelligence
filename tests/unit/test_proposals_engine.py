@@ -531,3 +531,103 @@ def test_change_plan_for_component_update_none_when_manifest_text_has_drifted(
     )
 
     assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def _go_pin_assessment(
+    root: Path,
+    *,
+    name: str = "github.com/pkg/errors",
+    from_version: str = "v0.9.0",
+    to_version: str = "v0.9.1",
+    manifest_path: str = "go.mod",
+    manifest_text: str | None = None,
+    version_confidence: Confidence = Confidence.HIGH,
+    verdict: UpdateVerdict = UpdateVerdict.UPDATE_RECOMMENDED,
+    write_manifest: bool = True,
+) -> ImpactAssessment:
+    if write_manifest:
+        text = manifest_text or (
+            f"module example.com/demo\n\ngo 1.21\n\nrequire {name} {from_version}\n"
+        )
+        (root / manifest_path).write_text(text, encoding="utf-8")
+    identity = ComponentIdentity(
+        component_kind=ComponentKind.PACKAGE, name=name, distribution_source="go"
+    )
+    current = ComponentState(
+        identity=identity,
+        version=from_version,
+        version_confidence=version_confidence,
+        evidence=[_manifest_evidence(manifest_path, name)],
+    )
+    available = AvailableState(identity=identity, provider="go", version=to_version)
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    return ImpactAssessment(
+        state_diff=diff,
+        verdict=verdict,
+        verdict_confidence=Confidence.HIGH,
+        verdict_rationale="rationale text",
+    )
+
+
+def test_change_plan_for_component_update_success_for_go_single_line(tmp_path: Path) -> None:
+    assessment = _go_pin_assessment(tmp_path)
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.branch_name == "si/update-github.com/pkg/errors-to-v0.9.1"
+    assert plan.commit_message == "Update github.com/pkg/errors to v0.9.1"
+    assert plan.files == {
+        "go.mod": "module example.com/demo\n\ngo 1.21\n\nrequire github.com/pkg/errors v0.9.1\n"
+    }
+    assert plan.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+
+
+def test_change_plan_for_component_update_success_for_go_block_form(tmp_path: Path) -> None:
+    manifest_text = (
+        "module example.com/demo\n\ngo 1.21\n\nrequire (\n"
+        "\tgithub.com/pkg/errors v0.9.0\n"
+        "\tgolang.org/x/net v0.5.0 // indirect\n"
+        ")\n"
+    )
+    assessment = _go_pin_assessment(tmp_path, manifest_text=manifest_text)
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.files == {
+        "go.mod": (
+            "module example.com/demo\n\ngo 1.21\n\nrequire (\n"
+            "\tgithub.com/pkg/errors v0.9.1\n"
+            "\tgolang.org/x/net v0.5.0 // indirect\n"
+            ")\n"
+        )
+    }
+
+
+def test_change_plan_for_component_update_go_none_for_pseudo_version_drift(
+    tmp_path: Path,
+) -> None:
+    assessment = _go_pin_assessment(tmp_path)
+    # The manifest changed since the assessment ran -- the exact pinned
+    # text this needs to match no longer exists.
+    (tmp_path / "go.mod").write_text(
+        "module example.com/demo\n\ngo 1.21\n\nrequire github.com/pkg/errors v1.0.0\n",
+        encoding="utf-8",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
+
+
+def test_change_plan_for_component_update_go_none_when_ambiguous_duplicate(
+    tmp_path: Path,
+) -> None:
+    assessment = _go_pin_assessment(tmp_path, write_manifest=False)
+    (tmp_path / "go.mod").write_text(
+        "module example.com/demo\n\ngo 1.21\n\n"
+        "require github.com/pkg/errors v0.9.0\n"
+        "require github.com/pkg/errors v0.9.0\n",
+        encoding="utf-8",
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
