@@ -102,7 +102,11 @@ _DOCUMENTATION_REQUIREMENTS_BY_KIND: dict[ComponentKind, str] = {
         "was verified against."
     ),
     ComponentKind.MCP_SERVER: "Document every exposed tool/resource and its schema.",
+    ComponentKind.TOOL: (
+        "Document the tool's CLI/API contract, including its error/exit-code behavior."
+    ),
     ComponentKind.WORKFLOW: "Document each trigger condition and side effect.",
+    ComponentKind.DOCUMENT: "Note what changed and why, and update any index that references it.",
     ComponentKind.REPOSITORY: "Document bootstrap/setup steps in the new repository's README.",
 }
 
