@@ -3,7 +3,7 @@ from system_intelligence.analysis.capabilities import (
     detect_duplicate_capabilities,
     extract_capabilities,
 )
-from system_intelligence.core.entities import Dependency, Repository, Skill
+from system_intelligence.core.entities import Agent, Dependency, Repository, Skill
 from system_intelligence.core.enums import CapabilityStatus
 
 
@@ -21,6 +21,24 @@ def test_extract_capabilities_non_standard_skill_is_partial() -> None:
     assert capabilities[0].status == CapabilityStatus.PARTIAL
 
 
+def test_extract_capabilities_standard_agent_is_available() -> None:
+    """An Agent (discovery/agents.py) declares a capability by name exactly
+    like a Skill does -- previously never extracted at all, so a
+    `.si/requirements.json`-declared capability satisfied only by an Agent
+    was falsely reported as a gap (analysis/gaps.py)."""
+    agent = Agent(name="code-reviewer", description="Reviews code", is_standard_format=True)
+    capabilities = extract_capabilities([agent])
+    assert len(capabilities) == 1
+    assert capabilities[0].status == CapabilityStatus.AVAILABLE
+    assert capabilities[0].provider_ids == [agent.id]
+
+
+def test_extract_capabilities_non_standard_agent_is_partial() -> None:
+    agent = Agent(name="mystery-agent", is_standard_format=False)
+    capabilities = extract_capabilities([agent])
+    assert capabilities[0].status == CapabilityStatus.PARTIAL
+
+
 def test_detect_duplicate_capabilities() -> None:
     skill_a = Skill(name="video-review")
     skill_b = Skill(name="video-review")
@@ -31,6 +49,20 @@ def test_detect_duplicate_capabilities() -> None:
     assert len(findings) == 1
     assert findings[0].category == "duplicated_capability"
     assert set(findings[0].affected_entity_ids) == {skill_a.id, skill_b.id}
+
+
+def test_detect_duplicate_capabilities_across_skill_and_agent() -> None:
+    """A Skill and an Agent declaring the same name is exactly the same
+    "declared name overlap" this Finding exists to surface -- both must be
+    extracted in the first place for it to ever fire."""
+    skill = Skill(name="code-reviewer")
+    agent = Agent(name="code-reviewer")
+    capabilities = extract_capabilities([skill, agent])
+
+    findings = detect_duplicate_capabilities(capabilities)
+
+    assert len(findings) == 1
+    assert set(findings[0].affected_entity_ids) == {skill.id, agent.id}
 
 
 def test_detect_duplicate_capabilities_no_duplicates() -> None:

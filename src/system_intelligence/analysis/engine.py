@@ -22,7 +22,14 @@ from system_intelligence.analysis.documentation import audit_documentation
 from system_intelligence.analysis.gaps import audit_capability_gaps
 from system_intelligence.analysis.relationships import build_relationships
 from system_intelligence.analysis.unused import audit_unused_skills
-from system_intelligence.core.entities import Component, Dependency, Document, Repository, Skill
+from system_intelligence.core.entities import (
+    Agent,
+    Component,
+    Dependency,
+    Document,
+    Repository,
+    Skill,
+)
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.inventory import DiscoveryResult
 
@@ -88,9 +95,10 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
 
     repository = next(c for c in snapshot.components if isinstance(c, Repository))
     skills = [c for c in snapshot.components if isinstance(c, Skill)]
+    agents = [c for c in snapshot.components if isinstance(c, Agent)]
     documents = [c for c in snapshot.components if isinstance(c, Document)]
 
-    capabilities = extract_capabilities(skills)
+    capabilities = extract_capabilities([*skills, *agents])
     dependencies_by_directory = extract_dependencies_by_manifest(root, discovery.package_manifests)
 
     findings = [

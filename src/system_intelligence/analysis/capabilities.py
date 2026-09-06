@@ -1,36 +1,46 @@
-"""Capability extraction from detected Skills, and duplicate-name detection.
+"""Capability extraction from detected Skills/Agents, and duplicate-name detection.
 
-Phase 3 scope: one Capability per Skill (Skills are the only component kind
-Phase 2 discovers that clearly declares a capability by name). Agents,
-MCP servers, and Tools will extend this once their detectors exist.
+Phase 3 scope: one Capability per Skill or Agent -- both are component kinds
+Phase 2 discovers that clearly declare a capability by name, sharing the
+same `SKILL.md`/`.claude/agents/*.md` frontmatter convention
+(`discovery/frontmatter.py`) and the same `is_standard_format` signal for
+whether the required fields were actually present. MCP servers and Tools
+will extend this once their detectors exist.
 """
 
 from __future__ import annotations
 
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import Component, Skill
+from system_intelligence.core.entities import Agent, Component, Skill
 from system_intelligence.core.enums import CapabilityStatus, Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.ids import stable_id
 
 
-def extract_capabilities(skills: list[Skill]) -> list[Capability]:
+def extract_capabilities(providers: list[Skill | Agent]) -> list[Capability]:
+    """One `Capability` per Skill or Agent, keyed by its own declared name.
+
+    A Skill and an Agent declaring the same name are still recorded as two
+    separate Capabilities here (`detect_duplicate_capabilities` is what
+    flags that overlap) -- this function only ever describes what each
+    provider itself declares, never merges across providers.
+    """
     capabilities: list[Capability] = []
-    for skill in skills:
+    for provider in providers:
         status = (
-            CapabilityStatus.AVAILABLE if skill.is_standard_format else CapabilityStatus.PARTIAL
+            CapabilityStatus.AVAILABLE if provider.is_standard_format else CapabilityStatus.PARTIAL
         )
-        confidence = Confidence.HIGH if skill.is_standard_format else Confidence.LOW
+        confidence = Confidence.HIGH if provider.is_standard_format else Confidence.LOW
         capabilities.append(
             Capability(
-                id=stable_id("capability", skill.id),
-                name=skill.name,
-                description=skill.description,
-                provider_ids=[skill.id],
+                id=stable_id("capability", provider.id),
+                name=provider.name,
+                description=provider.description,
+                provider_ids=[provider.id],
                 status=status,
                 confidence=confidence,
-                evidence=list(skill.evidence),
+                evidence=list(provider.evidence),
             )
         )
     return capabilities

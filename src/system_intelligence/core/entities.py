@@ -83,7 +83,16 @@ class Software(Component):
 
 
 class Agent(Component):
+    """A Claude Code subagent (`.claude/agents/*.md`).
+
+    `is_standard_format` mirrors `Skill.is_standard_format`: whether the
+    required frontmatter fields (`name`, `description`) were actually
+    present, never assumed true for every `.claude/agents/*.md` file found
+    (discovery/agents.py).
+    """
+
     kind: ComponentKind = ComponentKind.AGENT
+    is_standard_format: bool | None = None
     model_provider: str | None = None
     tool_names: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
