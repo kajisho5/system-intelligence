@@ -1116,6 +1116,40 @@ def test_check_updates_command_plan_out_writes_change_plan(
     assert plan["required_permission_level"] == "CREATE_BRANCH_OR_DRAFT_PR"
 
 
+def test_check_updates_command_plan_out_writes_change_plan_for_npm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "package.json").write_text(
+        '{\n  "dependencies": {\n    "left-pad": "1.2.3"\n  }\n}\n', encoding="utf-8"
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        response = {
+            "dist-tags": {"latest": "1.3.0"},
+            "versions": {"1.3.0": {}},
+            "time": {"1.3.0": "2026-01-01T00:00:00.000Z"},
+        }
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.npm._default_http_get", _fake_http_get
+    )
+    plan_out = tmp_path / "plans"
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--plan-out", str(plan_out)])
+
+    assert result.exit_code == 0
+    plan_files = list(plan_out.glob("*.json"))
+    assert len(plan_files) == 1
+    plan = json.loads(plan_files[0].read_text(encoding="utf-8"))
+    expected_content = '{\n  "dependencies": {\n    "left-pad": "1.3.0"\n  }\n}\n'
+    assert plan["branch_name"] == "si/update-left-pad-to-1.3.0"
+    assert plan["files"] == {"package.json": expected_content}
+    assert plan["required_permission_level"] == "CREATE_BRANCH_OR_DRAFT_PR"
+
+
 def test_check_updates_plan_out_end_to_end_through_execute(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

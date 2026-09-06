@@ -18,16 +18,17 @@ verified it (e.g. a human, or a later semantic-analysis phase).
 
 `change_plan_for_component_update` closes the one Proposal shape this
 project can currently turn into an executable `execution.plan.ChangePlan`
-without guessing at intent: a `pypi` dependency whose *currently declared*
-constraint is an exact pin (`Confidence.HIGH`/`VERIFIED` on the current
-`ComponentState`, per `analysis.update_intelligence.build_current_state`'s
-own `_EXACT_PIN_RE`). A range constraint (`>=1.2,<2.0`) is deliberately
-never rewritten here — which number to bump is genuinely ambiguous, not a
-fact this module can determine. Every other Proposal kind (creation/
-adoption/integration, and pypi/npm range-constrained updates) still has no
-automatic path to a ChangePlan — the actual code change is a job for an
-external implementer (a human, or an agent such as Claude Code), never
-this module (ADR-007: no model vendor or agent harness hard-coded here).
+without guessing at intent: a `pypi` or `npm` dependency whose *currently
+declared* constraint is an exact pin (`Confidence.HIGH`/`VERIFIED` on the
+current `ComponentState`, per `analysis.update_intelligence.
+build_current_state`'s own `_EXACT_PIN_RE`). A range constraint
+(`>=1.2,<2.0`, `^1.2.3`, `1.x`) is deliberately never rewritten here —
+which number to bump is genuinely ambiguous, not a fact this module can
+determine. Every other Proposal kind (creation/adoption/integration, and
+any range-constrained update) still has no automatic path to a ChangePlan
+— the actual code change is a job for an external implementer (a human, or
+an agent such as Claude Code), never this module (ADR-007: no model vendor
+or agent harness hard-coded here).
 """
 
 from __future__ import annotations
@@ -68,6 +69,12 @@ _PROPOSABLE_VERDICTS = frozenset({UpdateVerdict.UPDATE_RECOMMENDED, UpdateVerdic
 #: (no extras, no environment markers, no compound constraints) — anything
 #: this doesn't match is left untouched rather than guessed at.
 _PYPROJECT_PIN_RE_TEMPLATE = r'(["\'])({name})\s*(==?)\s*{version}\s*\1'
+
+#: Matches a `"name": "version"` entry in raw package.json text, capturing
+#: everything up to (group 1) and after (group 3) the version digits so a
+#: replacement can preserve the original quoting/whitespace exactly and
+#: only the version itself changes.
+_PACKAGE_JSON_PIN_RE_TEMPLATE = r'("{name}"\s*:\s*")({version})(")'
 
 
 def _is_high_quality_candidate(assessment: CandidateAssessment) -> bool:
@@ -252,19 +259,45 @@ def _patch_pyproject_pin(text: str, name: str, from_version: str, to_version: st
     return text[: match.start()] + replacement + text[match.end() :]
 
 
+def _patch_package_json_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
+    """Rewrite one exact-pinned dependency's version in raw package.json text.
+
+    Matches only the literal `"{name}": "{from_version}"` entry this exact
+    `from_version` was itself derived from (a bare npm version with no
+    range operator, per `build_current_state`'s `_EXACT_PIN_RE`) — never a
+    fuzzy match on name alone, and never a full JSON parse/re-serialize
+    (which would reformat the whole file). Returns `None`, never a best
+    guess, when that exact text isn't found (the manifest may have changed
+    since the assessment ran) or appears more than once (e.g. the same
+    package pinned identically in both `dependencies` and
+    `devDependencies` — ambiguous which occurrence to rewrite).
+    """
+    pattern = re.compile(
+        _PACKAGE_JSON_PIN_RE_TEMPLATE.format(name=re.escape(name), version=re.escape(from_version))
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    prefix, suffix = match.group(1), match.group(3)
+    replacement = f"{prefix}{to_version}{suffix}"
+    return text[: match.start()] + replacement + text[match.end() :]
+
+
 def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -> ChangePlan | None:
     """Build an executable `ChangePlan` for a component-update `ImpactAssessment`.
 
-    Deterministic, no LLM: succeeds only for a `pypi` dependency whose
-    *current* constraint was confirmed as an exact pin (`Confidence.HIGH`/
-    `VERIFIED` on `from_state`, per `build_current_state`) and whose
-    declaring manifest still contains that exact text on disk. Returns
-    `None` — never a best-effort or partial plan — for every other case:
-    a non-actionable verdict (mirrors `_PROPOSABLE_VERDICTS`), a
-    non-`pypi` ecosystem (npm/other manifests aren't supported yet — see
-    this module's docstring), a range constraint, missing manifest
-    evidence, an unreadable manifest file, or manifest text that no
-    longer matches what the assessment observed.
+    Deterministic, no LLM: succeeds only for a `pypi` or `npm` dependency
+    whose *current* constraint was confirmed as an exact pin
+    (`Confidence.HIGH`/`VERIFIED` on `from_state`, per
+    `build_current_state`) and whose declaring manifest still contains
+    that exact text on disk. Returns `None` — never a best-effort or
+    partial plan — for every other case: a non-actionable verdict (mirrors
+    `_PROPOSABLE_VERDICTS`), an ecosystem other than `pypi`/`npm` (other
+    manifests aren't supported yet — see this module's docstring), a
+    range constraint, missing manifest evidence, an unreadable manifest
+    file, or manifest text that no longer matches what the assessment
+    observed.
 
     A caller that gets `None` back still has the `Proposal` from
     `propose_component_update` (unaffected by this function) describing
@@ -278,7 +311,7 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
     identity = diff.identity
     from_state, to_state = diff.from_state, diff.to_state
 
-    if identity.distribution_source != "pypi":
+    if identity.distribution_source not in ("pypi", "npm"):
         return None
     if from_state.version_confidence not in (Confidence.HIGH, Confidence.VERIFIED):
         return None
@@ -294,9 +327,10 @@ def change_plan_for_component_update(assessment: ImpactAssessment, root: Path) -
     except OSError:
         return None
 
-    patched_text = _patch_pyproject_pin(
-        original_text, identity.name, from_state.version, to_state.version
+    patcher = (
+        _patch_pyproject_pin if identity.distribution_source == "pypi" else _patch_package_json_pin
     )
+    patched_text = patcher(original_text, identity.name, from_state.version, to_state.version)
     if patched_text is None:
         return None
 
