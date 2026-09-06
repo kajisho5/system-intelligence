@@ -173,6 +173,26 @@ def test_target_kind_without_dedicated_interface_stays_empty() -> None:
     assert proposal.interfaces == []
 
 
+def test_target_kind_tool_has_dedicated_documentation_requirements() -> None:
+    """TOOL already had dedicated test_strategy/interfaces wording -- its
+    documentation_requirements was the one sibling table missing an entry,
+    silently falling back to the generic wording despite the other two
+    tables treating TOOL as fully first-class."""
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.TOOL)
+    assert proposal.documentation_requirements is not None
+    assert "CLI/API contract" in proposal.documentation_requirements
+
+
+def test_target_kind_document_has_dedicated_documentation_requirements() -> None:
+    """DOCUMENT already had dedicated test_strategy wording -- its
+    documentation_requirements was missing, same gap as TOOL."""
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.DOCUMENT)
+    assert proposal.documentation_requirements is not None
+    assert proposal.documentation_requirements != (
+        "Document the capability and how it satisfies each requirement."
+    )
+
+
 def test_target_kind_agent_shapes_test_and_documentation_strategy() -> None:
     proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.AGENT)
     assert proposal.test_strategy is not None
