@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from system_intelligence.analysis.unused import audit_unused_skills, classify_skill_usage
-from system_intelligence.core.entities import Skill
+from system_intelligence.core.entities import Agent, Skill
 from system_intelligence.core.enums import UsageStatus
 
 
@@ -82,3 +82,48 @@ def test_audit_unused_skills_no_finding_when_referenced(tmp_path: Path) -> None:
     skill = Skill(name="used", path="skills/used/SKILL.md")
 
     assert audit_unused_skills([skill], tmp_path) == []
+
+
+def test_classify_skill_usage_unreferenced_agent(tmp_path: Path) -> None:
+    """An Agent (.claude/agents/*.md) is a capability-declaring component
+    exactly like a Skill -- previously entirely excluded from unused
+    detection, so an unreferenced Agent silently got no finding at all."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "orphan-agent.md").write_text(
+        "---\nname: orphan-agent\ndescription: x\n---\n", encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text("Nothing about it here.\n", encoding="utf-8")
+
+    agent = Agent(name="orphan-agent", path=".claude/agents/orphan-agent.md")
+    status, references = classify_skill_usage(agent, tmp_path)
+
+    assert status == UsageStatus.UNREFERENCED
+    assert references == []
+
+
+def test_audit_unused_skills_flags_unreferenced_agent(tmp_path: Path) -> None:
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "orphan-agent.md").write_text(
+        "---\nname: orphan-agent\ndescription: x\n---\n", encoding="utf-8"
+    )
+    agent = Agent(name="orphan-agent", path=".claude/agents/orphan-agent.md")
+
+    findings = audit_unused_skills([agent], tmp_path)
+
+    assert len(findings) == 1
+    assert findings[0].category == "unused_candidate"
+    assert findings[0].affected_entity_ids == [agent.id]
+
+
+def test_audit_unused_skills_no_finding_for_referenced_agent(tmp_path: Path) -> None:
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "code-reviewer.md").write_text(
+        "---\nname: code-reviewer\ndescription: x\n---\n", encoding="utf-8"
+    )
+    (tmp_path / "docs.md").write_text("Invoke the code-reviewer agent.\n", encoding="utf-8")
+    agent = Agent(name="code-reviewer", path=".claude/agents/code-reviewer.md")
+
+    assert audit_unused_skills([agent], tmp_path) == []

@@ -118,7 +118,7 @@ def _run_capability_extraction(ctx: _OrchestrationContext) -> None:
 
 
 def _run_unused_skill_detection(ctx: _OrchestrationContext) -> None:
-    ctx.findings.extend(audit_unused_skills(ctx.skills, ctx.root))
+    ctx.findings.extend(audit_unused_skills([*ctx.skills, *ctx.agents], ctx.root))
 
 
 def _run_capability_gap_detection(ctx: _OrchestrationContext) -> None:

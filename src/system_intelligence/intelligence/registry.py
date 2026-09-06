@@ -61,8 +61,8 @@ CAPABILITIES: dict[str, CapabilityDescriptor] = {
     ),
     "unused_skill_detection": CapabilityDescriptor(
         "unused_skill_detection",
-        "Flag Skills with no textual reference outside their own directory.",
-        requires=frozenset({"skill_detection"}),
+        "Flag Skills/Agents with no textual reference outside their own directory.",
+        requires=frozenset({"skill_detection", "agent_detection"}),
     ),
     "capability_gap_detection": CapabilityDescriptor(
         "capability_gap_detection",
