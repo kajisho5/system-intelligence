@@ -1,7 +1,7 @@
 """`si` command-line entry point.
 
-`si doctor`, `si version`, and `si inspect` are implemented. The remaining
-commands from docs/design/docs/13-cli-and-ux.md (`diagnose`, `research`,
+`si doctor`, `si version`, `si inspect`, and `si diagnose` are implemented.
+The remaining commands from docs/design/docs/13-cli-and-ux.md (`research`,
 `design`, `improve`, `propose`, `execute`, `verify`, `report`, `diff`,
 `watch`) are registered as explicit placeholders so `si --help` documents
 the intended surface without claiming functionality that does not exist
@@ -18,8 +18,10 @@ from pathlib import Path
 import typer
 
 from system_intelligence import __version__
+from system_intelligence.analysis import analyze_local_repository
 from system_intelligence.core.entities import Repository
-from system_intelligence.core.enums import ComponentKind
+from system_intelligence.core.enums import ComponentKind, Severity
+from system_intelligence.core.findings import Finding
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
 
 app = typer.Typer(
@@ -31,7 +33,6 @@ app = typer.Typer(
 )
 
 _PLANNED_COMMANDS = {
-    "diagnose": "Structured health assessment of a target. Planned for Phase 2-3 (analysis).",
     "research": "External solution discovery. Planned for Phase 5.",
     "design": "Architecture/design proposal generation. Planned for Phase 6.",
     "improve": "Generate an improvement plan. Planned for Phase 6.",
@@ -103,6 +104,57 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
         snapshot_dir = out / snapshot.id
         snapshot.write_to_directory(snapshot_dir)
         typer.echo(f"Snapshot written to {snapshot_dir}")
+
+
+_SEVERITY_ORDER = [
+    Severity.CRITICAL,
+    Severity.HIGH,
+    Severity.MEDIUM,
+    Severity.LOW,
+    Severity.INFO,
+]
+
+
+@app.command()
+def diagnose(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> None:
+    """Structured health assessment: discovery plus deterministic analysis.
+
+    Runs every Phase 3 analyzer (documentation/CI/test gaps, dependency
+    extraction, capability duplication, unreferenced Skills, circular
+    imports) and prints findings grouped by severity, each labeled with its
+    confidence level. Nothing is written unless `--out` is given.
+    """
+    try:
+        discovery = discover_local_repository(target)
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    result = analyze_local_repository(discovery)
+    snapshot = result.snapshot
+
+    typer.echo(f"Target: {snapshot.target.locator}")
+    typer.echo(f"Snapshot: {snapshot.id}")
+    typer.echo(f"Findings: {len(snapshot.findings)}")
+
+    findings_by_severity: dict[Severity, list[Finding]] = {
+        severity: [] for severity in _SEVERITY_ORDER
+    }
+    for finding in snapshot.findings:
+        findings_by_severity[finding.severity].append(finding)
+
+    for severity in _SEVERITY_ORDER:
+        findings = findings_by_severity[severity]
+        if not findings:
+            continue
+        typer.echo(f"\n{severity.value.upper()} ({len(findings)}):")
+        for finding in findings:
+            typer.echo(f"  - [{finding.confidence.value}] {finding.statement}")
+
+    if out is not None:
+        snapshot_dir = out / snapshot.id
+        snapshot.write_to_directory(snapshot_dir)
+        typer.echo(f"\nSnapshot written to {snapshot_dir}")
 
 
 @app.command()

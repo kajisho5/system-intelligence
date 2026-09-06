@@ -21,7 +21,7 @@ def test_doctor_command_runs_and_reports_checks() -> None:
 
 
 def test_unimplemented_command_fails_clearly() -> None:
-    result = runner.invoke(app, ["diagnose"])
+    result = runner.invoke(app, ["research"])
     assert result.exit_code == 1
     assert "not implemented yet" in result.stdout + (result.stderr or "")
 
@@ -53,3 +53,32 @@ def test_inspect_command_missing_target_fails_clearly(tmp_path: Path) -> None:
     result = runner.invoke(app, ["inspect", str(tmp_path / "nope")])
     assert result.exit_code == 1
     assert "does not exist" in result.stdout + (result.stderr or "")
+
+
+def test_diagnose_command_reports_findings(tmp_path: Path) -> None:
+    # An empty directory: no README/LICENSE/CONTRIBUTING, no CI, no tests.
+    result = runner.invoke(app, ["diagnose", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "documentation_gap" not in result.stdout  # category isn't printed, statement is
+    assert "No README file was found" in result.stdout
+    assert "No CI configuration" in result.stdout
+    assert "HIGH (" in result.stdout or "MEDIUM (" in result.stdout
+
+
+def test_diagnose_command_missing_target_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path / "nope")])
+    assert result.exit_code == 1
+    assert "does not exist" in result.stdout + (result.stderr or "")
+
+
+def test_diagnose_command_writes_snapshot_with_out(tmp_path: Path) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(app, ["diagnose", str(target_dir), "--out", str(out_dir)])
+
+    assert result.exit_code == 0
+    written = list(out_dir.glob("snapshot-*/findings.json"))
+    assert len(written) == 1

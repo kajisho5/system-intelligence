@@ -26,7 +26,7 @@ from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
-from system_intelligence.discovery.structure import scan_structure
+from system_intelligence.discovery.structure import PackageManifest, scan_structure
 from system_intelligence.discovery.target import resolve_local_target
 
 
@@ -34,6 +34,7 @@ from system_intelligence.discovery.target import resolve_local_target
 class DiscoveryResult:
     snapshot: Snapshot
     ci_jobs: list[CIJob]
+    package_manifests: list[PackageManifest]
 
 
 def discover_local_repository(locator: str) -> DiscoveryResult:
@@ -66,4 +67,6 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     components: list[Component] = [repository, *skills, *documents]
 
     snapshot = Snapshot(target=target, components=components)
-    return DiscoveryResult(snapshot=snapshot, ci_jobs=ci_jobs)
+    return DiscoveryResult(
+        snapshot=snapshot, ci_jobs=ci_jobs, package_manifests=structure.package_manifests
+    )
