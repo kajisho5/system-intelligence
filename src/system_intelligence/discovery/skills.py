@@ -5,6 +5,13 @@ Per docs/design/docs/00-research-baseline.md: recognize the standard
 directory follows it — hence `is_standard_format` is only ever set `True`
 when the required frontmatter fields are actually present, and any SKILL.md
 found is still reported even if that parsing fails.
+
+The upstream spec's three optional Skill subdirectories -- `scripts/`,
+`references/`, and `assets/` (docs/design/docs/00-research-baseline.md;
+also docs/design/docs/17-reference-workflows.md's "inspect
+scripts/references/assets") -- are each listed independently: a Skill
+bundling only `assets/` (images, templates, data files it reads at
+runtime) is exactly as valid as one with only `scripts/`.
 """
 
 from __future__ import annotations
@@ -75,6 +82,7 @@ def detect_skills(root: Path) -> list[Skill]:
 
         scripts = _list_relative_files(skill_dir / "scripts", skill_dir)
         references = _list_relative_files(skill_dir / "references", skill_dir)
+        assets = _list_relative_files(skill_dir / "assets", skill_dir)
 
         skills.append(
             Skill(
@@ -85,6 +93,7 @@ def detect_skills(root: Path) -> list[Skill]:
                 is_standard_format=is_standard,
                 scripts=scripts,
                 references=references,
+                assets=assets,
                 evidence=evidence,
             )
         )
