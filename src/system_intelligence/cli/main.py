@@ -424,8 +424,8 @@ _DASHBOARD_COMPARE_OPTION = typer.Option(
 _DASHBOARD_CHECK_UPDATES_OPTION = typer.Option(
     False,
     "--check-updates",
-    help="Also run Component Update Intelligence (network requests to pypi/npm/cargo/go) and "
-    "include it.",
+    help="Also run Component Update Intelligence (network requests to pypi/npm/cargo/go/maven) "
+    "and include it.",
 )
 _DASHBOARD_CHECK_VULNERABILITIES_OPTION = typer.Option(
     False,
@@ -681,7 +681,7 @@ _CHECK_UPDATES_VULNERABILITIES_OPTION = typer.Option(
     "--check-vulnerabilities",
     help=(
         "Also look up known vulnerabilities (OSV.dev) for the current/available version of "
-        "each pypi/npm/cargo/go dependency. Off by default: one extra network request per "
+        "each pypi/npm/cargo/go/maven dependency. Off by default: one extra network request per "
         "resolved version, independent of whether an update is available."
     ),
 )
@@ -698,9 +698,9 @@ def check_updates(
     """Component Update Intelligence: current vs. available state for every dependency.
 
     Read-only, but unlike `si diagnose` this makes network requests (one GET
-    per pypi/npm/cargo/go dependency, to the public registries) — closer in
-    kind to `si research`. Dependencies in an ecosystem with no configured
-    provider (anything but pypi/npm/cargo/go today) are skipped, not reported
+    per pypi/npm/cargo/go/maven dependency, to the public registries) —
+    closer in kind to `si research`. Dependencies in an ecosystem with no
+    configured provider (anything but pypi/npm/cargo/go/maven today) are skipped, not reported
     as unknown.
 
     Never concludes `UPDATE_RECOMMENDED` from a version number alone: see
