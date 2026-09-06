@@ -1316,6 +1316,32 @@ def test_check_updates_command_reports_source_unavailable(
     assert "could not be completed" in result.stdout
 
 
+def test_check_updates_command_reports_cargo_dependency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "Cargo.toml").write_text(
+        '[package]\nname = "x"\nversion = "0.1.0"\n[dependencies]\nserde = "=1.0.0"\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        response = {"crate": {"max_stable_version": "1.0.219"}, "versions": []}
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.crates_io._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "serde" in result.stdout
+    assert "current: 1.0.0" in result.stdout
+    assert "available: 1.0.219" in result.stdout
+
+
 def test_check_updates_command_no_matching_provider(tmp_path: Path) -> None:
     target_dir = tmp_path / "target"
     target_dir.mkdir()

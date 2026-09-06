@@ -41,8 +41,8 @@ def test_extract_package_json_dependencies(tmp_path: Path) -> None:
 
 
 def test_extract_dependencies_unknown_manifest_type_ignored(tmp_path: Path) -> None:
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n", encoding="utf-8")
-    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+    (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
 
     assert extract_dependencies(tmp_path, manifests) == []
 
@@ -131,10 +131,82 @@ def test_extract_dependencies_by_manifest_groups_by_directory(tmp_path: Path) ->
 def test_extract_dependencies_by_manifest_omits_directories_with_no_parsed_deps(
     tmp_path: Path,
 ) -> None:
+    (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    manifests = [PackageManifest(path="go.mod", ecosystem="go", language="Go")]
+
+    assert extract_dependencies_by_manifest(tmp_path, manifests) == {}
+
+
+def test_extract_cargo_dependencies_manifest_with_no_dependency_sections_returns_empty(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n", encoding="utf-8")
     manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
 
     assert extract_dependencies_by_manifest(tmp_path, manifests) == {}
+
+
+def test_extract_cargo_dependencies_string_and_table_forms(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n'
+        "[dependencies]\n"
+        'serde = "1.0"\n'
+        'tokio = { version = "1", features = ["full"] }\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    by_name = {d.name: d for d in dependencies}
+    assert set(by_name) == {"serde", "tokio"}
+    assert by_name["serde"].version_constraint == "1.0"
+    assert by_name["tokio"].version_constraint == "1"
+    assert all(d.ecosystem == "cargo" for d in dependencies)
+    assert all(d.evidence for d in dependencies)
+
+
+def test_extract_cargo_dependencies_dev_and_build_sections(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n'
+        "[dev-dependencies]\n"
+        'criterion = "0.5"\n'
+        "[build-dependencies]\n"
+        'cc = "1.0"\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"criterion", "cc"}
+
+
+def test_extract_cargo_dependencies_path_and_git_deps_without_version_are_skipped(
+    tmp_path: Path,
+) -> None:
+    """A path/git-only dependency has no registry version to record — must
+    be skipped, not recorded with a fabricated or absent constraint."""
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n'
+        "[dependencies]\n"
+        'local-crate = { path = "../local-crate" }\n'
+        'git-crate = { git = "https://example.com/repo.git" }\n'
+        'real-crate = "2.0"\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.name for d in dependencies} == {"real-crate"}
+
+
+def test_extract_cargo_dependencies_malformed_manifest_returns_empty(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text("not valid toml [[[", encoding="utf-8")
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    assert extract_dependencies(tmp_path, manifests) == []
 
 
 def test_extract_dependencies_flattens_by_manifest_grouping(tmp_path: Path) -> None:

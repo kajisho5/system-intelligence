@@ -92,6 +92,21 @@ def test_build_current_state_npm_hyphen_range_leaves_version_unknown() -> None:
     assert state.version_confidence == Confidence.UNKNOWN
 
 
+def test_build_current_state_cargo_bare_version_is_a_caret_range_not_a_pin() -> None:
+    """Cargo's own convention is the opposite of npm's: a bare `"1.0"` in
+    Cargo.toml means `^1.0` (a compatible-updates range), never an exact
+    pin — must not be guessed as one just because it has no operator."""
+    state = build_current_state(_dependency(ecosystem="cargo", version_constraint="1.0"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
+def test_build_current_state_cargo_explicit_equals_is_an_exact_pin() -> None:
+    state = build_current_state(_dependency(ecosystem="cargo", version_constraint="=1.0.219"))
+    assert state.version == "1.0.219"
+    assert state.version_confidence == Confidence.HIGH
+
+
 def test_build_current_state_pep440_prerelease_pin_still_matches() -> None:
     """A regression guard: widening the exact-pin regex for npm must not
     stop matching pypi's already-supported bare PEP 440 suffixes."""

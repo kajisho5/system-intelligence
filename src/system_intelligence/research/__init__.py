@@ -23,13 +23,14 @@ research-engine.md, and docs/design/IMPLEMENTATION_BACKLOG.md Epic 5):
   (provider, query).
 - `update_provider.ComponentUpdateProvider`: a narrower Protocol for
   Component Update Intelligence — "what is the latest available state of
-  *this* known identity?" rather than a free-text search. `providers/pypi.py`
-  and `providers/npm.py` implement it as pure ecosystem adapters.
+  *this* known identity?" rather than a free-text search. `providers/pypi.py`,
+  `providers/npm.py`, and `providers/crates_io.py` implement it as pure
+  ecosystem adapters.
 - `vulnerability_provider.VulnerabilityProvider`: "does this specific,
   already-known version have any known vulnerabilities?" — a per-version
   lookup, distinct from the freshness question `ComponentUpdateProvider`
   answers. `providers/osv.py` implements it against OSV.dev, which covers
-  both pypi and npm from one ecosystem-agnostic API.
+  pypi, npm, and crates.io from one ecosystem-agnostic API.
 
 Not yet implemented: standards/specification lookups and general web
 search — docs/06 lists these as later steps in the search order.
@@ -43,6 +44,8 @@ from system_intelligence.research.mcp_registry import (
 )
 from system_intelligence.research.provider import ResearchProvider
 from system_intelligence.research.providers import (
+    CratesIoUpdateError,
+    CratesIoUpdateProvider,
     NpmUpdateError,
     NpmUpdateProvider,
     OSVLookupError,
@@ -66,6 +69,8 @@ __all__ = [
     "UNSCORABLE_DIMENSIONS",
     "CandidateAssessment",
     "ComponentUpdateProvider",
+    "CratesIoUpdateError",
+    "CratesIoUpdateProvider",
     "GitHubResearchError",
     "GitHubResearchProvider",
     "MCPRegistryError",

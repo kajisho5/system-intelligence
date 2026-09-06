@@ -73,6 +73,7 @@ from system_intelligence.reporting import (
 from system_intelligence.research import (
     UNSCORABLE_DIMENSIONS,
     ComponentUpdateProvider,
+    CratesIoUpdateProvider,
     GitHubResearchError,
     GitHubResearchProvider,
     MCPRegistryError,
@@ -330,7 +331,8 @@ _DASHBOARD_COMPARE_OPTION = typer.Option(
 _DASHBOARD_CHECK_UPDATES_OPTION = typer.Option(
     False,
     "--check-updates",
-    help="Also run Component Update Intelligence (network requests to pypi/npm) and include it.",
+    help="Also run Component Update Intelligence (network requests to pypi/npm/cargo) and "
+    "include it.",
 )
 _DASHBOARD_CHECK_VULNERABILITIES_OPTION = typer.Option(
     False,
@@ -362,7 +364,7 @@ def dashboard(
     those forward on its own, so without `--compare-with` pointed at
     whatever directory `--record` on other commands has been accumulating
     into, those screens are correctly empty rather than showing stale data.
-    `--check-updates` adds a network request per pypi/npm dependency
+    `--check-updates` adds a network request per pypi/npm/cargo dependency
     (skipped by default, unlike `si report`/`si diagnose`, which never
     touch the network at all); `--check-vulnerabilities` adds one more
     per resolved version, for a known-vulnerability lookup (OSV.dev).
@@ -533,15 +535,20 @@ def _update_providers() -> dict[str, ComponentUpdateProvider]:
     # Constructed fresh per call (like `research()`'s GitHubResearchProvider)
     # rather than as a module-level singleton, so each invocation's HTTP
     # layer can be independently injected/tested.
-    return {"pypi": PyPIUpdateProvider(), "npm": NpmUpdateProvider()}
+    return {
+        "pypi": PyPIUpdateProvider(),
+        "npm": NpmUpdateProvider(),
+        "cargo": CratesIoUpdateProvider(),
+    }
 
 
 def _vulnerability_providers() -> dict[str, VulnerabilityProvider]:
-    # OSV.dev's own ecosystem names are case-sensitive ("PyPI", not
-    # "pypi") -- confirmed against the live API, not guessed.
+    # OSV.dev's own ecosystem names are case-sensitive ("PyPI"/"crates.io",
+    # not "pypi"/"cargo") -- confirmed against the live API, not guessed.
     return {
         "pypi": OSVVulnerabilityProvider("pypi", "PyPI"),
         "npm": OSVVulnerabilityProvider("npm", "npm"),
+        "cargo": OSVVulnerabilityProvider("cargo", "crates.io"),
     }
 
 
@@ -574,8 +581,8 @@ _CHECK_UPDATES_VULNERABILITIES_OPTION = typer.Option(
     "--check-vulnerabilities",
     help=(
         "Also look up known vulnerabilities (OSV.dev) for the current/available version of "
-        "each pypi/npm dependency. Off by default: one extra network request per resolved "
-        "version, independent of whether an update is available."
+        "each pypi/npm/cargo dependency. Off by default: one extra network request per "
+        "resolved version, independent of whether an update is available."
     ),
 )
 
@@ -591,9 +598,10 @@ def check_updates(
     """Component Update Intelligence: current vs. available state for every dependency.
 
     Read-only, but unlike `si diagnose` this makes network requests (one GET
-    per pypi/npm dependency, to the public registries) — closer in kind to
-    `si research`. Dependencies in an ecosystem with no configured provider
-    (anything but pypi/npm today) are skipped, not reported as unknown.
+    per pypi/npm/cargo dependency, to the public registries) — closer in
+    kind to `si research`. Dependencies in an ecosystem with no configured
+    provider (anything but pypi/npm/cargo today) are skipped, not reported
+    as unknown.
 
     Never concludes `UPDATE_RECOMMENDED` from a version number alone: see
     `analysis.update_intelligence` and `core.enums.UpdateVerdict` — that

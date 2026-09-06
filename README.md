@@ -43,7 +43,7 @@ interactive Dashboard are all implemented and covered by tests — see
 [Commands](#commands) below for what `si` can do today. Not yet
 implemented: a plugin loader for external Skills/Agents (the capability
 registry is a static Python dict), and package-registry/Capability-Contract
-adapters beyond PyPI/npm.
+adapters beyond PyPI/npm/crates.io (Go, Maven/Gradle, RubyGems).
 
 ## Commands
 
@@ -62,7 +62,7 @@ read-only into a temp directory first):
 | `si schema` | Export JSON Schema files for the canonical snapshot format (no target) |
 | `si diff <from> <to>` | Diff two canonical snapshot directories |
 | `si research <query>` | Search for existing solutions — `--provider github` (default) or `--provider mcp-registry` (network) |
-| `si check-updates <target>` | Component Update Intelligence: current vs. available state (network); `--check-vulnerabilities` also looks up known vulnerabilities (OSV.dev) for each resolved version; `--plan-out DIR` writes a ready-to-run `ChangePlan` for a pypi or npm exact-pin bump, no hand-written JSON needed |
+| `si check-updates <target>` | Component Update Intelligence: current vs. available state for pypi/npm/cargo dependencies (network); `--check-vulnerabilities` also looks up known vulnerabilities (OSV.dev) for each resolved version; `--plan-out DIR` writes a ready-to-run `ChangePlan` for a pypi or npm exact-pin bump, no hand-written JSON needed |
 | `si improve <target>` | Findings → ranked Recommendations |
 | `si propose <problem>` | Adopt/integrate/create decision → a Proposal; `--target-kind skill\|agent\|mcp_server\|...` shapes test/documentation guidance to that kind; `--target <path> --handoff-out FILE` exports a self-contained packet (Proposal + the `ChangePlan` file schema) for a human or an external implementer (e.g. Claude Code) to turn into an executable plan — SI itself never authors that diff |
 | `si plan <intent-or-text>` | Preview which capabilities a request would run |
@@ -127,7 +127,7 @@ required beyond the install above. Run these from inside that repository
 cd your-repo
 si diagnose .                              # read-only: discovery + findings, nothing written
 si report . --out ./si-out                 # same, plus a static HTML report at ./si-out/report.html
-si check-updates . --plan-out ./si-plans   # network: pypi/npm dependency freshness;
+si check-updates . --plan-out ./si-plans   # network: pypi/npm/cargo dependency freshness;
                                             # writes a ready-to-run ChangePlan for any exact-pin bump found
 ```
 
