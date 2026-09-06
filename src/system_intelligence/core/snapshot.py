@@ -15,6 +15,7 @@ Mirrors the file layout from docs/design/docs/12-storage-and-state.md:
       verification.json
       executions.json
       audit_log.json
+      adrs.json
 
 `Snapshot` is the in-memory/serialization model; `write_to_directory` /
 `read_from_directory` implement that on-disk layout so HTML reports,
@@ -34,6 +35,7 @@ from pydantic import BaseModel, Field, SerializeAsAny
 
 from system_intelligence.core.capability import Capability
 from system_intelligence.core.entities import (
+    ADR,
     Agent,
     Component,
     Document,
@@ -85,6 +87,7 @@ _FILES: dict[str, str] = {
     "verification": "verification.json",
     "executions": "executions.json",
     "audit_log": "audit_log.json",
+    "adrs": "adrs.json",
 }
 
 
@@ -120,6 +123,7 @@ class Snapshot(BaseModel):
     verification: list[Verification] = Field(default_factory=list)
     executions: list[ExecutionRecord] = Field(default_factory=list)
     audit_log: list[AuditLogEntry] = Field(default_factory=list)
+    adrs: list[ADR] = Field(default_factory=list)
 
     def manifest(self) -> SnapshotManifest:
         return SnapshotManifest(
@@ -206,4 +210,5 @@ class Snapshot(BaseModel):
             verification=_load(_FILES["verification"], Verification),  # type: ignore[arg-type]
             executions=_load(_FILES["executions"], ExecutionRecord),  # type: ignore[arg-type]
             audit_log=_load(_FILES["audit_log"], AuditLogEntry),  # type: ignore[arg-type]
+            adrs=_load(_FILES["adrs"], ADR),  # type: ignore[arg-type]
         )

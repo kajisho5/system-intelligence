@@ -49,6 +49,19 @@ def test_build_dashboard_data_counts_components_by_kind() -> None:
     assert data.overview.component_counts_by_kind == {"repository": 1}
 
 
+def test_build_dashboard_data_exposes_adrs_and_their_count() -> None:
+    from system_intelligence.core.entities import ADR
+
+    adr = ADR(name="First decision", number=1, status="Accepted", path="docs/adr/ADR-001-x.md")
+    snapshot = Snapshot(target=_target(), adrs=[adr])
+
+    data = build_dashboard_data(snapshot)
+
+    assert data.overview.adr_count == 1
+    assert len(data.adrs) == 1
+    assert data.adrs[0].status == "Accepted"
+
+
 def test_build_dashboard_data_counts_relationships() -> None:
     from system_intelligence.core.enums import RelationshipType
     from system_intelligence.core.relationships import Relationship

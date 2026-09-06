@@ -39,6 +39,21 @@ def test_discover_local_repository(tmp_path: Path) -> None:
     assert "Python" in repository.languages  # type: ignore[attr-defined]
 
 
+def test_discover_local_repository_populates_adrs(tmp_path: Path) -> None:
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "ADR-001-first-decision.md").write_text(
+        "# ADR-001: First decision\n\nStatus: Accepted\n", encoding="utf-8"
+    )
+    _init_repo(tmp_path)
+
+    result = discover_local_repository(str(tmp_path))
+
+    assert len(result.snapshot.adrs) == 1
+    assert result.snapshot.adrs[0].number == 1
+    assert result.snapshot.adrs[0].status == "Accepted"
+
+
 def test_discover_local_repository_ids_are_stable_across_runs(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "demo"
     skill_dir.mkdir(parents=True)

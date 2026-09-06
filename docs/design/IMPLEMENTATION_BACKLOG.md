@@ -28,7 +28,7 @@ named on each `[x]` line for the actual code, not just the schema.
 - [ ] agent detector — no discovery code ever instantiates `core.entities.Agent`; nothing populates it from a scan
 - [x] package detector — `discovery/structure.py`'s `PACKAGE_MANIFESTS`
 - [x] CI detector — `discovery/ci_docs.py::detect_ci_jobs`
-- [ ] docs/ADR detector — `discovery/ci_docs.py::detect_root_documents` finds README/LICENSE/CONTRIBUTING, not ADRs specifically; `core.entities.ADR` is never instantiated anywhere
+- [x] docs/ADR detector — `discovery/adr.py::detect_adrs`; matches the `ADR-<number>` filename convention (verified against `ai-video-production-os`'s `docs/adr/ADR-NNN-slug.md`), parses `Status:` when present, never fabricates `decided_at`; wired into `Snapshot.adrs` and the Dashboard's new "Architecture Decisions" section
 
 ## Epic 4 — Analysis
 - [x] dependency graph — `analysis/dependencies.py` + `analysis/relationships.py` (DEPENDS_ON, now Component-level, not just Repository-level)
@@ -66,7 +66,7 @@ Registry, was added beyond this epic's original PyPI/npm-agnostic scope.)
 ## Epic 8 — Governance
 - [x] policy schema — `core/enums.py` (`PermissionLevel`, `FORBIDDEN_BY_DEFAULT_ACTIONS`), `policy/engine.py`
 - [x] approval records — `core/governance.py::Approval`
-- [ ] audit log — `core/governance.py::AuditLogEntry` is schema-only; nothing in the codebase ever constructs one
+- [x] audit log — `policy/engine.py::audit_log_entry` builds an `AuditLogEntry` per policy decision; `Snapshot.audit_log`/`audit_log.json`; wired into `si execute --record`
 - [ ] GitHub write scopes — no remote-write code exists yet to scope in the first place
 - [ ] Draft PR adapter — `execution/local_git.py`'s own docstring: "the remote half (opening a Draft PR) is deliberately not implemented yet"
 

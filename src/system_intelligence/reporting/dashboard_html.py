@@ -251,6 +251,17 @@ _SCRIPT = r"""
     if (v === "no_update_available") return "neutral";
     return "unknown";
   }
+  function adrStatusKind(s) {
+    // Freeform text observed from each ADR's own "Status:" line, not a
+    // closed enum -- only the values actually seen across real ADRs get a
+    // distinct color; anything else renders as a plain neutral badge
+    // rather than guessing.
+    var v = (s || "").toLowerCase();
+    if (v === "accepted") return "success";
+    if (v === "proposed") return "neutral";
+    if (v === "deprecated" || v === "superseded" || v === "rejected") return "warning";
+    return "unknown";
+  }
 
   function componentName(id) {
     var c = DATA.components.filter(function (x) { return x.id === id; })[0];
@@ -279,6 +290,7 @@ _SCRIPT = r"""
       ["Verifications", o.verification_count],
       ["Research results", o.research_result_count],
       ["Approvals", o.approval_count],
+      ["ADRs", o.adr_count],
     ].map(function (pair) {
       return el("div", { class: "card" }, el("div", { class: "metric" }, String(pair[1])),
         el("div", { class: "label" }, pair[0]));
@@ -543,6 +555,16 @@ _SCRIPT = r"""
       }));
   }
 
+  function renderAdrs() {
+    if (!DATA.adrs.length) return emptyState("No Architecture Decision Records discovered in this snapshot.");
+    var sorted = DATA.adrs.slice().sort(function (a, b) { return (a.number || 0) - (b.number || 0); });
+    return table(["Number", "Name", "Status", "Path"],
+      sorted.map(function (a) {
+        return [a.number != null ? String(a.number) : "—", a.name,
+          a.status ? badge(a.status, adrStatusKind(a.status)) : "—", a.path || "—"];
+      }));
+  }
+
   function renderChanges() {
     if (!DATA.changes.length) {
       var reasons = [];
@@ -627,6 +649,7 @@ _SCRIPT = r"""
     { id: "components", label: "Components", render: renderComponents },
     { id: "capabilities", label: "Capabilities", render: renderCapabilities },
     { id: "dependencies", label: "Dependencies", render: renderDependencies },
+    { id: "adrs", label: "Architecture Decisions", render: renderAdrs },
     { id: "changes", label: "Changes", render: renderChanges },
     { id: "research", label: "Research", render: renderResearch },
     { id: "evidence", label: "Evidence", render: renderEvidence },

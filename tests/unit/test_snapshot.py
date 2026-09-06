@@ -39,6 +39,8 @@ def test_snapshot_round_trips_through_directory(tmp_path: Path) -> None:
         "approvals.json",
         "verification.json",
         "executions.json",
+        "audit_log.json",
+        "adrs.json",
     ]:
         assert (out_dir / filename).exists(), f"missing {filename}"
 
@@ -154,3 +156,34 @@ def test_snapshot_audit_log_defaults_to_empty(tmp_path: Path) -> None:
     restored = Snapshot.read_from_directory(out_dir, target=_target())
 
     assert restored.audit_log == []
+
+
+def test_snapshot_round_trip_preserves_adrs(tmp_path: Path) -> None:
+    from system_intelligence.core.entities import ADR
+
+    adr = ADR(
+        name="First decision",
+        number=1,
+        status="Accepted",
+        path="docs/adr/ADR-001-first-decision.md",
+    )
+    snapshot = Snapshot(target=_target(), adrs=[adr])
+
+    out_dir = tmp_path / snapshot.id
+    snapshot.write_to_directory(out_dir)
+
+    assert (out_dir / "adrs.json").exists()
+    restored = Snapshot.read_from_directory(out_dir, target=_target())
+    assert len(restored.adrs) == 1
+    assert restored.adrs[0].number == 1
+    assert restored.adrs[0].status == "Accepted"
+
+
+def test_snapshot_adrs_defaults_to_empty(tmp_path: Path) -> None:
+    snapshot = Snapshot(target=_target())
+
+    out_dir = tmp_path / snapshot.id
+    snapshot.write_to_directory(out_dir)
+    restored = Snapshot.read_from_directory(out_dir, target=_target())
+
+    assert restored.adrs == []

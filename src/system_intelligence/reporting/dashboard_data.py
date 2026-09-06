@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field, SerializeAsAny
 
 from system_intelligence.analysis.update_intelligence import UpdateCheckResult
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import Component, Dependency
+from system_intelligence.core.entities import ADR, Component, Dependency
 from system_intelligence.core.enums import (
     DEFAULT_MAX_PERMISSION_LEVEL,
     FORBIDDEN_BY_DEFAULT_ACTIONS,
@@ -79,6 +79,7 @@ class OverviewCounts(BaseModel):
     approval_count: int
     verification_count: int
     execution_count: int
+    adr_count: int
     has_previous_snapshot: bool
     previous_snapshot_id: str | None
     has_update_check: bool
@@ -160,6 +161,7 @@ class DashboardData(BaseModel):
     executions: list[ExecutionRecord]
     verifications: list[Verification]
     approvals: list[Approval]
+    adrs: list[ADR]
     update_assessments: list[ImpactAssessment]
     update_unavailable: list[UpdateLookupFailureView]
     changes: list[ChangeSummary]
@@ -342,6 +344,7 @@ def build_dashboard_data(
         approval_count=len(snapshot.approvals),
         verification_count=len(snapshot.verification),
         execution_count=len(snapshot.executions),
+        adr_count=len(snapshot.adrs),
         has_previous_snapshot=previous_snapshot is not None,
         previous_snapshot_id=previous_snapshot.id if previous_snapshot else None,
         has_update_check=update_check is not None,
@@ -377,6 +380,7 @@ def build_dashboard_data(
         executions=snapshot.executions,
         verifications=snapshot.verification,
         approvals=snapshot.approvals,
+        adrs=snapshot.adrs,
         update_assessments=assessments,
         update_unavailable=[
             UpdateLookupFailureView(ecosystem=f.ecosystem, name=f.name, message=f.message)
