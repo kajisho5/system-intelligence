@@ -143,6 +143,17 @@ def test_build_current_state_maven_range_syntax_leaves_version_unknown() -> None
     assert state.version_confidence == Confidence.UNKNOWN
 
 
+def test_build_current_state_poetry_normalized_wildcard_leaves_version_unknown() -> None:
+    """`analysis.dependencies._extract_poetry_dependencies` normalizes a
+    bare Poetry wildcard version ("1.*") to "==1.*" (Poetry's own bare-
+    is-exact convention would otherwise apply) -- the "*" character isn't
+    in `_EXACT_PIN_RE`'s allowed character class, so this is still
+    correctly rejected as an exact pin rather than misclassified."""
+    state = build_current_state(_dependency(ecosystem="pypi", version_constraint="==1.*"))
+    assert state.version is None
+    assert state.version_confidence == Confidence.UNKNOWN
+
+
 def test_build_current_state_pep440_prerelease_pin_still_matches() -> None:
     """A regression guard: widening the exact-pin regex for npm must not
     stop matching pypi's already-supported bare PEP 440 suffixes."""

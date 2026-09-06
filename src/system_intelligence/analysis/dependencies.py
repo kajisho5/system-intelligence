@@ -1,9 +1,11 @@
 """Dependency extraction from package manifests (R2, "dependency graph").
 
 Phase 3 scope: parse declared dependencies out of `pyproject.toml` (PEP 621
-`[project.dependencies]`), `requirements.txt` (each line as one PEP 508
-requirement, pip's own option flags and direct URL/VCS references
-skipped), `package.json` (`dependencies`/`devDependencies`), `Cargo.toml`
+`[project.dependencies]`, and Poetry's own pre-PEP-621
+`[tool.poetry.dependencies]` table, still the form most existing Poetry
+projects use), `requirements.txt` (each line as one PEP 508 requirement,
+pip's own option flags and direct URL/VCS references skipped),
+`package.json` (`dependencies`/`devDependencies`), `Cargo.toml`
 (`[dependencies]`/`[dev-dependencies]`/`[build-dependencies]`), `go.mod`
 (`require` directives), and `pom.xml` (the project's own direct
 `<dependencies>`, literal versions only). No dependency resolution,
@@ -58,6 +60,77 @@ def _parse_pep508(requirement: str, rel_path: str) -> Dependency | None:
     )
 
 
+def _poetry_version_constraint(spec: object) -> str | None:
+    """The registry version requirement `spec` declares, if any -- from
+    Poetry's own `[tool.poetry.dependencies]` table, not a PEP 508 string.
+
+    A bare version with no operator (`requests = "2.31.0"`) means an EXACT
+    pin under Poetry's own convention (confirmed against Poetry's official
+    docs, "Exact requirements": "You can specify the exact version of a
+    package... This will tell Poetry to install this version and this
+    version only" -- unlike Cargo's bare-is-caret convention), so it is
+    normalized to PEP 508's own `==`-prefixed form here. That lets this
+    ecosystem's already-established `pypi` exact-pin detection
+    (`analysis.update_intelligence._EXACT_PIN_RE`, which requires an
+    explicit `=`/`==` prefix since a real PEP 508 string always spells one
+    out) apply unchanged, with no Poetry-specific carve-out needed there.
+    A caret/tilde/wildcard-prefixed constraint (`^2.31.0`, `~2.31.0`,
+    `1.*`) is left as-is -- never normalized to look like an exact pin --
+    and a spec with no resolvable version at all (`{ git = "..." }`,
+    `{ path = "..." }`) returns `None`, mirroring
+    `_cargo_version_constraint`.
+    """
+    if isinstance(spec, str):
+        version = spec
+    elif isinstance(spec, dict):
+        raw_version = spec.get("version")
+        if not isinstance(raw_version, str):
+            return None
+        version = raw_version
+    else:
+        return None
+    stripped = version.strip()
+    if stripped and stripped[0].isdigit():
+        return f"=={stripped}"
+    return stripped or None
+
+
+def _extract_poetry_dependencies(data: dict[str, object], rel_path: str) -> list[Dependency]:
+    """Parse Poetry's own `[tool.poetry.dependencies]` table.
+
+    Distinct from PEP 621's `[project.dependencies]` array of requirement
+    strings (`_parse_pep508`): Poetry's native table predates PEP 621
+    support and is still the form most existing Poetry projects use,
+    mapping name -> a bare/operator-prefixed version string or a table
+    (`{ version = "...", extras = [...] }`). `python` (Poetry's own
+    special-cased interpreter-version key, not a package) is skipped.
+    """
+    tool_table = data.get("tool")
+    poetry_table = tool_table.get("poetry") if isinstance(tool_table, dict) else None
+    if not isinstance(poetry_table, dict):
+        return []
+    dependencies_table = poetry_table.get("dependencies")
+    if not isinstance(dependencies_table, dict):
+        return []
+    dependencies: list[Dependency] = []
+    for name, spec in dependencies_table.items():
+        if name == "python":
+            continue
+        constraint = _poetry_version_constraint(spec)
+        if constraint is None:
+            continue
+        dependencies.append(
+            Dependency(
+                id=stable_id("dependency", "pypi", rel_path, name),
+                name=name,
+                ecosystem="pypi",
+                version_constraint=constraint,
+                evidence=[_manifest_evidence(rel_path, name)],
+            )
+        )
+    return dependencies
+
+
 def _extract_pyproject_dependencies(path: Path, rel_path: str) -> list[Dependency]:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -65,7 +138,8 @@ def _extract_pyproject_dependencies(path: Path, rel_path: str) -> list[Dependenc
         return []
     requirements = data.get("project", {}).get("dependencies", [])
     dependencies = [_parse_pep508(r, rel_path) for r in requirements if isinstance(r, str)]
-    return [d for d in dependencies if d is not None]
+    pep621_dependencies = [d for d in dependencies if d is not None]
+    return pep621_dependencies + _extract_poetry_dependencies(data, rel_path)
 
 
 #: A `#` starting a comment, per pip's own requirements-file convention --
