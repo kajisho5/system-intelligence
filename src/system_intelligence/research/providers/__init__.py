@@ -13,6 +13,10 @@ from system_intelligence.research.providers.crates_io import (
     CratesIoUpdateError,
     CratesIoUpdateProvider,
 )
+from system_intelligence.research.providers.go_proxy import (
+    GoProxyUpdateError,
+    GoProxyUpdateProvider,
+)
 from system_intelligence.research.providers.npm import NpmUpdateError, NpmUpdateProvider
 from system_intelligence.research.providers.osv import OSVLookupError, OSVVulnerabilityProvider
 from system_intelligence.research.providers.pypi import PyPIUpdateError, PyPIUpdateProvider
@@ -20,6 +24,8 @@ from system_intelligence.research.providers.pypi import PyPIUpdateError, PyPIUpd
 __all__ = [
     "CratesIoUpdateError",
     "CratesIoUpdateProvider",
+    "GoProxyUpdateError",
+    "GoProxyUpdateProvider",
     "NpmUpdateError",
     "NpmUpdateProvider",
     "OSVLookupError",

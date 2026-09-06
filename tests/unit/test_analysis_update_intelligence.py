@@ -107,6 +107,23 @@ def test_build_current_state_cargo_explicit_equals_is_an_exact_pin() -> None:
     assert state.version_confidence == Confidence.HIGH
 
 
+def test_build_current_state_go_bare_v_prefixed_version_is_an_exact_pin() -> None:
+    """Go's own convention: every `require` line in go.mod is already an
+    exact, MVS-resolved version, always written with a leading "v" and no
+    operator at all -- unlike Cargo, a bare Go version is never a range."""
+    state = build_current_state(_dependency(ecosystem="go", version_constraint="v1.2.3"))
+    assert state.version == "v1.2.3"
+    assert state.version_confidence == Confidence.HIGH
+
+
+def test_build_current_state_go_pseudo_version_still_matches() -> None:
+    state = build_current_state(
+        _dependency(ecosystem="go", version_constraint="v0.0.0-20180306012644-bacd9c7ef1dd")
+    )
+    assert state.version == "v0.0.0-20180306012644-bacd9c7ef1dd"
+    assert state.version_confidence == Confidence.HIGH
+
+
 def test_build_current_state_pep440_prerelease_pin_still_matches() -> None:
     """A regression guard: widening the exact-pin regex for npm must not
     stop matching pypi's already-supported bare PEP 440 suffixes."""
