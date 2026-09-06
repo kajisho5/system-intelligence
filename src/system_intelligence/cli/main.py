@@ -52,6 +52,7 @@ from system_intelligence.execution import (
     GitHubPRError,
     LocalGitError,
     apply_plan,
+    build_handoff_packet,
     open_draft_pr_for_plan,
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
@@ -703,6 +704,26 @@ _PROPOSAL_RECORD_OPTION = typer.Option(
         "this Proposal to, so 'si dashboard' can show it later."
     ),
 )
+_PROPOSAL_HANDOFF_OUT_OPTION = typer.Option(
+    None,
+    "--handoff-out",
+    help=(
+        "File to write a self-contained handoff packet to (execution.handoff."
+        "build_handoff_packet): the Proposal, --target, and the exact JSON shape "
+        "'si execute' expects back. For creation/adoption/integration Proposals, System "
+        "Intelligence has no deterministic way to author the actual diff (ADR-007) — this "
+        "hands that off to a human or an external implementer such as Claude Code, never "
+        "invoking one itself. Requires --target."
+    ),
+)
+_PROPOSAL_TARGET_OPTION = typer.Option(
+    None,
+    "--target",
+    help=(
+        "Local repository path an implementer would apply this Proposal against. "
+        "Required by --handoff-out."
+    ),
+)
 
 
 @app.command()
@@ -713,6 +734,8 @@ def propose(
     confirm_fit: bool = _CONFIRM_FIT_OPTION,
     out: Path | None = _PROPOSAL_OUT_OPTION,
     record: Path | None = _PROPOSAL_RECORD_OPTION,
+    target: str | None = _PROPOSAL_TARGET_OPTION,
+    handoff_out: Path | None = _PROPOSAL_HANDOFF_OUT_OPTION,
 ) -> None:
     """Produce a concrete proposal: adopt, integrate, or create (docs/07-improvement-engine.md).
 
@@ -721,6 +744,9 @@ def propose(
     an actual verification you (or another process) performed — this
     command never infers functional fit from research metadata alone.
     """
+    if handoff_out is not None and target is None:
+        typer.echo("error: --handoff-out requires --target.", err=True)
+        raise typer.Exit(code=1)
     research_results = []
     if research_query:
         provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
@@ -755,6 +781,11 @@ def propose(
 
     if record is not None:
         _append_json_record(record, "proposals.json", proposal)
+
+    if handoff_out is not None and target is not None:
+        packet = build_handoff_packet(proposal, target)
+        handoff_out.write_text(json.dumps(packet, indent=2, ensure_ascii=False), encoding="utf-8")
+        typer.echo(f"\nHandoff packet written to {handoff_out}")
 
 
 _REQUEST_ARGUMENT = typer.Argument(

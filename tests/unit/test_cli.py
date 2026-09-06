@@ -384,6 +384,36 @@ def test_propose_command_without_research_is_creation(tmp_path: Path) -> None:
     assert written["requirements"] == ["renders CommonMark"]
 
 
+def test_propose_command_handoff_out_writes_packet(tmp_path: Path) -> None:
+    handoff_path = tmp_path / "handoff.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "propose",
+            "Need a markdown renderer",
+            "--target",
+            "/repo/root",
+            "--handoff-out",
+            str(handoff_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f"Handoff packet written to {handoff_path}" in result.stdout
+    packet = json.loads(handoff_path.read_text(encoding="utf-8"))
+    assert packet["target_root"] == "/repo/root"
+    assert packet["proposal"]["kind"] == "creation"
+    assert "change_plan_file_schema" in packet
+
+
+def test_propose_command_handoff_out_without_target_fails_clearly() -> None:
+    result = runner.invoke(app, ["propose", "Need X", "--handoff-out", "handoff.json"])
+
+    assert result.exit_code == 1
+    assert "--handoff-out requires --target" in result.stdout + (result.stderr or "")
+
+
 def test_propose_command_with_research_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
