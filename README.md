@@ -55,7 +55,7 @@ read-only into a temp directory first):
 
 | Command | What it does |
 |---|---|
-| `si inspect <target>` | Repository/Skill/CI/doc inventory |
+| `si inspect <target>` | Repository/Skill/Agent (`.claude/agents/*.md`)/CI/doc inventory |
 | `si diagnose <target>` | Discovery + deterministic analysis → Findings |
 | `si report <target>` | Static, offline-viewable HTML report |
 | `si dashboard <target>` | Interactive "System Intelligence Console" (see below) |

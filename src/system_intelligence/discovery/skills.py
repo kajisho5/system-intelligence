@@ -9,30 +9,16 @@ found is still reported even if that parsing fails.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from system_intelligence.core.entities import Skill
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
+from system_intelligence.discovery.frontmatter import parse_frontmatter
 from system_intelligence.discovery.paths import is_excluded
 
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 _REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
-
-
-def _parse_frontmatter(text: str) -> dict[str, str] | None:
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return None
-    fields: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        fields[key.strip()] = value.strip().strip("\"'")
-    return fields
 
 
 def _list_relative_files(directory: Path, relative_to: Path) -> list[str]:
@@ -56,7 +42,7 @@ def detect_skills(root: Path) -> list[Skill]:
 
         skill_dir = skill_md.parent
         text = skill_md.read_text(encoding="utf-8", errors="replace")
-        fields = _parse_frontmatter(text)
+        fields = parse_frontmatter(text)
 
         found_evidence = Evidence(
             kind=EvidenceKind.FILE,

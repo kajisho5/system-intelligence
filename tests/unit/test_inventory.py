@@ -41,6 +41,23 @@ def test_discover_local_repository(tmp_path: Path) -> None:
     assert "Python" in repository.languages  # type: ignore[attr-defined]
 
 
+def test_discover_local_repository_populates_agents(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: Reviews PRs\ntools: Read, Grep\n---\n",
+        encoding="utf-8",
+    )
+    _init_repo(tmp_path)
+
+    result = discover_local_repository(str(tmp_path))
+
+    agents = [c for c in result.snapshot.components if c.kind == ComponentKind.AGENT]
+    assert len(agents) == 1
+    assert agents[0].name == "reviewer"
+
+
 def test_discover_local_repository_populates_adrs(tmp_path: Path) -> None:
     adr_dir = tmp_path / "docs" / "adr"
     adr_dir.mkdir(parents=True)
