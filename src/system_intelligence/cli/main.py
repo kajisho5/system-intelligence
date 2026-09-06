@@ -1,15 +1,16 @@
 """`si` command-line entry point.
 
-`si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`, and
-`si diff` are implemented. The remaining commands from
-docs/design/docs/13-cli-and-ux.md (`research`, `design`, `improve`,
-`propose`, `execute`, `verify`, `watch`) are registered as explicit
-placeholders so `si --help` documents the intended surface without
-claiming functionality that does not exist yet.
+`si doctor`, `si version`, `si inspect`, `si diagnose`, `si report`,
+`si diff`, and `si research` are implemented. The remaining commands from
+docs/design/docs/13-cli-and-ux.md (`design`, `improve`, `propose`,
+`execute`, `verify`, `watch`) are registered as explicit placeholders so
+`si --help` documents the intended surface without claiming functionality
+that does not exist yet.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,13 @@ from system_intelligence.core.findings import Finding
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
 from system_intelligence.reporting import diff_snapshots, generate_html_report
+from system_intelligence.research import (
+    UNSCORABLE_DIMENSIONS,
+    GitHubResearchError,
+    GitHubResearchProvider,
+    ResearchCache,
+    rank_candidates,
+)
 
 app = typer.Typer(
     name="si",
@@ -35,7 +43,6 @@ app = typer.Typer(
 )
 
 _PLANNED_COMMANDS = {
-    "research": "External solution discovery. Planned for Phase 5.",
     "design": "Architecture/design proposal generation. Planned for Phase 6.",
     "improve": "Generate an improvement plan. Planned for Phase 6.",
     "propose": "Create a concrete change proposal. Planned for Phase 6.",
@@ -229,6 +236,69 @@ def diff_command(from_dir: Path = _FROM_DIR_ARGUMENT, to_dir: Path = _TO_DIR_ARG
     )
     _section("Findings introduced", [f.statement for f in result.added_findings])
     _section("Findings resolved", [f.statement for f in result.resolved_findings])
+
+
+_QUERY_ARGUMENT = typer.Argument(..., help="Search query, e.g. 'python markdown parser'.")
+_RESEARCH_LIMIT_OPTION = typer.Option(10, "--limit", help="Maximum candidates to return.")
+_NO_CACHE_OPTION = typer.Option(False, "--no-cache", help="Bypass the research cache.")
+_CACHE_DIR_OPTION = typer.Option(
+    Path(".si") / "research-cache", "--cache-dir", help="Directory for the research cache."
+)
+
+_ACTIVITY_LABEL = {True: "active", False: "stale", None: "unknown"}
+
+
+@app.command()
+def research(
+    query: str = _QUERY_ARGUMENT,
+    limit: int = _RESEARCH_LIMIT_OPTION,
+    no_cache: bool = _NO_CACHE_OPTION,
+    cache_dir: Path = _CACHE_DIR_OPTION,
+) -> None:
+    """Search GitHub for existing solutions before proposing something new.
+
+    Read-only — only ever issues GET requests. Candidates are ranked by
+    license presence, recent activity, and archived status; star count is
+    shown for reference only and never used to rank (ADR-009). Several
+    scoring dimensions (functional fit, security posture, ...) cannot be
+    determined from a GitHub search response and are reported as unknown
+    rather than guessed.
+    """
+    provider = GitHubResearchProvider(token=os.environ.get("GITHUB_TOKEN"))
+    cache = ResearchCache(directory=cache_dir)
+
+    results = None if no_cache else cache.get(provider.name, query)
+    from_cache = results is not None
+    if results is None:
+        try:
+            results = provider.search(query, limit=limit)
+        except GitHubResearchError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        cache.set(provider.name, query, results)
+
+    if not results:
+        typer.echo(f"No candidates found for {query!r}.")
+        return
+
+    cache_note = " (cached)" if from_cache else ""
+    typer.echo(f"Found {len(results)} candidate(s) for {query!r} via {provider.name}{cache_note}:")
+
+    for assessment in rank_candidates(results):
+        r = assessment.result
+        license_str = r.license or "unknown"
+        activity = _ACTIVITY_LABEL[assessment.is_recently_active]
+        archived = "archived" if assessment.is_archived else "not archived"
+        stars = "unknown" if assessment.stargazer_count is None else str(assessment.stargazer_count)
+        typer.echo(f"\n- {r.identifier}")
+        typer.echo(f"    source: {r.source}")
+        typer.echo(f"    license: {license_str} ({assessment.license_confidence.value})")
+        typer.echo(f"    activity: {activity}, {archived}, stars: {stars} (informational only)")
+
+    typer.echo(
+        f"\n{len(UNSCORABLE_DIMENSIONS)} dimension(s) could not be assessed from this data "
+        f"and are excluded from ranking: {', '.join(UNSCORABLE_DIMENSIONS)}."
+    )
 
 
 @app.command()
