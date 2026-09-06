@@ -169,6 +169,18 @@ _PROPOSABLE_VERDICTS = frozenset({UpdateVerdict.UPDATE_RECOMMENDED, UpdateVerdic
 #: this doesn't match is left untouched rather than guessed at.
 _PYPROJECT_PIN_RE_TEMPLATE = r'(["\'])({name})\s*(==?)\s*{version}\s*\1'
 
+#: Matches Poetry's own native `[tool.poetry.dependencies]` table entry in
+#: its simple string form, e.g. `requests = "2.31.0"` -- a bare TOML key
+#: (never quoted, unlike the PEP 621 array form above) assigned a quoted
+#: version with no `==`/`=` operator character anywhere in the text
+#: (`analysis.dependencies._poetry_version_constraint`'s own bare-version-
+#: is-an-exact-pin convention, confirmed against Poetry's official docs).
+#: Anchored to a line start (`re.MULTILINE`) and requires `=` be followed
+#: directly by a quote, which the table form (`requests = { version = ...
+#: }`) never satisfies -- that form is left untouched rather than guessed
+#: at, same as Cargo.toml's table form.
+_POETRY_PYPROJECT_PIN_RE_TEMPLATE = r'^([ \t]*{name}[ \t]*=[ \t]*)(["\']){version}\2[ \t]*$'
+
 #: Matches a `"name": "version"` entry in raw package.json text, capturing
 #: everything up to (group 1) and after (group 3) the version digits so a
 #: replacement can preserve the original quoting/whitespace exactly and
@@ -385,23 +397,39 @@ def propose_component_update(assessment: ImpactAssessment) -> Proposal | None:
 def _patch_pyproject_pin(text: str, name: str, from_version: str, to_version: str) -> str | None:
     """Rewrite one exact-pinned dependency's version in raw pyproject.toml text.
 
-    Matches only the literal `"{name}=={from_version}"` (or single `=`)
-    quoted string this exact `from_version` was itself derived from
-    (`analysis.update_intelligence.build_current_state`'s `_EXACT_PIN_RE`
-    strips the leading `=`/`==` to get it) — never a fuzzy match on name
-    alone. Returns `None`, never a best guess, when that exact text isn't
-    found (the manifest may have changed since the assessment ran) or
-    appears more than once (ambiguous which occurrence to rewrite).
+    Tries two mutually-exclusive shapes `build_current_state` can derive an
+    exact `from_version` from: PEP 621's quoted `dependencies = [...]`
+    array entry (`"{name}=={from_version}"`), and Poetry's own native
+    `[tool.poetry.dependencies]` table's simple string form
+    (`{name} = "{from_version}"`) — never a fuzzy match on name alone in
+    either case. Returns `None`, never a best guess, when neither pattern's
+    exact text is found (the manifest may have changed since the
+    assessment ran) or the combined match count isn't exactly 1 (ambiguous
+    which occurrence to rewrite).
     """
-    pattern = re.compile(
+    array_pattern = re.compile(
         _PYPROJECT_PIN_RE_TEMPLATE.format(name=re.escape(name), version=re.escape(from_version))
     )
-    matches = list(pattern.finditer(text))
-    if len(matches) != 1:
+    table_pattern = re.compile(
+        _POETRY_PYPROJECT_PIN_RE_TEMPLATE.format(
+            name=re.escape(name), version=re.escape(from_version)
+        ),
+        re.MULTILINE,
+    )
+    array_matches = list(array_pattern.finditer(text))
+    table_matches = list(table_pattern.finditer(text))
+    if len(array_matches) + len(table_matches) != 1:
         return None
-    match = matches[0]
-    quote, matched_name, operator = match.group(1), match.group(2), match.group(3)
-    replacement = f"{quote}{matched_name}{operator}{to_version}{quote}"
+
+    if array_matches:
+        match = array_matches[0]
+        quote, matched_name, operator = match.group(1), match.group(2), match.group(3)
+        replacement = f"{quote}{matched_name}{operator}{to_version}{quote}"
+        return text[: match.start()] + replacement + text[match.end() :]
+
+    match = table_matches[0]
+    prefix, quote = match.group(1), match.group(2)
+    replacement = f"{prefix}{quote}{to_version}{quote}"
     return text[: match.start()] + replacement + text[match.end() :]
 
 

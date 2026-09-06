@@ -304,11 +304,11 @@ def _pypi_pin_assessment(
     version_confidence: Confidence = Confidence.HIGH,
     verdict: UpdateVerdict = UpdateVerdict.UPDATE_RECOMMENDED,
     write_manifest: bool = True,
+    manifest_text: str | None = None,
 ) -> ImpactAssessment:
     if write_manifest:
-        (root / manifest_path).write_text(
-            f'[project]\ndependencies = [\n  "{name}=={from_version}",\n]\n', encoding="utf-8"
-        )
+        text = manifest_text or f'[project]\ndependencies = [\n  "{name}=={from_version}",\n]\n'
+        (root / manifest_path).write_text(text, encoding="utf-8")
     identity = ComponentIdentity(
         component_kind=ComponentKind.PACKAGE, name=name, distribution_source="pypi"
     )
@@ -340,6 +340,39 @@ def test_change_plan_for_component_update_success(tmp_path: Path) -> None:
         "pyproject.toml": '[project]\ndependencies = [\n  "requests==2.0.0",\n]\n'
     }
     assert plan.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
+
+
+def test_change_plan_for_component_update_success_for_poetry_native_table(tmp_path: Path) -> None:
+    """Poetry's own native `[tool.poetry.dependencies]` table form
+    (`requests = "1.2.3"`, no `==` operator, an unquoted TOML key) is a
+    real, common, exact pin (analysis.dependencies._poetry_version_constraint,
+    confirmed against Poetry's own docs) -- distinct from the PEP 621 array
+    form the success test above covers, and previously never matched by
+    the patcher's regex at all."""
+    assessment = _pypi_pin_assessment(
+        tmp_path,
+        manifest_text='[tool.poetry.dependencies]\npython = "^3.11"\nrequests = "1.2.3"\n',
+    )
+
+    plan = change_plan_for_component_update(assessment, tmp_path)
+
+    assert plan is not None
+    assert plan.files == {
+        "pyproject.toml": '[tool.poetry.dependencies]\npython = "^3.11"\nrequests = "2.0.0"\n'
+    }
+
+
+def test_change_plan_for_component_update_none_for_poetry_table_form(tmp_path: Path) -> None:
+    """Poetry's own `{ version = "...", extras = [...] }` table form is
+    never patched -- same "return None rather than guess" discipline as
+    Cargo.toml's table form, since a nested `version` key isn't a
+    name-adjacent literal this regex could locate safely."""
+    assessment = _pypi_pin_assessment(
+        tmp_path,
+        manifest_text='[tool.poetry.dependencies]\nrequests = { version = "1.2.3" }\n',
+    )
+
+    assert change_plan_for_component_update(assessment, tmp_path) is None
 
 
 def test_change_plan_for_component_update_none_for_non_actionable_verdict(tmp_path: Path) -> None:
