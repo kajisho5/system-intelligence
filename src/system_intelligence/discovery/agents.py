@@ -1,4 +1,4 @@
-"""Claude Code subagent (`.claude/agents/*.md`) detection.
+"""Claude Code subagent (`.claude/agents/**/*.md`) detection.
 
 Closes a documented gap (Epic 3 of `docs/design/IMPLEMENTATION_BACKLOG.md`):
 no discovery code ever instantiated `core.entities.Agent`. "Agent" as a
@@ -45,20 +45,29 @@ _AGENTS_DIR = Path(".claude") / "agents"
 
 
 def detect_agents(root: Path) -> list[Agent]:
-    """Find `.claude/agents/*.md` files under `root` and parse them, if present.
+    """Find `.claude/agents/**/*.md` files under `root` and parse them, if present.
 
-    Only the exact `.claude/agents/` directory is scanned (not `**/agents/`
-    at arbitrary depth like `detect_skills`' `SKILL.md` search) — Claude
-    Code itself only ever reads project-level subagents from that fixed
-    path, so scanning elsewhere would report files this convention does
-    not actually recognize as agents.
+    Only under the exact `.claude/agents/` root (not `**/agents/` at
+    arbitrary depth elsewhere in the tree, like `detect_skills`'s
+    `SKILL.md` search has no root constraint at all) — Claude Code itself
+    only ever reads project-level subagents from that fixed root
+    directory, so scanning elsewhere in the tree would report files this
+    convention does not actually recognize as agents. Within that root,
+    though, Claude Code scans recursively (verified against
+    code.claude.com/docs/en/sub-agents: "Claude Code scans
+    `.claude/agents/`... recursively, so you can organize definitions
+    into subfolders such as `agents/review/`"; confirmed as a real,
+    commonly-used convention via GitHub code search across public
+    `.claude/agents/<subfolder>/*.md` files) — a subagent nested one or
+    more directories deep was previously invisible to this detector
+    entirely.
     """
     agents_dir = root / _AGENTS_DIR
     if not agents_dir.is_dir():
         return []
 
     agents: list[Agent] = []
-    for agent_md in sorted(agents_dir.glob("*.md")):
+    for agent_md in sorted(agents_dir.rglob("*.md")):
         rel_path = agent_md.relative_to(root)
         if is_excluded(rel_path.parts[:-1]):
             continue
