@@ -57,6 +57,7 @@ def test_clone_github_repository_git_not_found(monkeypatch: pytest.MonkeyPatch) 
 def test_clone_github_repository_success_runs_shallow_single_branch_clone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     captured: dict[str, list[str]] = {}
 
     def _fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -80,6 +81,7 @@ def test_clone_github_repository_success_runs_shallow_single_branch_clone(
 def test_clone_github_repository_url_spec_is_passed_through_normalized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     captured: dict[str, list[str]] = {}
 
     def _fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -100,6 +102,7 @@ def test_clone_github_repository_url_spec_is_passed_through_normalized(
 def test_clone_github_repository_failure_removes_temp_dir_and_raises_with_stderr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     created: dict[str, Path] = {}
 
     def _fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -117,3 +120,77 @@ def test_clone_github_repository_failure_removes_temp_dir_and_raises_with_stderr
         clone_github_repository("no-such-owner/no-such-repo")
 
     assert not created["dest"].exists()
+
+
+def test_clone_github_repository_no_token_omits_auth_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    captured: dict[str, list[str]] = {}
+
+    def _fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "system_intelligence.discovery.github_target.shutil.which", lambda _name: "/usr/bin/git"
+    )
+    monkeypatch.setattr("system_intelligence.discovery.github_target.subprocess.run", _fake_run)
+
+    dest = clone_github_repository("octocat/Hello-World")
+
+    assert "-c" not in captured["argv"]
+    dest.rmdir()
+
+
+def test_clone_github_repository_with_token_adds_auth_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`GITHUB_TOKEN` (the same env var `cli/main.py`/`push_branch` already
+    use) must authenticate this clone too -- without it, a private
+    repository the token can access was previously unclonable, with no
+    indication a token would help."""
+    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+    captured: dict[str, list[str]] = {}
+
+    def _fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["argv"] = argv
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "system_intelligence.discovery.github_target.shutil.which", lambda _name: "/usr/bin/git"
+    )
+    monkeypatch.setattr("system_intelligence.discovery.github_target.subprocess.run", _fake_run)
+
+    dest = clone_github_repository("octocat/Hello-World")
+
+    assert captured["argv"][1] == "-c"
+    assert captured["argv"][2].startswith("http.extraheader=AUTHORIZATION: basic ")
+    assert captured["argv"][3:7] == ["clone", "--depth", "1", "--quiet"]
+    dest.rmdir()
+
+
+def test_clone_github_repository_disables_terminal_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A private/inaccessible repository must fail fast with git's own
+    stderr, not hang on a credential prompt this non-interactive process
+    could never answer."""
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    captured: dict[str, dict[str, str]] = {}
+
+    def _fake_run(
+        argv: list[str], *, env: dict[str, str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        captured["env"] = env
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "system_intelligence.discovery.github_target.shutil.which", lambda _name: "/usr/bin/git"
+    )
+    monkeypatch.setattr("system_intelligence.discovery.github_target.subprocess.run", _fake_run)
+
+    dest = clone_github_repository("octocat/Hello-World")
+
+    assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    dest.rmdir()
