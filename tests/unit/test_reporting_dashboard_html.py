@@ -1,6 +1,6 @@
 import json
 
-from system_intelligence.core.entities import Repository, Target
+from system_intelligence.core.entities import Dependency, Repository, Target
 from system_intelligence.core.enums import TargetKind
 from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.governance import AuditLogEntry
@@ -336,6 +336,30 @@ def test_generate_dashboard_html_audit_log_table_shows_policy() -> None:
 
     assert '["Actor", "Intent", "Policy", "Action"' in html
     assert "a.policy" in html
+
+
+def test_generate_dashboard_html_component_detail_shows_resolved_version() -> None:
+    """`Dependency.resolved_version` (e.g. a Cargo.lock-resolved exact
+    version, Epic 4) was already shown by the standalone Dependencies tab
+    (`renderDependencies`) and the static report's dependency graph, but
+    the per-component detail panel's own Dependencies list
+    (`toggleComponentDetail`) only ever read `name`/`ecosystem`/
+    `version_constraint` off the same `Dependency` object -- never
+    `resolved_version`."""
+    dependency = Dependency(
+        id="d1",
+        name="anyhow",
+        ecosystem="cargo",
+        version_constraint="1.0",
+        resolved_version="1.0.104",
+    )
+    repository = Repository(id="r1", name="repo", path=".", dependencies=[dependency])
+    snapshot = Snapshot(target=_target(), components=[repository])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert '" -> " + d.resolved_version' in html
 
 
 def test_generate_dashboard_html_wires_verifications_tab() -> None:

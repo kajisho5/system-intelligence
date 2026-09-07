@@ -603,7 +603,14 @@ _SCRIPT = r"""
       el("h4", null, "Interfaces"),
       c.interfaces.length ? el("ul", null, c.interfaces.map(function (i) { return el("li", null, i.kind + ": " + (i.description || "")); })) : el("p", null, "None recorded."),
       el("h4", null, "Dependencies"),
-      c.dependencies.length ? el("ul", null, c.dependencies.map(function (d) { return el("li", null, d.name + " (" + d.ecosystem + ") " + (d.version_constraint || "")); })) : el("p", null, "None recorded."),
+      c.dependencies.length ? el("ul", null, c.dependencies.map(function (d) {
+        // resolved_version (e.g. a Cargo.lock-resolved exact version, Epic 4)
+        // is already shown by the standalone Dependencies tab (renderDependencies)
+        // and the static report's dependency graph -- this per-component panel
+        // never read it back off the same Dependency object.
+        return el("li", null, d.name + " (" + d.ecosystem + ") " + (d.version_constraint || "")
+          + (d.resolved_version ? " -> " + d.resolved_version : ""));
+      })) : el("p", null, "None recorded."),
       // A Skill/Agent's tool_names/permissions (allowed-tools/disallowed-
       // tools or tools/disallowedTools frontmatter) are governance-relevant
       // facts -- already discovered and embedded in this same JSON payload
