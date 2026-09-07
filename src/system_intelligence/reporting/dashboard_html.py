@@ -794,9 +794,16 @@ _SCRIPT = r"""
     // right above it -- `si execute --record` appends a real AuditLogEntry
     // per action taken, but this panel never showed it at all.
     var auditLog = DATA.audit_log.length
-      ? table(["Actor", "Intent", "Action", "Target", "Result", "Correlation ID", "Timestamp"],
+      ? table(
+          ["Actor", "Intent", "Policy", "Action", "Target", "Result", "Correlation ID", "Timestamp"],
           DATA.audit_log.map(function (a) {
-            return [a.actor, a.intent, a.action, a.target, a.result, a.correlation_id, a.timestamp];
+            // `policy` (docs/08-governance.md's "Audit log" field list) is
+            // `policy/engine.py::audit_log_entry`'s own docstring's "exact
+            // rule that decided the outcome" -- the actual reason an action
+            // was allowed or denied, the whole point of an audit trail --
+            // but this table was only ever destructuring the other fields.
+            return [a.actor, a.intent, a.policy || "—", a.action, a.target, a.result,
+              a.correlation_id, a.timestamp];
           }))
       : emptyState("No audit log entries recorded for this snapshot.");
     return el("div", null,
