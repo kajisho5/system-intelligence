@@ -4,7 +4,7 @@ from system_intelligence.analysis.update_intelligence import (
     check_dependency_updates,
     diff_states,
 )
-from system_intelligence.core.component_state import AvailableState, ComponentIdentity
+from system_intelligence.core.component_state import AvailableState, ComponentIdentity, ReleaseInfo
 from system_intelligence.core.entities import Dependency, Repository
 from system_intelligence.core.enums import (
     ComponentKind,
@@ -207,6 +207,25 @@ def test_diff_states_records_deprecation_item() -> None:
     assert any(i.category.value == "deprecated" for i in diff.items)
 
 
+def test_diff_states_records_deprecation_item_for_yanked_release() -> None:
+    """release_info.is_yanked is a distinct signal from the top-level
+    is_deprecated field (e.g. PyPI's/crates.io's own "yanked" concept) --
+    it must also surface as a diff item, not be silently ignored."""
+    dep = _dependency(resolved_version="0.9.2")
+    current = build_current_state(dep)
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(
+        identity=identity,
+        provider="pypi",
+        version="0.9.2",
+        release_info=ReleaseInfo(version="0.9.2", is_yanked=True),
+    )
+
+    diff = diff_states(current, available)
+
+    assert any(i.category.value == "deprecated" for i in diff.items)
+
+
 def test_assess_impact_unknown_when_current_version_unresolved() -> None:
     dep = _dependency(version_constraint="^0.8.2")
     current = build_current_state(dep)
@@ -237,6 +256,23 @@ def test_assess_impact_not_advisable_when_available_is_deprecated() -> None:
     identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
     available = AvailableState(
         identity=identity, provider="npm", version="0.9.2", is_deprecated=True
+    )
+    diff = diff_states(current, available)
+
+    assessment = assess_impact(diff, [])
+
+    assert assessment.verdict == UpdateVerdict.NOT_ADVISABLE
+
+
+def test_assess_impact_not_advisable_when_available_is_yanked() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    current = build_current_state(dep)
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(
+        identity=identity,
+        provider="pypi",
+        version="0.9.2",
+        release_info=ReleaseInfo(version="0.9.2", is_yanked=True),
     )
     diff = diff_states(current, available)
 
