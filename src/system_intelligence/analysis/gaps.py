@@ -28,6 +28,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ValidationError
 
 from system_intelligence.core.capability import Capability
+from system_intelligence.core.entities import Repository
 from system_intelligence.core.enums import CapabilityStatus, Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
@@ -81,7 +82,7 @@ def load_declared_requirements(root: Path) -> DeclaredRequirements | None:
 
 
 def detect_capability_gaps(
-    declared: DeclaredRequirements, capabilities: list[Capability]
+    declared: DeclaredRequirements, capabilities: list[Capability], repository: Repository
 ) -> list[Finding]:
     """Compare declared capabilities against what was actually discovered.
 
@@ -116,6 +117,7 @@ def detect_capability_gaps(
                     "but no available capability with that name was discovered."
                 ),
                 confidence=Confidence.HIGH,
+                affected_entity_ids=[repository.id],
                 evidence=evidence,
                 suggested_actions=[
                     f"Provide the {capability.name!r} capability, or remove it from "
@@ -126,13 +128,14 @@ def detect_capability_gaps(
     return findings
 
 
-def _invalid_requirements_finding(error: RequirementsParseError) -> Finding:
+def _invalid_requirements_finding(error: RequirementsParseError, repository: Repository) -> Finding:
     source = str(REQUIREMENTS_PATH)
     return Finding(
         category="invalid_requirements_file",
         severity=Severity.HIGH,
         statement=f"{source} exists but could not be parsed: {error}",
         confidence=Confidence.VERIFIED,
+        affected_entity_ids=[repository.id],
         evidence=[
             Evidence(
                 kind=EvidenceKind.FILE,
@@ -145,19 +148,26 @@ def _invalid_requirements_finding(error: RequirementsParseError) -> Finding:
     )
 
 
-def audit_capability_gaps(root: Path, capabilities: list[Capability]) -> list[Finding]:
+def audit_capability_gaps(
+    root: Path, capabilities: list[Capability], repository: Repository
+) -> list[Finding]:
     """Run gap detection for a target root, if it declares any requirements.
 
     A missing `.si/requirements.json` (the overwhelming common case)
     contributes zero findings — this is opt-in, never inferred. A
     malformed one is surfaced as its own Finding rather than raised,
     consistent with every other analyzer here never aborting the whole
-    `si diagnose` run over one bad input.
+    `si diagnose` run over one bad input. `repository` is only ever used
+    for `Finding.affected_entity_ids` (mirroring `audit_documentation`/
+    `audit_ci_and_tests`'s own `repository` parameter) so every category
+    this module produces can appear in the Dashboard's per-component
+    "Findings affecting this component" view, like every other analyzer's
+    Findings already do.
     """
     try:
         declared = load_declared_requirements(root)
     except RequirementsParseError as exc:
-        return [_invalid_requirements_finding(exc)]
+        return [_invalid_requirements_finding(exc, repository)]
     if declared is None:
         return []
-    return detect_capability_gaps(declared, capabilities)
+    return detect_capability_gaps(declared, capabilities, repository)

@@ -122,7 +122,7 @@ def _run_unused_skill_detection(ctx: _OrchestrationContext) -> None:
 
 
 def _run_capability_gap_detection(ctx: _OrchestrationContext) -> None:
-    ctx.findings.extend(audit_capability_gaps(ctx.root, ctx.capabilities))
+    ctx.findings.extend(audit_capability_gaps(ctx.root, ctx.capabilities, ctx.repository))
 
 
 def _run_circular_dependency_detection(ctx: _OrchestrationContext) -> None:
