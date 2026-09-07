@@ -118,3 +118,31 @@ def test_detect_agents_tools_field_trims_whitespace(tmp_path: Path) -> None:
     agents = detect_agents(tmp_path)
 
     assert agents[0].tool_names == ["Read", "Write"]
+
+
+def test_detect_agents_disallowed_tools_field_populates_permissions(tmp_path: Path) -> None:
+    """`disallowedTools` is a documented Claude Code subagent frontmatter
+    field (code.claude.com/docs/en/sub-agents) -- `Agent.permissions` has
+    existed since the model was introduced specifically for this, but
+    nothing ever populated it."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "a.md").write_text(
+        "---\nname: a\ndescription: x\ndisallowedTools:  Write ,  Edit  \n---\n", encoding="utf-8"
+    )
+
+    agents = detect_agents(tmp_path)
+
+    assert agents[0].permissions == ["Write", "Edit"]
+
+
+def test_detect_agents_no_disallowed_tools_field_leaves_permissions_empty(tmp_path: Path) -> None:
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "a.md").write_text(
+        "---\nname: a\ndescription: does a thing\n---\n", encoding="utf-8"
+    )
+
+    agents = detect_agents(tmp_path)
+
+    assert agents[0].permissions == []
