@@ -1275,6 +1275,57 @@ def test_check_updates_command_record_appends_proposal_to_snapshot(
     assert recorded[0]["kind"] == "component_update"
 
 
+def test_check_updates_command_prints_recommendation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "1 recommendation(s):" in result.stdout
+    assert "Update pydantic from 2.0.0 to 2.9.0." in result.stdout
+
+
+def test_check_updates_command_record_appends_recommendation_to_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    snapshot_dir = tmp_path / "snap"
+    snapshot_dir.mkdir()
+
+    result = runner.invoke(app, ["check-updates", str(target_dir), "--record", str(snapshot_dir)])
+
+    assert result.exit_code == 0
+    recorded = json.loads((snapshot_dir / "recommendations.json").read_text(encoding="utf-8"))
+    assert len(recorded) == 1
+    assert recorded[0]["objective"] == "Update pydantic from 2.0.0 to 2.9.0."
+
+
 def test_check_updates_command_plan_out_writes_change_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1759,6 +1810,42 @@ def test_dashboard_command_check_updates_populates_update_intelligence(
     # --check-updates alone never triggers the OSV lookup -- confirmed here
     # by never mocking its endpoint and still getting a clean pass.
     assert dashboard_json["update_assessments"][0]["current_version_advisories"] == []
+
+
+def test_dashboard_command_check_updates_merges_recommendation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An actionable Update Intelligence verdict must reach the dashboard's
+    Recommendations screen, not just the separate update-check section --
+    otherwise a user browsing Recommendations never sees it."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    out_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app, ["dashboard", str(target_dir), "--out", str(out_dir), "--check-updates"]
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    objectives = [r["objective"] for r in dashboard_json["recommendations"]]
+    assert "Update pydantic from 2.0.0 to 2.9.0." in objectives
 
 
 def test_dashboard_command_check_vulnerabilities_populates_advisories(
