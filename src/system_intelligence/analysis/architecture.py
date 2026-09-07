@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from system_intelligence.core.entities import Repository
 from system_intelligence.core.enums import Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
@@ -138,7 +139,13 @@ def _strongly_connected_components(graph: dict[str, set[str]]) -> list[list[str]
     return result
 
 
-def detect_circular_dependencies(root: Path) -> list[Finding]:
+def detect_circular_dependencies(root: Path, repository: Repository) -> list[Finding]:
+    """`repository` is only ever used for `Finding.affected_entity_ids`
+    (mirroring `audit_documentation`/`audit_ci_and_tests`/`gaps.py`'s own
+    `repository` parameter) -- a cycle's `members` are bare module-name
+    strings, not Component ids, so the Repository is the only entity this
+    can truthfully attribute the finding to.
+    """
     graph = build_import_graph(root)
     components = [c for c in _strongly_connected_components(graph) if len(c) > 1]
 
@@ -151,6 +158,7 @@ def detect_circular_dependencies(root: Path) -> list[Finding]:
                 severity=Severity.HIGH,
                 statement=f"A circular import dependency exists among: {', '.join(members)}.",
                 confidence=Confidence.VERIFIED,
+                affected_entity_ids=[repository.id],
                 evidence=[
                     Evidence(
                         kind=EvidenceKind.AST,

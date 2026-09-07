@@ -126,7 +126,7 @@ def _run_capability_gap_detection(ctx: _OrchestrationContext) -> None:
 
 
 def _run_circular_dependency_detection(ctx: _OrchestrationContext) -> None:
-    ctx.findings.extend(detect_circular_dependencies(ctx.root))
+    ctx.findings.extend(detect_circular_dependencies(ctx.root, ctx.repository))
 
 
 def _run_relationship_graph_construction(ctx: _OrchestrationContext) -> None:
