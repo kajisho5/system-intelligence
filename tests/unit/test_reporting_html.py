@@ -235,6 +235,32 @@ def test_generate_html_report_shows_agent_tool_scope() -> None:
     assert "disallowed: Write, Edit" in html
 
 
+def test_generate_html_report_capability_graph_shows_consumers() -> None:
+    """`Capability.consumer_ids` is a structural sibling of `provider_ids`
+    (both Component-id lists, resolved via `component_names.get(id, id)`)
+    -- the Capability Graph already resolves and shows `provider_ids` but
+    never read `consumer_ids` at all, even though the dashboard's own
+    Capabilities tab already renders it (a "Consumers: ..." chip list)
+    from the identical `Capability` object."""
+    provider = Skill(id="s1", name="markdown-renderer-skill", path="skills/md/SKILL.md")
+    consumer = Skill(id="s2", name="doc-builder", path="skills/doc/SKILL.md")
+    capability = Capability(
+        id="c1",
+        name="markdown-renderer",
+        provider_ids=["s1"],
+        consumer_ids=["s2"],
+        status=CapabilityStatus.AVAILABLE,
+        confidence=Confidence.HIGH,
+    )
+    snapshot = Snapshot(
+        target=_target(), components=[provider, consumer], capabilities=[capability]
+    )
+
+    html = generate_html_report(snapshot)
+
+    assert "consumers: doc-builder" in html
+
+
 def test_generate_html_report_dependency_graph_attributes_to_the_owning_component() -> None:
     """The Dependency Graph previously drew every dependency as an edge
     from a single, hard-coded node labeled "repository" regardless of
