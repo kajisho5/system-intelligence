@@ -189,6 +189,32 @@ def test_extract_package_json_dependencies(tmp_path: Path) -> None:
     assert all(d.ecosystem == "npm" for d in dependencies)
 
 
+def test_extract_package_json_dependencies_same_name_in_both_sections_gets_distinct_ids(
+    tmp_path: Path,
+) -> None:
+    """A package left in `dependencies` after being moved to
+    `devDependencies` (or vice versa) is a real, if uncommon, occurrence --
+    the two `Dependency` records must not collide on `id` just because
+    `_extract_package_json_dependencies` built it without including which
+    section the entry came from, the same "must not collide into one id"
+    concern `_parse_pep508` already documents for the cross-manifest case.
+    An id collision here previously made `reporting/dashboard_data.py::
+    _all_dependencies`'s id-based dedup silently discard the second entry
+    even though it isn't a true duplicate (different version_constraint)."""
+    (tmp_path / "package.json").write_text(
+        '{"dependencies": {"lodash": "^3.0.0"}, "devDependencies": {"lodash": "^4.0.0"}}',
+        encoding="utf-8",
+    )
+    manifests = [
+        PackageManifest(path="package.json", ecosystem="npm", language="JavaScript/TypeScript")
+    ]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.version_constraint for d in dependencies} == {"^3.0.0", "^4.0.0"}
+    assert len({d.id for d in dependencies}) == 2
+
+
 def test_extract_dependencies_unknown_manifest_type_ignored(tmp_path: Path) -> None:
     (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n", encoding="utf-8")
     manifests = [PackageManifest(path="Gemfile", ecosystem="rubygems", language="Ruby")]
