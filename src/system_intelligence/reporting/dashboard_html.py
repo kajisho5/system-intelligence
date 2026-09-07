@@ -572,6 +572,14 @@ _SCRIPT = r"""
       c.interfaces.length ? el("ul", null, c.interfaces.map(function (i) { return el("li", null, i.kind + ": " + (i.description || "")); })) : el("p", null, "None recorded."),
       el("h4", null, "Dependencies"),
       c.dependencies.length ? el("ul", null, c.dependencies.map(function (d) { return el("li", null, d.name + " (" + d.ecosystem + ") " + (d.version_constraint || "")); })) : el("p", null, "None recorded."),
+      // A Skill/Agent's tool_names/permissions (allowed-tools/disallowed-
+      // tools or tools/disallowedTools frontmatter) are governance-relevant
+      // facts -- already discovered and embedded in this same JSON payload
+      // -- that this panel never surfaced at all.
+      el("h4", null, "Allowed tools"),
+      (c.tool_names || []).length ? el("ul", null, c.tool_names.map(function (t) { return el("li", null, t); })) : el("p", null, "None recorded."),
+      el("h4", null, "Disallowed tools"),
+      (c.permissions || []).length ? el("ul", null, c.permissions.map(function (t) { return el("li", null, t); })) : el("p", null, "None recorded."),
       el("h4", null, "Findings affecting this component"),
       findings.length ? el("ul", null, findings.map(function (f) { return el("li", null, badge(f.severity, severityKind(f.severity)), " " + f.statement); })) : el("p", null, "None."),
       el("h4", null, "Update assessments"),

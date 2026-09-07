@@ -255,6 +255,23 @@ def test_generate_dashboard_html_overview_surfaces_repository_lifecycle_facts() 
     assert '["License", repo.license' in html
 
 
+def test_generate_dashboard_html_wires_component_tool_scope_into_detail_panel() -> None:
+    """`Skill`/`Agent` `tool_names`/`permissions` (allowed/disallowed tools)
+    were already embedded in `DATA.components`' JSON but `toggleComponent
+    Detail` never read them back -- a security-relevant fact invisible in
+    the interactive Console's own click-to-expand detail panel, unlike
+    every other Skill/Agent fact that panel already shows generically."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "Allowed tools" in html
+    assert "Disallowed tools" in html
+    assert "c.tool_names" in html
+    assert "c.permissions" in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)

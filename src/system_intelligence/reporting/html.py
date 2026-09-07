@@ -79,16 +79,31 @@ def _render_overview(snapshot: Snapshot) -> str:
     """
 
 
+def _tool_scope_suffix(tool_names: list[str], permissions: list[str]) -> str:
+    """Format a Skill/Agent's `allowed-tools`/`disallowed-tools` (`tool_names`/
+    `permissions`) frontmatter, if any, for the Components table's Detail
+    column -- already discovered and stored, but never previously rendered
+    anywhere a user could see it without opening the raw JSON snapshot."""
+    suffix = ""
+    if tool_names:
+        suffix += f"; tools: {', '.join(tool_names)}"
+    if permissions:
+        suffix += f"; disallowed: {', '.join(permissions)}"
+    return suffix
+
+
 def _render_components(snapshot: Snapshot) -> str:
     rows = []
     for component in snapshot.components:
         extra = ""
         if isinstance(component, Skill):
             extra = "standard format" if component.is_standard_format else "non-standard format"
+            extra += _tool_scope_suffix(component.tool_names, component.permissions)
         elif isinstance(component, Agent):
             extra = "standard format" if component.is_standard_format else "non-standard format"
             if component.model_provider:
                 extra += f" (model: {component.model_provider})"
+            extra += _tool_scope_suffix(component.tool_names, component.permissions)
         elif isinstance(component, Document):
             extra = component.document_type or ""
         elif isinstance(component, Repository):
