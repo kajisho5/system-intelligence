@@ -92,6 +92,25 @@ def _tool_scope_suffix(tool_names: list[str], permissions: list[str]) -> str:
     return suffix
 
 
+def _skill_bundle_suffix(component: Skill) -> str:
+    """Format a Skill's `paths`-derived activation `triggers` and its
+    `scripts`/`references`/`assets` bundle contents for the Components
+    table's Detail column -- the same "already discovered and stored, but
+    never previously rendered anywhere a user could see it without opening
+    the raw JSON snapshot" gap `_tool_scope_suffix` closed for
+    `tool_names`/`permissions`, on the sibling fields that fix left behind."""
+    suffix = ""
+    if component.triggers:
+        suffix += f"; triggers: {', '.join(component.triggers)}"
+    if component.scripts:
+        suffix += f"; scripts: {', '.join(component.scripts)}"
+    if component.references:
+        suffix += f"; references: {', '.join(component.references)}"
+    if component.assets:
+        suffix += f"; assets: {', '.join(component.assets)}"
+    return suffix
+
+
 def _render_components(snapshot: Snapshot) -> str:
     rows = []
     for component in snapshot.components:
@@ -99,6 +118,7 @@ def _render_components(snapshot: Snapshot) -> str:
         if isinstance(component, Skill):
             extra = "standard format" if component.is_standard_format else "non-standard format"
             extra += _tool_scope_suffix(component.tool_names, component.permissions)
+            extra += _skill_bundle_suffix(component)
         elif isinstance(component, Agent):
             extra = "standard format" if component.is_standard_format else "non-standard format"
             if component.model_provider:

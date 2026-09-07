@@ -619,6 +619,19 @@ _SCRIPT = r"""
       (c.tool_names || []).length ? el("ul", null, c.tool_names.map(function (t) { return el("li", null, t); })) : el("p", null, "None recorded."),
       el("h4", null, "Disallowed tools"),
       (c.permissions || []).length ? el("ul", null, c.permissions.map(function (t) { return el("li", null, t); })) : el("p", null, "None recorded."),
+      // A Skill's triggers/scripts/references/assets (its paths: activation
+      // globs and scripts/references/assets/ bundle contents) are the exact
+      // same "already discovered and embedded in this same JSON payload,
+      // never surfaced" gap the tool_names/permissions panel above closed --
+      // just left behind on these sibling fields.
+      el("h4", null, "Triggers"),
+      (c.triggers || []).length ? el("ul", null, c.triggers.map(function (t) { return el("li", null, t); })) : el("p", null, "None recorded."),
+      el("h4", null, "Bundled scripts"),
+      (c.scripts || []).length ? el("ul", null, c.scripts.map(function (s) { return el("li", null, s); })) : el("p", null, "None recorded."),
+      el("h4", null, "Bundled references"),
+      (c.references || []).length ? el("ul", null, c.references.map(function (r) { return el("li", null, r); })) : el("p", null, "None recorded."),
+      el("h4", null, "Bundled assets"),
+      (c.assets || []).length ? el("ul", null, c.assets.map(function (a) { return el("li", null, a); })) : el("p", null, "None recorded."),
       el("h4", null, "Findings affecting this component"),
       findings.length ? el("ul", null, findings.map(function (f) { return el("li", null, badge(f.severity, severityKind(f.severity)), " " + f.statement); })) : el("p", null, "None."),
       el("h4", null, "Update assessments"),
