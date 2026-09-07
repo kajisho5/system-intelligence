@@ -47,7 +47,11 @@ from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.adr import detect_adrs
 from system_intelligence.discovery.agents import detect_agents
-from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
+from system_intelligence.discovery.ci_docs import (
+    detect_ci_jobs,
+    detect_license,
+    detect_root_documents,
+)
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
 from system_intelligence.discovery.structure import StructureScanResult, scan_structure
@@ -101,6 +105,7 @@ def _run_adr_detection(ctx: _OrchestrationContext) -> None:
 def _run_ci_docs_detection(ctx: _OrchestrationContext) -> None:
     ctx.ci_jobs = detect_ci_jobs(ctx.root)
     ctx.documents = detect_root_documents(ctx.root)
+    ctx.repository.license = detect_license(ctx.root, ctx.documents)
 
 
 def _run_documentation_audit(ctx: _OrchestrationContext) -> None:

@@ -16,6 +16,20 @@ def test_documentation_only_flags_missing_docs_without_other_findings(tmp_path: 
     assert len(snapshot.findings) == 3  # README, LICENSE, CONTRIBUTING
 
 
+def test_documentation_audit_populates_repository_license(tmp_path: Path) -> None:
+    (tmp_path / "LICENSE").write_text(
+        "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining "
+        "a copy of this software and associated documentation files, to deal in the Software "
+        "without restriction.\n",
+        encoding="utf-8",
+    )
+
+    snapshot = run_capabilities(str(tmp_path), ["documentation_audit"])
+
+    repository = next(c for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.license == "MIT"  # type: ignore[attr-defined]
+
+
 def test_documentation_only_does_not_detect_skills_or_languages(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "demo"
     skill_dir.mkdir(parents=True)

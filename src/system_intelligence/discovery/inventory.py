@@ -29,7 +29,11 @@ from system_intelligence.core.ids import stable_id
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.adr import detect_adrs
 from system_intelligence.discovery.agents import detect_agents
-from system_intelligence.discovery.ci_docs import detect_ci_jobs, detect_root_documents
+from system_intelligence.discovery.ci_docs import (
+    detect_ci_jobs,
+    detect_license,
+    detect_root_documents,
+)
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
 from system_intelligence.discovery.structure import PackageManifest, scan_structure
@@ -59,6 +63,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     structure = scan_structure(root)
     ci_jobs = detect_ci_jobs(root)
     documents = detect_root_documents(root)
+    license_id = detect_license(root, documents)
     skills = detect_skills(root)
     agents = detect_agents(root)
     adrs = detect_adrs(root)
@@ -69,6 +74,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
         url=git_metadata.remote_url,
         default_branch=git_metadata.default_branch,
         local_path=str(root),
+        license=license_id,
         languages=structure.languages,
         path=".",
         evidence=[*git_metadata.evidence, *structure.evidence],
