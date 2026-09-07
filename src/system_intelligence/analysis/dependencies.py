@@ -36,7 +36,11 @@ from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
 from system_intelligence.discovery.structure import PackageManifest
 
-_PEP508_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(.*)$")
+# The optional `[...]` group discards a PEP 508 "extras" marker (e.g.
+# `requests[security]==2.31.0`) so it isn't swallowed into the version
+# constraint -- mirroring `_poetry_version_constraint`, which already strips
+# an `extras` key from Poetry's table form.
+_PEP508_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$")
 
 
 def _manifest_evidence(rel_path: str, name: str) -> Evidence:

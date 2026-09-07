@@ -24,6 +24,28 @@ def test_extract_pyproject_dependencies(tmp_path: Path) -> None:
     assert pydantic.evidence
 
 
+def test_extract_pyproject_dependencies_strips_pep508_extras(tmp_path: Path) -> None:
+    """A PEP 508 extras marker (`requests[security]==2.31.0`) was previously
+    swallowed whole into version_constraint (`"[security]==2.31.0"`),
+    hiding the leading `==` that downstream exact-pin detection
+    (`_EXACT_PIN_RE` in analysis/update_intelligence.py) requires."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n'
+        'dependencies = ["requests[security]==2.31.0", "sqlalchemy[asyncio,mypy]>=2.0"]\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="pyproject.toml", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    names = {d.name for d in dependencies}
+    assert names == {"requests", "sqlalchemy"}
+    requests_dep = next(d for d in dependencies if d.name == "requests")
+    assert requests_dep.version_constraint == "==2.31.0"
+    sqlalchemy_dep = next(d for d in dependencies if d.name == "sqlalchemy")
+    assert sqlalchemy_dep.version_constraint == ">=2.0"
+
+
 def test_extract_poetry_dependencies_bare_version_is_normalized_to_exact(tmp_path: Path) -> None:
     """Poetry's own [tool.poetry.dependencies] table predates PEP 621
     support and is still the form most existing Poetry projects use --
@@ -134,6 +156,21 @@ def test_extract_requirements_txt_dependencies_hash_pin_continuation_skipped(
     assert len(dependencies) == 1
     assert dependencies[0].name == "requests"
     assert dependencies[0].version_constraint == "==2.31.0"
+
+
+def test_extract_requirements_txt_dependencies_strips_pep508_extras(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "requests[security]==2.31.0\nuvicorn[standard]>=0.30\n",
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="requirements.txt", ecosystem="pypi", language="Python")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    requests_dep = next(d for d in dependencies if d.name == "requests")
+    assert requests_dep.version_constraint == "==2.31.0"
+    uvicorn_dep = next(d for d in dependencies if d.name == "uvicorn")
+    assert uvicorn_dep.version_constraint == ">=0.30"
 
 
 def test_extract_package_json_dependencies(tmp_path: Path) -> None:
