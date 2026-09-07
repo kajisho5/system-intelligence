@@ -8,6 +8,7 @@ from system_intelligence.core.enums import (
 )
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
+from system_intelligence.core.recommendations import Recommendation
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.core.verification import Verification
 from system_intelligence.reporting.html import generate_html_report
@@ -259,6 +260,27 @@ def test_generate_html_report_capability_graph_shows_consumers() -> None:
     html = generate_html_report(snapshot)
 
     assert "consumers: doc-builder" in html
+
+
+def test_generate_html_report_shows_recommendation_expected_benefit() -> None:
+    """`Recommendation.expected_benefit` is a first-class, design-mandated
+    part of the Recommendation contract (docs/design/docs/04-domain-
+    model.md lists it alongside effort/risk, both of which this section
+    already renders), populated by every recommendation-producing code
+    path in `recommendations/engine.py` -- but `_render_recommendations`
+    never read it."""
+    recommendation = Recommendation(
+        objective="Add a CHANGELOG",
+        rationale="No changelog was found.",
+        estimated_effort="small",
+        risk="low",
+        expected_benefit="Makes it easier for users to track what changed between releases.",
+    )
+    snapshot = Snapshot(target=_target(), recommendations=[recommendation])
+
+    html = generate_html_report(snapshot)
+
+    assert "Makes it easier for users to track what changed between releases." in html
 
 
 def test_generate_html_report_dependency_graph_attributes_to_the_owning_component() -> None:

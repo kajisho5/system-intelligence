@@ -455,10 +455,15 @@ _SCRIPT = r"""
 
   function renderRecommendations() {
     if (!DATA.recommendations.length) return emptyState("No recommendations generated for this snapshot.");
-    return table(["Objective", "Confidence", "Effort", "Risk", "Approval", "Rationale"],
+    // expected_benefit is a first-class, design-mandated part of the
+    // Recommendation contract (docs/design/docs/04-domain-model.md), on
+    // par with effort/risk which this table already shows -- it was
+    // already embedded in this same JSON payload but never read here.
+    return table(["Objective", "Confidence", "Effort", "Risk", "Expected benefit", "Approval", "Rationale"],
       DATA.recommendations.map(function (r) {
         return [r.objective, badge(r.confidence, confidenceKind(r.confidence)),
           r.estimated_effort || "unknown", r.risk || "unknown",
+          r.expected_benefit || "—",
           permissionLevelName(r.required_approval_level), r.rationale];
       }));
   }
