@@ -848,8 +848,9 @@ def check_updates(
     if plan_out is not None:
         plan_out.mkdir(parents=True, exist_ok=True)
         written = 0
+        repository_root = Path(discovery.snapshot.target.locator)
         for assessment in check.assessments:
-            change_plan = change_plan_for_component_update(assessment, Path(target))
+            change_plan = change_plan_for_component_update(assessment, repository_root)
             if change_plan is None:
                 continue
             plan_path = plan_out / f"{change_plan.branch_name.replace('/', '-')}.json"

@@ -1485,6 +1485,47 @@ def test_check_updates_command_plan_out_writes_change_plan(
     assert plan["required_permission_level"] == "CREATE_BRANCH_OR_DRAFT_PR"
 
 
+def test_check_updates_command_plan_out_writes_change_plan_for_github_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--plan-out` previously passed the raw, unresolved CLI target string
+    straight to `change_plan_for_component_update` as the repository root,
+    instead of the actual resolved root `discover_local_repository` already
+    computed (`discovery.snapshot.target.locator` -- the same value every
+    other consumer, e.g. `analysis/engine.py`, reads). For a local path
+    this happened to be identical to the resolved root, so it went
+    unnoticed; for a GitHub target (explicitly supported by this command's
+    own `_TARGET_ARGUMENT`), the raw spec (`"octocat/demo-repo"`) is not a
+    real directory, so every plan silently failed to build with no
+    indication the cause was the target type rather than a genuinely
+    non-deterministic verdict."""
+    clone_dir = tmp_path / "cloned"
+    clone_dir.mkdir()
+    (clone_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "system_intelligence.discovery.target.clone_github_repository", lambda _spec: clone_dir
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+    plan_out = tmp_path / "plans"
+
+    result = runner.invoke(app, ["check-updates", "octocat/demo-repo", "--plan-out", str(plan_out)])
+
+    assert result.exit_code == 0
+    plan_files = list(plan_out.glob("*.json"))
+    assert len(plan_files) == 1
+    plan = json.loads(plan_files[0].read_text(encoding="utf-8"))
+    assert plan["branch_name"] == "si/update-pydantic-to-2.9.0"
+
+
 def test_check_updates_command_plan_out_writes_change_plan_for_npm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
