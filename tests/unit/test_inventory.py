@@ -41,6 +41,31 @@ def test_discover_local_repository(tmp_path: Path) -> None:
     assert "Python" in repository.languages  # type: ignore[attr-defined]
 
 
+def test_discover_local_repository_populates_license(tmp_path: Path) -> None:
+    (tmp_path / "LICENSE").write_text(
+        "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining "
+        "a copy of this software and associated documentation files, to deal in the Software "
+        "without restriction.\n",
+        encoding="utf-8",
+    )
+    _init_repo(tmp_path)
+
+    result = discover_local_repository(str(tmp_path))
+
+    repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.license == "MIT"  # type: ignore[attr-defined]
+
+
+def test_discover_local_repository_no_license_leaves_it_none(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    result = discover_local_repository(str(tmp_path))
+
+    repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.license is None  # type: ignore[attr-defined]
+
+
 def test_discover_local_repository_populates_agents(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
     agents_dir = tmp_path / ".claude" / "agents"

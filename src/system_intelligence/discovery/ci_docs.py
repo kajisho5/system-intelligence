@@ -6,6 +6,14 @@ Phase 2 scope: GitHub Actions workflows and well-known root documents
 depth, not just the repository root). Deeper documentation content audits
 (README completeness, etc.) belong to the analysis phase
 (docs/design/docs/05-analysis-engine.md, "Documentation" detector family).
+
+`detect_license` additionally classifies a detected root LICENSE
+document's own content into an SPDX identifier
+(docs/design/docs/05-analysis-engine.md's "Repository" detector family
+explicitly lists "license"): a repository's `LICENSE` file existing
+proves nothing about *which* license it is on its own, so this never
+infers one from the filename, only from an exact match against
+`_LICENSE_SIGNATURES`.
 """
 
 from __future__ import annotations
@@ -71,6 +79,58 @@ def detect_ci_jobs(root: Path) -> list[CIJob]:
             )
         )
     return jobs
+
+
+#: Each signature is a distinctive, exact substring of that license's own
+#: canonical text (verified live against spdx/license-list-data's own
+#: reference texts, plus this repository's own real LICENSE file for
+#: MIT), never a guess from the filename or a partial keyword match
+#: (ADR-002). Order matters: a more specific license's text also contains
+#: a less specific relative's substring, so the specific one is checked
+#: first -- GPL-3.0 ("...Version 3") before GPL-2.0 ("...Version 2"), and
+#: BSD-3-Clause's own third clause ("Neither the name of...") before
+#: BSD-2-Clause's shared first two clauses ("Redistributions in binary
+#: form..."), which a real BSD-3-Clause file's text also contains.
+_LICENSE_SIGNATURES: tuple[tuple[str, str], ...] = (
+    ("Mozilla Public License Version 2.0", "MPL-2.0"),
+    ("GNU GENERAL PUBLIC LICENSE\nVersion 3", "GPL-3.0"),
+    ("GNU GENERAL PUBLIC LICENSE\nVersion 2", "GPL-2.0"),
+    (
+        "Neither the name of the copyright holder nor the names of its contributors",
+        "BSD-3-Clause",
+    ),
+    ("Redistributions in binary form must reproduce the above copyright", "BSD-2-Clause"),
+    (
+        "Permission to use, copy, modify, and/or distribute this software for any "
+        "purpose with or without fee",
+        "ISC",
+    ),
+    ("This is free and unencumbered software released into the public domain.", "Unlicense"),
+    ("MIT License", "MIT"),
+    ("Apache License\nVersion 2.0", "Apache-2.0"),
+)
+
+
+def detect_license(root: Path, documents: list[Document]) -> str | None:
+    """Classify the repository's root LICENSE file content into an SPDX
+    identifier, from `_LICENSE_SIGNATURES`.
+
+    Never guessed from the filename alone -- a `LICENSE` file could
+    contain anything. Returns `None` (never a best guess) when no root
+    LICENSE document was detected, its file could not be read, or its
+    content matches none of the known signatures.
+    """
+    license_doc = next((d for d in documents if d.document_type == "LICENSE"), None)
+    if license_doc is None or license_doc.path is None:
+        return None
+    try:
+        text = (root / license_doc.path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for signature, identifier in _LICENSE_SIGNATURES:
+        if signature in text:
+            return identifier
+    return None
 
 
 def detect_root_documents(root: Path) -> list[Document]:
