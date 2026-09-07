@@ -9,6 +9,7 @@ from system_intelligence.core.enums import (
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.snapshot import Snapshot
+from system_intelligence.core.verification import Verification
 from system_intelligence.reporting.html import generate_html_report
 
 
@@ -131,3 +132,23 @@ def test_generate_html_report_renders_non_standard_agent_detail() -> None:
     html = generate_html_report(snapshot)
 
     assert "non-standard format" in html
+
+
+def test_generate_html_report_surfaces_regressions_even_when_tests_passed() -> None:
+    """A Verification can exit 0 (`tests_passed=True`) yet still have
+    `regressions_found` non-empty -- si verify (cli/main.py) treats that
+    combination as a failing run too and exits non-zero for it. Previously
+    `_render_verification` only ever showed `tests_run`/`passed: True`,
+    silently dropping the one field that actually made the CLI fail."""
+    verification = Verification(
+        tests_run=["pytest"],
+        tests_passed=True,
+        regressions_found=["a new HIGH-severity finding appeared after the change"],
+    )
+    snapshot = Snapshot(target=_target(), verification=[verification])
+
+    html = generate_html_report(snapshot)
+
+    assert "passed: True" in html
+    assert "a new HIGH-severity finding appeared after the change" in html
+    assert "regressions found" in html

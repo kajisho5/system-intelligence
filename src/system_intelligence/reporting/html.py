@@ -272,9 +272,16 @@ def _render_verification(snapshot: Snapshot) -> str:
     items = []
     for verification in snapshot.verification:
         status = "unknown" if verification.tests_passed is None else str(verification.tests_passed)
+        regressions = ""
+        if verification.regressions_found:
+            regression_items = "".join(f"<li>{_e(r)}</li>" for r in verification.regressions_found)
+            regressions = (
+                f" — regressions found ({len(verification.regressions_found)}):"
+                f"<ul>{regression_items}</ul>"
+            )
         items.append(
             f"<li>{_e(', '.join(verification.tests_run) or 'unnamed command')} — "
-            f"passed: {_e(status)}</li>"
+            f"passed: {_e(status)}{regressions}</li>"
         )
     return f"""
     <section id="verification">
