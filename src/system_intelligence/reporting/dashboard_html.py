@@ -531,9 +531,19 @@ _SCRIPT = r"""
       return emptyState("No executions recorded for this snapshot.",
         "Run si execute <plan> <target> --approve --record <snapshot-dir> to attach one.");
     }
-    return table(["Action", "Target", "Branch", "Commit", "Applied", "Decision", "Executed at"],
+    return table(
+      ["Action", "Target", "Branch", "Commit", "Pull request", "Applied", "Decision", "Executed at"],
       DATA.executions.map(function (e) {
-        return [e.action, e.target, e.branch_name || "—", e.commit_sha || "—",
+        // Genuinely populated by the real create_draft_pr action (cli/main.py)
+        // and already embedded in DATA.executions -- this table simply never
+        // read the two fields back out, leaving the one link a reviewer
+        // actually wants after a create_draft_pr execution reachable only
+        // via the raw JSON snapshot.
+        var pr = e.pull_request_url
+          ? el("a", { href: e.pull_request_url, target: "_blank", rel: "noopener noreferrer" },
+              "#" + (e.pull_request_number != null ? e.pull_request_number : "?"))
+          : "—";
+        return [e.action, e.target, e.branch_name || "—", e.commit_sha || "—", pr,
           badge(String(e.applied), e.applied ? "success" : "critical"),
           e.decision_reason, e.executed_at];
       }));
