@@ -781,6 +781,38 @@ def test_propose_command_with_research_query(
     assert "Alternatives considered: other/formatter" in result.stdout
 
 
+def test_propose_command_with_research_query_prints_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`propose_solution` sets `Proposal.dependencies=[best.result.identifier]`
+    for every adoption/integration proposal (`proposals/engine.py`), but
+    this command's field-by-field echo walked almost every other Proposal
+    field in model-declaration order and skipped exactly `dependencies`,
+    which sits between `interface_fields` and `implementation_stages` on
+    the model -- both of which this command already prints correctly."""
+    response = {
+        "items": [
+            {
+                "full_name": "psf/black",
+                "html_url": "https://github.com/psf/black",
+                "license": {"spdx_id": "MIT"},
+                "pushed_at": "2026-08-01T00:00:00Z",
+                "archived": False,
+            }
+        ]
+    }
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr("system_intelligence.research.github._default_http_get", _fake_http_get)
+
+    result = runner.invoke(app, ["propose", "Need a formatter", "--research-query", "black"])
+
+    assert result.exit_code == 0
+    assert "Dependencies: psf/black" in result.stdout
+
+
 def test_propose_command_research_error_fails_clearly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

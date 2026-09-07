@@ -1043,6 +1043,8 @@ def propose(
         for field in proposal.interface_fields:
             marker = "required" if field.required else "optional"
             typer.echo(f"  - {field.name} ({marker}): {field.description}")
+    if proposal.dependencies:
+        typer.echo(f"Dependencies: {', '.join(proposal.dependencies)}")
     if proposal.implementation_stages:
         typer.echo(f"Implementation stages: {', '.join(proposal.implementation_stages)}")
     if proposal.test_strategy:
