@@ -1002,6 +1002,8 @@ def propose(
         typer.echo(f"Interfaces: {', '.join(proposal.interfaces)}")
     if proposal.test_strategy:
         typer.echo(f"Test strategy: {proposal.test_strategy}")
+    if proposal.security_considerations:
+        typer.echo(f"Security considerations: {proposal.security_considerations}")
     if proposal.documentation_requirements:
         typer.echo(f"Documentation requirements: {proposal.documentation_requirements}")
     if proposal.rollback_strategy:

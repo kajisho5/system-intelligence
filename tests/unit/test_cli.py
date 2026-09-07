@@ -526,6 +526,7 @@ def test_propose_command_prints_capabilities_interfaces_and_strategies(tmp_path:
     assert "Capabilities: lints Python" in result.stdout
     assert "Interfaces: " in result.stdout and "SKILL.md" in result.stdout
     assert "Test strategy: " in result.stdout
+    assert "Security considerations: " in result.stdout
     assert "Documentation requirements: " in result.stdout
     assert "Rollback strategy: " in result.stdout
 

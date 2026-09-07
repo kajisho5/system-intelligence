@@ -147,6 +147,10 @@ def test_target_kind_omitted_keeps_generic_wording() -> None:
         == "Document the capability and how it satisfies each requirement."
     )
     assert proposal.interfaces == []
+    assert proposal.security_considerations == (
+        "Review any new external dependencies, network access, or credential/permission "
+        "grants this introduces."
+    )
 
 
 def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
@@ -158,6 +162,8 @@ def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
     )
     assert len(proposal.interfaces) == 1
     assert "SKILL.md" in proposal.interfaces[0]
+    assert proposal.security_considerations is not None
+    assert "allowed-tools" in proposal.security_considerations
 
 
 def test_target_kind_agent_populates_agent_md_interface() -> None:
@@ -233,6 +239,10 @@ def test_target_kind_without_specific_wording_falls_back_to_generic() -> None:
         proposal.test_strategy
         == "Add tests covering the new/adopted capability's stated requirements."
     )
+    assert proposal.security_considerations == (
+        "Review any new external dependencies, network access, or credential/permission "
+        "grants this introduces."
+    )
 
 
 def _update_assessment(verdict: UpdateVerdict) -> ImpactAssessment:
@@ -258,6 +268,8 @@ def test_propose_component_update_for_review_required() -> None:
     assert proposal.proposed_component_name == "ffmpeg-skill"
     assert proposal.required_permission_level == PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR
     assert len(proposal.changes) == 1
+    assert proposal.security_considerations is not None
+    assert "known-vulnerability" in proposal.security_considerations
 
 
 def test_propose_component_update_for_update_recommended() -> None:
