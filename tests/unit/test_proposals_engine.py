@@ -3,6 +3,7 @@ from pathlib import Path
 
 from system_intelligence.core.component_state import (
     AvailableState,
+    ChangelogEntry,
     ComponentIdentity,
     ComponentState,
 )
@@ -327,6 +328,48 @@ def test_propose_component_update_none_for_no_update_available() -> None:
 
 def test_propose_component_update_none_for_unknown() -> None:
     assert propose_component_update(_update_assessment(UpdateVerdict.UNKNOWN)) is None
+
+
+def test_propose_component_update_implementation_stages_cite_changelog_url_when_known() -> None:
+    """A pypi package with a real, declared Changelog URL (research/providers/
+    pypi.py::_extract_changelog) must have that concrete URL surfaced,
+    not the generic "review the changelog" boilerplate."""
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    current = ComponentState(identity=identity, version="0.8.2")
+    available = AvailableState(
+        identity=identity,
+        provider="pypi",
+        version="0.9.2",
+        changelog=[
+            ChangelogEntry(
+                version="0.9.2",
+                summary="Changelog link declared in PyPI project metadata.",
+                url="https://example.com/CHANGELOG.md",
+            )
+        ],
+    )
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    assessment = ImpactAssessment(
+        state_diff=diff,
+        verdict=UpdateVerdict.REVIEW_REQUIRED,
+        verdict_confidence=Confidence.MEDIUM,
+        verdict_rationale="rationale text",
+    )
+
+    proposal = propose_component_update(assessment)
+
+    assert proposal is not None
+    assert any(
+        "https://example.com/CHANGELOG.md" in stage for stage in proposal.implementation_stages
+    )
+
+
+def test_propose_component_update_implementation_stages_fall_back_without_changelog() -> None:
+    proposal = propose_component_update(_update_assessment(UpdateVerdict.REVIEW_REQUIRED))
+    assert proposal is not None
+    assert any(
+        "Review the changelog/release notes" in stage for stage in proposal.implementation_stages
+    )
 
 
 def _manifest_evidence(rel_path: str, name: str) -> Evidence:

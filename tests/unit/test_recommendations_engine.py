@@ -1,5 +1,6 @@
 from system_intelligence.core.component_state import (
     AvailableState,
+    ChangelogEntry,
     ComponentIdentity,
     ComponentState,
 )
@@ -128,6 +129,38 @@ def test_recommend_from_impact_no_update_available_returns_none() -> None:
 
 def test_recommend_from_impact_unknown_returns_none() -> None:
     assert recommend_from_impact(_assessment(UpdateVerdict.UNKNOWN)) is None
+
+
+def test_recommend_from_impact_rationale_cites_changelog_url_when_known() -> None:
+    """A pypi package with a real, declared Changelog URL
+    (research/providers/pypi.py::_extract_changelog) must have that
+    concrete URL surfaced in the rationale, not silently discarded."""
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    current = ComponentState(identity=identity, version="0.8.2")
+    available = AvailableState(
+        identity=identity,
+        provider="pypi",
+        version="0.9.2",
+        changelog=[
+            ChangelogEntry(
+                version="0.9.2",
+                summary="Changelog link declared in PyPI project metadata.",
+                url="https://example.com/CHANGELOG.md",
+            )
+        ],
+    )
+    diff = StateDiff(identity=identity, from_state=current, to_state=available)
+    assessment = ImpactAssessment(
+        state_diff=diff,
+        verdict=UpdateVerdict.UPDATE_RECOMMENDED,
+        verdict_confidence=Confidence.MEDIUM,
+        verdict_rationale="rationale text",
+    )
+
+    recommendation = recommend_from_impact(assessment)
+
+    assert recommendation is not None
+    assert "https://example.com/CHANGELOG.md" in recommendation.rationale
 
 
 def test_generate_update_recommendations_filters_non_actionable() -> None:
