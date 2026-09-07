@@ -463,6 +463,38 @@ def test_research_command_uses_cache_on_second_call(
     assert "(cached)" in result.stdout
 
 
+def test_research_command_cache_does_not_ignore_different_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cache entry written for `--limit 10` must not be silently reused
+    for a later `--limit 30` within the same TTL -- previously the cache
+    key ignored `limit` entirely, so the second, differently-limited call
+    never re-hit the provider and got back the first call's smaller
+    result set with no indication the requested limit wasn't honored."""
+    call_count = 0
+
+    response = {
+        "items": [
+            {"full_name": f"org/repo-{i}", "html_url": f"https://github.com/org/repo-{i}"}
+            for i in range(2)
+        ]
+    }
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        nonlocal call_count
+        call_count += 1
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr("system_intelligence.research.github._default_http_get", _fake_http_get)
+    cache_dir = tmp_path / "cache"
+
+    runner.invoke(app, ["research", "q", "--limit", "10", "--cache-dir", str(cache_dir)])
+    result = runner.invoke(app, ["research", "q", "--limit", "30", "--cache-dir", str(cache_dir)])
+
+    assert call_count == 2
+    assert "(cached)" not in result.stdout
+
+
 def test_research_command_network_error_fails_clearly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

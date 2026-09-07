@@ -42,6 +42,21 @@ def test_cache_is_keyed_by_provider_and_query(tmp_path: Path) -> None:
     assert cache.get("npm", "query-a") is None
 
 
+def test_cache_is_keyed_by_limit_too(tmp_path: Path) -> None:
+    """A cache entry written for one `--limit` must never be reused for a
+    different one: `si research foo --limit 10` caching only 10 results,
+    then `si research foo --limit 30` within the TTL, must not silently
+    hand back the same 10 -- a provider's own `search(query, limit=...)`
+    only ever fetches up to `limit` in the first place, so a smaller-limit
+    entry can never satisfy a larger request, and reusing a larger-limit
+    entry for a smaller one would return more than requested."""
+    cache = ResearchCache(directory=tmp_path)
+    cache.set("github", "query", [_result("a/a")], limit=10)
+
+    assert cache.get("github", "query", limit=30) is None
+    assert cache.get("github", "query", limit=10) is not None
+
+
 def test_cache_corrupt_file_returns_none(tmp_path: Path) -> None:
     cache = ResearchCache(directory=tmp_path)
     cache.set("github", "query", [_result("a/a")])
