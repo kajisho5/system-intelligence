@@ -240,6 +240,28 @@ def test_generate_html_report_dependency_graph_attributes_to_the_owning_componen
     assert ">repository<" not in row
 
 
+def test_generate_html_report_dependency_graph_shows_resolved_version() -> None:
+    """`Dependency.resolved_version` (genuinely populated for Cargo
+    dependencies via `Cargo.lock` resolution, Epic 4) was already shown in
+    the dashboard's own Dependencies table (`renderDependencies`) but the
+    static report's Dependency Graph label only ever showed `name
+    (ecosystem) constraint`, never the resolved version -- the same
+    Dependency object, one surface behind the other."""
+    dependency = Dependency(
+        id="d1",
+        name="anyhow",
+        ecosystem="cargo",
+        version_constraint="1.0",
+        resolved_version="1.0.104",
+    )
+    repository = Repository(id="r1", name="repo", path=".", dependencies=[dependency])
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "anyhow (cargo) 1.0 -&gt; 1.0.104" in html
+
+
 def test_generate_html_report_no_findings_message() -> None:
     snapshot = Snapshot(target=_target())
     html = generate_html_report(snapshot)
