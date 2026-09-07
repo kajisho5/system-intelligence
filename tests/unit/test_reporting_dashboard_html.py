@@ -310,6 +310,39 @@ def test_generate_dashboard_html_embeds_audit_log_entries_in_json() -> None:
     assert payload["audit_log"][0]["correlation_id"] == "pr-1"
 
 
+def test_generate_dashboard_html_wires_verifications_tab() -> None:
+    """`Verification` had a full `DATA.verifications` list (same shape as
+    Proposals/Executions/Approvals/Recommendations/Research, each with
+    their own top-level tab) but no `renderVerifications` function and no
+    tab registered at all -- the only place a Verification was ever
+    rendered was `toggleComponentDetail`'s per-component filter, which a
+    `si verify <command> --record <dir>` run with no `--component` (the
+    documented common case) can never match, making it permanently
+    unreachable in the interactive Console."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "renderVerifications" in html
+    assert '{ id: "verifications", label: "Verifications", render: renderVerifications }' in html
+
+
+def test_generate_dashboard_html_verifications_tab_shows_unassociated_verification() -> None:
+    verification = Verification(tests_run=["pytest -q"], tests_passed=True, component_id=None)
+    snapshot = Snapshot(target=_target(), verification=[verification])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    start = html.index('id="si-dashboard-data">') + len('id="si-dashboard-data">')
+    end = html.index("</script>", start)
+    payload = json.loads(html[start:end])
+
+    assert payload["verifications"][0]["tests_run"] == ["pytest -q"]
+    assert payload["overview"]["verification_count"] == 1
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)

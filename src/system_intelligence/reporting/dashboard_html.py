@@ -539,6 +539,28 @@ _SCRIPT = r"""
       }));
   }
 
+  function renderVerifications() {
+    // Every sibling accumulated-record type (Proposals/Executions/
+    // Approvals/Recommendations/Research) gets its own top-level tab --
+    // Verification never did, so a `si verify <command> --record <dir>`
+    // run with no `--component` (the documented, common case: "Omit when
+    // the check isn't about one specific discovered Component") was only
+    // ever reachable via `toggleComponentDetail`'s per-component filter,
+    // which such a Verification can never match at all.
+    if (!DATA.verifications.length) {
+      return emptyState("No verifications recorded for this snapshot.",
+        "Run si verify <command> --record <snapshot-dir> to attach one.");
+    }
+    return table(["Command", "Component", "Passed", "Regressions", "Verified at"],
+      DATA.verifications.map(function (v) {
+        var hasRegressions = (v.regressions_found || []).length > 0;
+        var label = v.tests_passed === null ? "unknown" : String(v.tests_passed);
+        return [v.tests_run[0] || "—", v.component_id ? componentName(v.component_id) : "—",
+          badge(label, v.tests_passed && !hasRegressions ? "success" : "critical"),
+          String(v.regressions_found.length), v.verified_at];
+      }));
+  }
+
   function renderComponents() {
     if (!DATA.components.length) return emptyState("No components discovered in this snapshot.");
     var rows = DATA.components.map(function (c) {
@@ -785,6 +807,7 @@ _SCRIPT = r"""
     { id: "recommendations", label: "Recommendations", render: renderRecommendations },
     { id: "proposals", label: "Proposals", render: renderProposals },
     { id: "executions", label: "Executions", render: renderExecutions },
+    { id: "verifications", label: "Verifications", render: renderVerifications },
     { id: "components", label: "Components", render: renderComponents },
     { id: "capabilities", label: "Capabilities", render: renderCapabilities },
     { id: "dependencies", label: "Dependencies", render: renderDependencies },
