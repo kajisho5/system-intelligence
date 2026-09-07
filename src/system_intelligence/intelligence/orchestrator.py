@@ -17,6 +17,7 @@ from pathlib import Path
 
 from system_intelligence.analysis.architecture import detect_circular_dependencies
 from system_intelligence.analysis.capabilities import (
+    attach_consumers,
     detect_duplicate_capabilities,
     extract_capabilities,
 )
@@ -153,7 +154,19 @@ def _run_circular_dependency_detection(ctx: _OrchestrationContext) -> None:
 
 
 def _run_relationship_graph_construction(ctx: _OrchestrationContext) -> None:
+    """`attach_consumers` (populating `Capability.consumer_ids`, which
+    `build_relationships`'s own USES-edge logic reads) needs `Component.
+    dependencies` already populated -- this capability's own registry
+    `requires={"dependency_extraction", "capability_extraction"}` already
+    guarantees both ran first, so this is the one place ordering is safe
+    regardless of which capabilities were directly requested. Mirrors
+    `analysis/engine.py::analyze_local_repository`, which always calls
+    `attach_consumers` before `build_relationships` too -- without this,
+    `run_capabilities` could never produce a USES edge no matter what was
+    requested, unlike `analyze_local_repository`.
+    """
     components: list[Component] = [ctx.repository, *ctx.skills, *ctx.agents, *ctx.documents]
+    ctx.capabilities = attach_consumers(ctx.capabilities, components)
     ctx.relationships = build_relationships(components, ctx.capabilities)
 
 
