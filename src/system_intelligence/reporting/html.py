@@ -177,6 +177,8 @@ def _render_dependency_graph(snapshot: Snapshot) -> str:
         label = f"{dependency.name} ({dependency.ecosystem})"
         if dependency.version_constraint:
             label += f" {dependency.version_constraint}"
+        if dependency.resolved_version:
+            label += f" -> {dependency.resolved_version}"
         nodes.append(
             f'<line x1="60" y1="{y}" x2="220" y2="{y}" class="edge" />'
             f'<circle cx="60" cy="{y}" r="5" class="node-repository" />'
