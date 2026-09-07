@@ -81,9 +81,11 @@ def test_detect_agents_ignores_non_md_files(tmp_path: Path) -> None:
 
 
 def test_detect_agents_only_scans_the_fixed_claude_agents_path(tmp_path: Path) -> None:
-    """Unlike SKILL.md's arbitrary-depth search, a `.md` file under some
-    other `agents/` directory is never mistaken for a Claude Code subagent
-    -- only the exact `.claude/agents/` path is this convention's own."""
+    """A `.md` file under some other `agents/` directory elsewhere in the
+    tree is never mistaken for a Claude Code subagent -- only the exact
+    `.claude/agents/` root is this convention's own (unlike SKILL.md's
+    search, which has no root constraint at all). Within that root,
+    though, scanning is recursive -- see the nested-subfolder test below."""
     other_agents_dir = tmp_path / "src" / "agents"
     other_agents_dir.mkdir(parents=True)
     (other_agents_dir / "not-a-subagent.md").write_text(
@@ -91,6 +93,24 @@ def test_detect_agents_only_scans_the_fixed_claude_agents_path(tmp_path: Path) -
     )
 
     assert detect_agents(tmp_path) == []
+
+
+def test_detect_agents_finds_agents_nested_in_subfolders(tmp_path: Path) -> None:
+    """Claude Code scans `.claude/agents/` recursively (verified against
+    code.claude.com/docs/en/sub-agents: "so you can organize definitions
+    into subfolders such as `agents/review/`") -- a subagent one or more
+    directories deep must not be invisible to this detector."""
+    nested_dir = tmp_path / ".claude" / "agents" / "review"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "security.md").write_text(
+        "---\nname: security\ndescription: Reviews security\n---\n", encoding="utf-8"
+    )
+
+    agents = detect_agents(tmp_path)
+
+    assert len(agents) == 1
+    assert agents[0].name == "security"
+    assert agents[0].path == ".claude/agents/review/security.md"
 
 
 def test_detect_agents_multiple_agents_sorted(tmp_path: Path) -> None:
