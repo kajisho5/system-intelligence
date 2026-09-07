@@ -172,6 +172,28 @@ def test_generate_dashboard_html_component_detail_shows_regressions_even_when_te
     assert "v.regressions_found" in html
 
 
+def test_generate_dashboard_html_overview_changes_card_reflects_update_check_changes() -> None:
+    """The Overview's "Changes" card previously branched only on
+    `has_previous_snapshot`, so it unconditionally showed "No previous
+    snapshot to compare... Run si dashboard --compare-with ..." whenever
+    no `--compare-with` snapshot was given -- even when `DATA.changes`
+    held real, non-empty update-availability changes from a
+    `--check-updates` run (dashboard_data.py's `_update_availability_
+    changes`, independent of `has_previous_snapshot`). This directly
+    contradicted `renderChanges()`'s own already-correct dual check
+    (`has_previous_snapshot` OR `has_update_check`) in this same file.
+    Fixed to branch on `DATA.changes.length` itself, mirroring
+    `renderChanges()`'s reasoning."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "if (o.has_previous_snapshot) {\n      changesBlock" not in html
+    assert "if (DATA.changes.length) {" in html
+    assert "no update check was run (--check-updates)" in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)

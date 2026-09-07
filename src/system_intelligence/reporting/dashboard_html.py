@@ -348,20 +348,30 @@ _SCRIPT = r"""
         "Run si check-updates <target>, then regenerate this dashboard with --check-updates.");
     }
 
+    // DATA.changes is populated from two independent sources
+    // (dashboard_data.py: a --compare-with snapshot diff, and/or a
+    // --check-updates run) -- branching only on has_previous_snapshot
+    // ignored update-availability changes entirely, unlike renderChanges()
+    // below, which already correctly checks both.
     var changesBlock;
-    if (o.has_previous_snapshot) {
-      changesBlock = el("p", null, DATA.changes.length + " change(s) detected versus snapshot " + o.previous_snapshot_id + ".");
+    if (DATA.changes.length) {
+      var changesSuffix = o.has_previous_snapshot ? " versus snapshot " + o.previous_snapshot_id : "";
+      changesBlock = el("p", null, DATA.changes.length + " change(s) detected" + changesSuffix + ".");
     } else {
+      var changeReasons = [];
+      if (!o.has_previous_snapshot) changeReasons.push("no previous snapshot was given (--compare-with)");
+      if (!o.has_update_check) changeReasons.push("no update check was run (--check-updates)");
       changesBlock = emptyState(
-        "No previous snapshot to compare.",
-        "Run si dashboard <target> --compare-with <previous-snapshot-dir> to see drift over time.");
+        "No changes to show.",
+        changeReasons.length ? "Reason: " + changeReasons.join(" and ") + "."
+          : "Both comparisons ran and found no differences.");
     }
 
     return el("div", null,
       el("div", { class: "card-grid" }, cards),
       el("h2", null, "Findings by severity"), findingsBySeverity,
       el("h2", null, "Update Intelligence"), updatesBlock,
-      el("h2", null, "Changes since previous snapshot"), changesBlock,
+      el("h2", null, "Changes"), changesBlock,
       el("h2", null, "Snapshot facts"), facts);
   }
 
