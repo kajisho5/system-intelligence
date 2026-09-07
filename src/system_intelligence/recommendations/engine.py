@@ -108,9 +108,14 @@ def recommend_from_impact(assessment: ImpactAssessment) -> Recommendation | None
     else:
         objective = f"Update {identity.name} from {from_version} to {to_version}."
 
+    rationale = assessment.verdict_rationale
+    changelog_urls = [entry.url for entry in diff.to_state.changelog if entry.url]
+    if changelog_urls:
+        rationale = f"{rationale} Changelog: {', '.join(changelog_urls)}"
+
     return Recommendation(
         objective=objective,
-        rationale=assessment.verdict_rationale,
+        rationale=rationale,
         evidence=list(assessment.evidence),
         confidence=assessment.verdict_confidence,
         estimated_effort="small",

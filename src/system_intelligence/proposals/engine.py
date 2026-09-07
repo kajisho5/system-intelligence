@@ -502,6 +502,12 @@ def propose_component_update(assessment: ImpactAssessment) -> Proposal | None:
         file_paths=[manifest_path] if manifest_path else [],
         required_permission_level=PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR,
     )
+    changelog_urls = [entry.url for entry in diff.to_state.changelog if entry.url]
+    changelog_stage = (
+        f"Review the changelog before merging: {', '.join(changelog_urls)}"
+        if changelog_urls
+        else "Review the changelog/release notes for breaking changes if any were flagged."
+    )
 
     return Proposal(
         kind="component_update",
@@ -512,7 +518,7 @@ def propose_component_update(assessment: ImpactAssessment) -> Proposal | None:
         implementation_stages=[
             "Update the version constraint in the declaring manifest.",
             "Run the existing test suite.",
-            "Review the changelog/release notes for breaking changes if any were flagged.",
+            changelog_stage,
         ],
         changes=[change],
         test_strategy=_UPDATE_TEST_STRATEGY,
