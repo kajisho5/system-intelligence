@@ -52,6 +52,18 @@ def test_build_current_state_npm_bare_version_is_an_exact_pin() -> None:
     assert state.version_confidence == Confidence.HIGH
 
 
+def test_build_current_state_pypi_extras_qualified_exact_pin_is_used() -> None:
+    """A pypi dependency declared with PEP 508 extras (`requests[security]==2.31.0`)
+    must resolve as an exact pin once `analysis/dependencies.py::_parse_pep508`
+    strips the `[security]` extras marker out of version_constraint -- previously
+    the polluted constraint `"[security]==2.31.0"` didn't start with `==`/a
+    digit, so `_EXACT_PIN_RE` never matched and the version was silently
+    reported as UNKNOWN."""
+    state = build_current_state(_dependency(ecosystem="pypi", version_constraint="==2.31.0"))
+    assert state.version == "2.31.0"
+    assert state.version_confidence == Confidence.HIGH
+
+
 def test_build_current_state_npm_minor_wildcard_leaves_version_unknown() -> None:
     state = build_current_state(_dependency(ecosystem="npm", version_constraint="1.x"))
     assert state.version is None
