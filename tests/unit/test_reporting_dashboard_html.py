@@ -93,6 +93,36 @@ def test_generate_dashboard_html_wires_proposal_detail_toggle() -> None:
     assert "toggleProposalDetail" in html
 
 
+def test_generate_dashboard_html_component_detail_filters_assessments_by_affected_entity_ids() -> (
+    None
+):
+    """`toggleComponentDetail`'s "Update assessments" section previously
+    filtered `DATA.update_assessments` by comparing a Component's own id
+    (`c.id`, e.g. "repository:root") against
+    `a.state_diff.identity.component_id` -- but that field is always a
+    *Dependency* id (`analysis/update_intelligence.py::_identity_for` sets
+    it to `dependency.id`, load-bearing for the DEPENDS_ON graph walk),
+    never a Component id; the two id namespaces never collide
+    (`core/ids.py::stable_id` prefixes them differently:
+    "dependency:pypi:..." vs "repository:...")   -- so this filter always
+    returned zero rows, permanently showing "Not checked." even when
+    `update_assessments` held a real, correctly-computed
+    `affected_entity_ids` entry for that exact component (already used
+    correctly two sections earlier, in `renderUpdates`'s own "Affects: "
+    line). Fixed to filter by `affected_entity_ids`, the same field/pattern
+    already used for `findings` two lines above it."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "a.state_diff.identity.component_id === c.id" not in html
+    assert (
+        "var assessments = DATA.update_assessments.filter(function (a) "
+        "{ return (a.affected_entity_ids || []).indexOf(c.id) !== -1; });"
+    ) in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)

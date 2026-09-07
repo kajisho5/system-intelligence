@@ -513,7 +513,7 @@ _SCRIPT = r"""
     var next = tr.nextSibling;
     if (next && next.classList && next.classList.contains("detail-row")) { next.remove(); return; }
     var findings = DATA.findings.filter(function (f) { return (f.affected_entity_ids || []).indexOf(c.id) !== -1; });
-    var assessments = DATA.update_assessments.filter(function (a) { return a.state_diff.identity.component_id === c.id; });
+    var assessments = DATA.update_assessments.filter(function (a) { return (a.affected_entity_ids || []).indexOf(c.id) !== -1; });
     var verifications = DATA.verifications.filter(function (v) { return v.component_id === c.id; });
     var block = el("div", { class: "detail-block" },
       el("h4", null, "Trust level"),
