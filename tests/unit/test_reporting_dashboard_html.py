@@ -2,6 +2,7 @@ import json
 
 from system_intelligence.core.entities import Repository, Target
 from system_intelligence.core.enums import TargetKind
+from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.governance import AuditLogEntry
 from system_intelligence.core.proposals import InterfaceField, Proposal
 from system_intelligence.core.snapshot import Snapshot
@@ -341,6 +342,32 @@ def test_generate_dashboard_html_verifications_tab_shows_unassociated_verificati
 
     assert payload["verifications"][0]["tests_run"] == ["pytest -q"]
     assert payload["overview"]["verification_count"] == 1
+
+
+def test_generate_dashboard_html_executions_tab_links_to_the_opened_pull_request() -> None:
+    """`ExecutionRecord.pull_request_number`/`pull_request_url` (genuinely
+    populated by the real `create_draft_pr` action, `cli/main.py`) reach
+    `DATA.executions`'s JSON payload unchanged, but `renderExecutions`'s
+    column set never read either field back out -- after a real
+    `si execute --push --record` run, the Executions tab showed the row
+    with no way to find or click through to the PR that was actually
+    opened, without opening the raw JSON snapshot."""
+    execution = ExecutionRecord(
+        action="create_draft_pr",
+        target="octocat/demo",
+        branch_name="si/update-x",
+        pull_request_number=42,
+        pull_request_url="https://github.com/octocat/demo/pull/42",
+        applied=True,
+        decision_reason="ok",
+    )
+    snapshot = Snapshot(target=_target(), executions=[execution])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "e.pull_request_url" in html
+    assert "e.pull_request_number" in html
 
 
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
