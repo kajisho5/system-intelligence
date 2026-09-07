@@ -64,6 +64,37 @@ def test_inspect_command_reports_known_license(tmp_path: Path) -> None:
     assert "License: MIT" in result.stdout
 
 
+def test_inspect_command_reports_last_commit_when_a_git_repository(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Last commit: " in result.stdout
+    assert "uncommitted changes" not in result.stdout
+
+
+def test_inspect_command_reports_dirty_working_tree(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+    (tmp_path / "untracked.txt").write_text("new\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "uncommitted changes" in result.stdout
+
+
+def test_inspect_command_no_git_repository_omits_last_commit_line(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Last commit:" not in result.stdout
+
+
 def test_inspect_command_writes_snapshot_with_out(tmp_path: Path) -> None:
     target_dir = tmp_path / "target"
     target_dir.mkdir()

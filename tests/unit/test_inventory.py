@@ -66,6 +66,30 @@ def test_discover_local_repository_no_license_leaves_it_none(tmp_path: Path) -> 
     assert repository.license is None  # type: ignore[attr-defined]
 
 
+def test_discover_local_repository_populates_last_commit_metadata(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    result = discover_local_repository(str(tmp_path))
+
+    repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.last_commit_sha  # type: ignore[attr-defined]
+    assert repository.last_commit_author == "Test"  # type: ignore[attr-defined]
+    assert repository.last_commit_date  # type: ignore[attr-defined]
+    assert repository.is_dirty is False  # type: ignore[attr-defined]
+
+
+def test_discover_local_repository_dirty_working_tree_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+    (tmp_path / "untracked.txt").write_text("new\n", encoding="utf-8")
+
+    result = discover_local_repository(str(tmp_path))
+
+    repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.is_dirty is True  # type: ignore[attr-defined]
+
+
 def test_discover_local_repository_populates_agents(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
     agents_dir = tmp_path / ".claude" / "agents"
