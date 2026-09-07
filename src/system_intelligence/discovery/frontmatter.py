@@ -17,6 +17,22 @@ import re
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
+def _unquote(value: str) -> str:
+    """Strip one matching pair of quote characters from `value`'s ends.
+
+    `str.strip('"\\'')` (the previous approach) strips *any run* of either
+    quote character from either end, not a matched delimiter pair -- so a
+    quoted value whose own content ends with the other quote character
+    right at the boundary (e.g. `'Use this for ".json"'`) gets eaten past
+    its real closing delimiter, silently truncating real content instead
+    of just failing to unescape it. Only strip when the first and last
+    characters are the *same* quote character.
+    """
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
 def parse_frontmatter(text: str) -> dict[str, str] | None:
     """Parse the leading `---`-delimited frontmatter block, if present.
 
@@ -32,7 +48,7 @@ def parse_frontmatter(text: str) -> dict[str, str] | None:
         if ":" not in line:
             continue
         key, _, value = line.partition(":")
-        fields[key.strip()] = value.strip().strip("\"'")
+        fields[key.strip()] = _unquote(value.strip())
     return fields
 
 

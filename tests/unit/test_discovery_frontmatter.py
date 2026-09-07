@@ -19,6 +19,32 @@ def test_parse_frontmatter_strips_quotes() -> None:
     assert parse_frontmatter(text) == {"name": "quoted", "description": "single"}
 
 
+def test_parse_frontmatter_quoted_value_containing_the_other_quote_character_at_the_boundary() -> (
+    None
+):
+    """`str.strip('"\\'')` (the previous implementation) strips *any run*
+    of either quote character from either end, not a matched delimiter
+    pair -- so a single-quoted value whose own content ends with a
+    double-quoted term right at the boundary (a realistic Skill
+    description, e.g. mentioning a file extension in quotes) got eaten
+    past its real closing delimiter, silently truncating real content."""
+    text = "---\nname: x\ndescription: 'Use this for \".json\"'\n---\n"
+    assert parse_frontmatter(text) == {"name": "x", "description": 'Use this for ".json"'}
+
+
+def test_parse_frontmatter_quoted_value_starting_with_the_other_quote_character() -> None:
+    text = "---\nname: x\ndescription: \"'quoted' term leading\"\n---\n"
+    assert parse_frontmatter(text) == {"name": "x", "description": "'quoted' term leading"}
+
+
+def test_parse_frontmatter_mismatched_quotes_left_unstripped() -> None:
+    """A value whose first and last characters are quote characters but
+    not the *same* one is not a validly-quoted scalar -- left as-is
+    rather than guessing which end is the real delimiter."""
+    text = "---\nname: x\ndescription: 'mismatched\"\n---\n"
+    assert parse_frontmatter(text) == {"name": "x", "description": "'mismatched\""}
+
+
 def test_parse_frontmatter_ignores_lines_without_a_colon() -> None:
     text = "---\nname: x\nnot a field\ndescription: y\n---\n"
     assert parse_frontmatter(text) == {"name": "x", "description": "y"}
