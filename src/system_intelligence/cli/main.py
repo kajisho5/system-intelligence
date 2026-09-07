@@ -471,12 +471,14 @@ def dashboard(
     Verifications/Approvals/Research screens: a fresh scan never carries
     those forward on its own, so without `--compare-with` pointed at
     whatever directory `--record` on other commands has been accumulating
-    into, those screens are correctly empty rather than showing stale data.
-    `--check-updates` adds a network request per pypi/npm/cargo/go/maven dependency
-    (skipped by default, unlike `si report`/`si diagnose`, which never
-    touch the network at all); `--check-vulnerabilities` adds one more
-    per resolved version, for a known-vulnerability lookup (OSV.dev). With
-    `--check-updates`, each actionable verdict's Recommendation
+    into, those screens are correctly empty rather than showing stale data --
+    also true of Recommendations previously `--record`'ed by `si check-updates`
+    elsewhere, which `--compare-with` folds in the same way. `--check-updates`
+    adds a network request per pypi/npm/cargo/go/maven dependency (skipped by
+    default, unlike `si report`/`si diagnose`, which never touch the network
+    at all); `--check-vulnerabilities` adds one more per resolved version,
+    for a known-vulnerability lookup (OSV.dev). With `--check-updates`, each
+    actionable verdict's Recommendation
     (`recommendations.generate_update_recommendations`) is merged into the
     Recommendations screen alongside the Finding-based ones.
     """
@@ -508,6 +510,9 @@ def dashboard(
                 "executions": _merge_by_id(snapshot.executions, previous_snapshot.executions),
                 "verification": _merge_by_id(snapshot.verification, previous_snapshot.verification),
                 "approvals": _merge_by_id(snapshot.approvals, previous_snapshot.approvals),
+                "recommendations": _merge_by_id(
+                    snapshot.recommendations, previous_snapshot.recommendations
+                ),
                 "research": merged_research,
                 # A fresh scan never has research to derive Component.trust_level
                 # from (si diagnose alone never populates it) — re-derive now
