@@ -102,6 +102,26 @@ def test_detect_license_apache_2_0(tmp_path: Path) -> None:
     assert detect_license(tmp_path, documents) == "Apache-2.0"
 
 
+def test_detect_license_apache_2_0_real_centered_formatting(tmp_path: Path) -> None:
+    """The real, official Apache Software Foundation text
+    (`https://www.apache.org/licenses/LICENSE-2.0.txt`, verified live, and
+    matching e.g. Kubernetes' own real root `LICENSE` byte-for-byte)
+    centers "Apache License" / "Version 2.0, January 2004" with leading
+    spaces, on separate lines -- the literal, unwrapped
+    "Apache License\\nVersion 2.0" substring never appears in it, so a
+    signature written on one logical line must still match text
+    wrapped/centered with different whitespace."""
+    (tmp_path / "LICENSE").write_text(
+        "                                 Apache License\n"
+        "                           Version 2.0, January 2004\n"
+        "                        http://www.apache.org/licenses/\n",
+        encoding="utf-8",
+    )
+    documents = detect_root_documents(tmp_path)
+
+    assert detect_license(tmp_path, documents) == "Apache-2.0"
+
+
 def test_detect_license_gpl_3_0(tmp_path: Path) -> None:
     (tmp_path / "LICENSE").write_text(
         "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n", encoding="utf-8"
@@ -127,6 +147,28 @@ def test_detect_license_bsd_3_clause(tmp_path: Path) -> None:
         "1. Redistributions of source code must retain the above copyright notice.\n"
         "2. Redistributions in binary form must reproduce the above copyright notice.\n"
         "3. Neither the name of the copyright holder nor the names of its contributors "
+        "may be used to endorse or promote products derived from this software.\n",
+        encoding="utf-8",
+    )
+    documents = detect_root_documents(tmp_path)
+
+    assert detect_license(tmp_path, documents) == "BSD-3-Clause"
+
+
+def test_detect_license_bsd_3_clause_with_real_org_name(tmp_path: Path) -> None:
+    """A real BSD-3-Clause file substitutes an actual org name for the
+    generic SPDX placeholder, and doesn't always say "its contributors"
+    (protobuf's real LICENSE: "Neither the name of Google Inc. nor the
+    names of its contributors"; NumPy's real LICENSE.txt: "...the NumPy
+    Developers nor the names of any contributors") -- a literal-placeholder
+    signature must not require "the copyright holder" verbatim, and must
+    not fall through to the less-specific BSD-2-Clause signature instead."""
+    (tmp_path / "LICENSE").write_text(
+        "Redistribution and use in source and binary forms, with or without modification, "
+        "are permitted provided that the following conditions are met:\n\n"
+        "1. Redistributions of source code must retain the above copyright notice.\n"
+        "2. Redistributions in binary form must reproduce the above copyright notice.\n"
+        "3. Neither the name of Google Inc. nor the names of its contributors "
         "may be used to endorse or promote products derived from this software.\n",
         encoding="utf-8",
     )

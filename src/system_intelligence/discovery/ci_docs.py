@@ -18,6 +18,7 @@ infers one from the filename, only from an exact match against
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from system_intelligence.core.entities import CIJob, Document
@@ -81,24 +82,32 @@ def detect_ci_jobs(root: Path) -> list[CIJob]:
     return jobs
 
 
-#: Each signature is a distinctive, exact substring of that license's own
-#: canonical text (verified live against spdx/license-list-data's own
-#: reference texts, plus this repository's own real LICENSE file for
-#: MIT), never a guess from the filename or a partial keyword match
-#: (ADR-002). Order matters: a more specific license's text also contains
-#: a less specific relative's substring, so the specific one is checked
-#: first -- GPL-3.0 ("...Version 3") before GPL-2.0 ("...Version 2"), and
-#: BSD-3-Clause's own third clause ("Neither the name of...") before
+#: BSD-3-Clause's own third clause names the actual copyright holder in
+#: place of a fixed placeholder ("Neither the name of Google Inc. nor the
+#: names of its contributors" in protobuf's real LICENSE; "...the NumPy
+#: Developers nor the names of any contributors" in NumPy's) -- a real
+#: BSD-3-Clause file's own org name (and "its"/"any") varies, so this is
+#: a regex, not a literal substring, wide enough to still subsume the
+#: generic SPDX placeholder text itself ("the copyright holder").
+_BSD_3_CLAUSE_RE = re.compile(r"Neither the name of .+? nor the names of (?:its|any) contributors")
+
+#: Each signature is a distinctive substring (or, for BSD-3-Clause, a
+#: regex) of that license's own canonical text (verified live against
+#: spdx/license-list-data's own reference texts, plus this repository's
+#: own real LICENSE file for MIT and real projects' own root LICENSE
+#: files for Apache-2.0/BSD-3-Clause -- see `_normalize_whitespace`/
+#: `_BSD_3_CLAUSE_RE`), never a guess from the filename or a partial
+#: keyword match (ADR-002). Order matters: a more specific license's text
+#: also contains a less specific relative's substring, so the specific
+#: one is checked first -- GPL-3.0 ("...Version 3") before GPL-2.0
+#: ("...Version 2"), and BSD-3-Clause's own third clause before
 #: BSD-2-Clause's shared first two clauses ("Redistributions in binary
 #: form..."), which a real BSD-3-Clause file's text also contains.
-_LICENSE_SIGNATURES: tuple[tuple[str, str], ...] = (
+_LICENSE_SIGNATURES: tuple[tuple[str | re.Pattern[str], str], ...] = (
     ("Mozilla Public License Version 2.0", "MPL-2.0"),
     ("GNU GENERAL PUBLIC LICENSE\nVersion 3", "GPL-3.0"),
     ("GNU GENERAL PUBLIC LICENSE\nVersion 2", "GPL-2.0"),
-    (
-        "Neither the name of the copyright holder nor the names of its contributors",
-        "BSD-3-Clause",
-    ),
+    (_BSD_3_CLAUSE_RE, "BSD-3-Clause"),
     ("Redistributions in binary form must reproduce the above copyright", "BSD-2-Clause"),
     (
         "Permission to use, copy, modify, and/or distribute this software for any "
@@ -109,6 +118,22 @@ _LICENSE_SIGNATURES: tuple[tuple[str, str], ...] = (
     ("MIT License", "MIT"),
     ("Apache License\nVersion 2.0", "Apache-2.0"),
 )
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_whitespace(text: str) -> str:
+    """Collapse any run of whitespace (including newlines) to a single
+    space, so a signature written on one logical line still matches real
+    LICENSE file text wrapped/centered with extra spaces or line breaks --
+    verified against the real, official Apache Software Foundation text
+    (`curl https://www.apache.org/licenses/LICENSE-2.0.txt`), which centers
+    "Apache License" / "Version 2.0, January 2004" with ~27 leading spaces
+    each, so the literal `"Apache License\\nVersion 2.0"` substring never
+    appeared in a real, canonical Apache-2.0 LICENSE file (e.g. Kubernetes'
+    own root `LICENSE`) before this normalization.
+    """
+    return _WHITESPACE_RE.sub(" ", text)
 
 
 def detect_license(root: Path, documents: list[Document]) -> str | None:
@@ -127,8 +152,13 @@ def detect_license(root: Path, documents: list[Document]) -> str | None:
         text = (root / license_doc.path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
+    normalized_text = _normalize_whitespace(text)
     for signature, identifier in _LICENSE_SIGNATURES:
-        if signature in text:
+        if isinstance(signature, re.Pattern):
+            if signature.search(normalized_text):
+                return identifier
+            continue
+        if _normalize_whitespace(signature) in normalized_text:
             return identifier
     return None
 
