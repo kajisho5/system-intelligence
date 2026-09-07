@@ -13,11 +13,19 @@ Read-heavy by design (docs/03-architecture.md, "Dashboard is read-heavy"):
 there is no button anywhere that merges, deletes, force-pushes, or writes
 to a remote — this file has no network code and no form that submits
 anywhere.
+
+The outer HTML shell (`generate_dashboard_html`) is itself built
+server-side from data-derived strings, though -- `overview.target_name`
+(a local directory's basename, or the raw CLI locator string for a GitHub
+target; see `discovery/target.py`) is not sanitized by anything upstream,
+so it is HTML-escaped here exactly like `reporting/html.py`'s own
+`escape(snapshot.target.name)` already does for its title line.
 """
 
 from __future__ import annotations
 
 import json
+from html import escape
 
 from system_intelligence.reporting.dashboard_data import DashboardData
 
@@ -761,7 +769,8 @@ def _json_script(data: DashboardData) -> str:
 
 def generate_dashboard_html(data: DashboardData) -> str:
     """Render `data` as a single, self-contained interactive HTML document."""
-    title = f"System Intelligence Console — {data.overview.target_name}"
+    target_name = escape(data.overview.target_name)
+    title = f"System Intelligence Console — {target_name}"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -775,7 +784,7 @@ def generate_dashboard_html(data: DashboardData) -> str:
   <nav class="sidebar" aria-label="Dashboard sections">
     <div class="brand">
       <h1>System Intelligence</h1>
-      <p>Console — {data.overview.target_name}</p>
+      <p>Console — {target_name}</p>
     </div>
     <button class="theme-toggle" type="button">Toggle theme</button>
   </nav>
