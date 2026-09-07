@@ -311,6 +311,33 @@ def test_generate_dashboard_html_embeds_audit_log_entries_in_json() -> None:
     assert payload["audit_log"][0]["correlation_id"] == "pr-1"
 
 
+def test_generate_dashboard_html_audit_log_table_shows_policy() -> None:
+    """`AuditLogEntry.policy` (docs/08-governance.md's "Audit log" field
+    list; `policy/engine.py::audit_log_entry`'s own docstring calls it
+    "the exact rule that decided the outcome, already human-readable") is
+    the actual reason an action was allowed or denied -- the whole point
+    of an audit trail -- but the Settings screen's Audit log table (added
+    the same session as the fix above) only ever destructured
+    actor/intent/action/target/result/correlation_id/timestamp, never
+    `policy`, even though it already reaches the embedded JSON unchanged."""
+    entry = AuditLogEntry(
+        actor="human:kajisho5",
+        intent="create a draft PR",
+        policy="denied: create_draft_pr requires an Approval at CREATE_BRANCH_OR_DRAFT_PR or above",
+        target="repository:root",
+        action="create_draft_pr",
+        result="denied",
+        correlation_id="pr-1",
+    )
+    snapshot = Snapshot(target=_target(), audit_log=[entry])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert '["Actor", "Intent", "Policy", "Action"' in html
+    assert "a.policy" in html
+
+
 def test_generate_dashboard_html_wires_verifications_tab() -> None:
     """`Verification` had a full `DATA.verifications` list (same shape as
     Proposals/Executions/Approvals/Recommendations/Research, each with
