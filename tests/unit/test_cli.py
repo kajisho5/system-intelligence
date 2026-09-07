@@ -2134,6 +2134,69 @@ def test_dashboard_command_compare_with_surfaces_recorded_update_recommendation(
     assert "Update pydantic from 2.0.0 to 2.9.0." in objectives
 
 
+def test_dashboard_command_compare_with_surfaces_recorded_audit_log(tmp_path: Path) -> None:
+    """`si execute --record` appends a real `AuditLogEntry` to
+    `audit_log.json` (see `test_execute_command_record_appends_to_
+    snapshot`) -- the same accumulated-audit-trail record type as
+    Proposals/Executions/Verifications/Approvals/Research, all of which
+    `si dashboard --compare-with` already merges in. But `audit_log` was
+    the one field never added to `DashboardData` at all (unlike
+    `recommendations`, which had the same bug fixed separately), so the
+    recorded audit trail never reached the dashboard in any form."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    _init_repo(target_dir)
+    plan_file = _write_plan_file(target_dir)
+    approval_file = target_dir / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            {
+                "actor": "human:test",
+                "scope": "repository",
+                "action": "create_local_branch_and_commit",
+                "target": str(target_dir),
+                "permission_level": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snap_out = tmp_path / "snap"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+
+    execute_result = runner.invoke(
+        app,
+        [
+            "execute",
+            str(plan_file),
+            str(target_dir),
+            "--approve",
+            "--approval-file",
+            str(approval_file),
+            "--record",
+            str(snap_dir),
+        ],
+    )
+    assert execute_result.exit_code == 0
+
+    out_dir = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        ["dashboard", str(target_dir), "--out", str(out_dir), "--compare-with", str(snap_dir)],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    correlation_ids = [a["correlation_id"] for a in dashboard_json["audit_log"]]
+    assert len(correlation_ids) == 1
+
+
 def test_dashboard_command_check_vulnerabilities_populates_advisories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

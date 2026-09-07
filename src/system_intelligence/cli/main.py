@@ -436,8 +436,9 @@ _DASHBOARD_COMPARE_OPTION = typer.Option(
     "--compare-with",
     help="An earlier canonical snapshot directory (from --out on another command) to diff "
     "against for the Changes screen. Also the accumulator directory to read: any "
-    "Proposal/ExecutionRecord/Verification/Approval/ResearchResult recorded into it via "
-    "--record on other commands is merged into the rendered snapshot, deduplicated by id.",
+    "Proposal/ExecutionRecord/Verification/Approval/AuditLogEntry/Recommendation/ResearchResult "
+    "recorded into it via --record on other commands is merged into the rendered snapshot, "
+    "deduplicated by id.",
 )
 _DASHBOARD_CHECK_UPDATES_OPTION = typer.Option(
     False,
@@ -471,8 +472,9 @@ def dashboard(
     delete, force-push, or write to any remote. `--compare-with` both
     populates the Changes screen (diffed against that earlier snapshot's
     components/findings) and supplies the Proposals/Executions/
-    Verifications/Approvals/Research screens: a fresh scan never carries
-    those forward on its own, so without `--compare-with` pointed at
+    Verifications/Approvals/Research screens, plus the Settings screen's
+    Audit log: a fresh scan never carries those forward on its own, so
+    without `--compare-with` pointed at
     whatever directory `--record` on other commands has been accumulating
     into, those screens are correctly empty rather than showing stale data --
     also true of Recommendations previously `--record`'ed by `si check-updates`
@@ -513,6 +515,7 @@ def dashboard(
                 "executions": _merge_by_id(snapshot.executions, previous_snapshot.executions),
                 "verification": _merge_by_id(snapshot.verification, previous_snapshot.verification),
                 "approvals": _merge_by_id(snapshot.approvals, previous_snapshot.approvals),
+                "audit_log": _merge_by_id(snapshot.audit_log, previous_snapshot.audit_log),
                 "recommendations": _merge_by_id(
                     snapshot.recommendations, previous_snapshot.recommendations
                 ),

@@ -2,6 +2,7 @@ import json
 
 from system_intelligence.core.entities import Repository, Target
 from system_intelligence.core.enums import TargetKind
+from system_intelligence.core.governance import AuditLogEntry
 from system_intelligence.core.proposals import InterfaceField, Proposal
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.core.verification import Verification
@@ -270,6 +271,43 @@ def test_generate_dashboard_html_wires_component_tool_scope_into_detail_panel() 
     assert "Disallowed tools" in html
     assert "c.tool_names" in html
     assert "c.permissions" in html
+
+
+def test_generate_dashboard_html_wires_audit_log_into_settings_screen() -> None:
+    """`Snapshot.audit_log` (`si execute --record`'s real `AuditLogEntry`
+    rows, the governance audit trail) was the only accumulated-record
+    `Snapshot` list field never reaching `DashboardData` at all -- every
+    sibling type (Proposals/Executions/Verifications/Approvals/Research)
+    is both a `DashboardData` field and rendered in the Settings screen
+    right next to the existing Approvals table."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "Audit log" in html
+    assert "DATA.audit_log" in html
+
+
+def test_generate_dashboard_html_embeds_audit_log_entries_in_json() -> None:
+    entry = AuditLogEntry(
+        actor="human:kajisho5",
+        intent="create a draft PR",
+        target="repository:root",
+        action="create_draft_pr",
+        result="success",
+        correlation_id="pr-1",
+    )
+    snapshot = Snapshot(target=_target(), audit_log=[entry])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    start = html.index('id="si-dashboard-data">') + len('id="si-dashboard-data">')
+    end = html.index("</script>", start)
+    payload = json.loads(html[start:end])
+
+    assert payload["audit_log"][0]["correlation_id"] == "pr-1"
 
 
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
