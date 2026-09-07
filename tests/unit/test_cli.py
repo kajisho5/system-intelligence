@@ -46,6 +46,7 @@ def test_inspect_command_reports_summary(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Git repository: no" in result.stdout
+    assert "Remote: none configured" in result.stdout
     assert "License: unknown" in result.stdout
     assert "Languages: Python" in result.stdout
     assert "Root documents: 1 (README.md)" in result.stdout
@@ -64,6 +65,28 @@ def test_inspect_command_reports_git_repository_yes_with_no_remote(tmp_path: Pat
 
     assert result.exit_code == 0
     assert "Git repository: yes (no remote branch detected)" in result.stdout
+    assert "Remote: none configured" in result.stdout
+
+
+def test_inspect_command_reports_configured_remote_url(tmp_path: Path) -> None:
+    """`Repository.url` (the real `git remote get-url origin`, captured
+    with its own dedicated Evidence in discovery/git_metadata.py) was
+    genuinely populated by discovery but never printed by any consumer --
+    `si inspect` already prints every other GitMetadata-derived fact
+    (is_git_repository, default_branch, last_commit_*, license) except
+    this one."""
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://example.com/octocat/demo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Remote: https://example.com/octocat/demo.git" in result.stdout
 
 
 def test_inspect_command_reports_known_license(tmp_path: Path) -> None:
