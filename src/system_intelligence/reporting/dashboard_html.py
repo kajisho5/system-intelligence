@@ -758,13 +758,24 @@ _SCRIPT = r"""
               a.approved_at, a.expires_at || "never"];
           }))
       : emptyState("No approvals recorded for this snapshot.");
+    // Same accumulated-audit-trail record type as Approvals/Executions
+    // right above it -- `si execute --record` appends a real AuditLogEntry
+    // per action taken, but this panel never showed it at all.
+    var auditLog = DATA.audit_log.length
+      ? table(["Actor", "Intent", "Action", "Target", "Result", "Correlation ID", "Timestamp"],
+          DATA.audit_log.map(function (a) {
+            return [a.actor, a.intent, a.action, a.target, a.result, a.correlation_id, a.timestamp];
+          }))
+      : emptyState("No audit log entries recorded for this snapshot.");
     return el("div", null,
       el("h2", null, "Default policy"),
       el("p", null, "Default maximum permission level: ", el("strong", null, g.default_max_permission_level)),
       el("p", null, "Actions forbidden by default, regardless of any approval:"),
       el("ul", null, g.forbidden_actions.map(function (a) { return el("li", null, a); })),
       el("h2", null, "Approvals on record"),
-      approvals);
+      approvals,
+      el("h2", null, "Audit log"),
+      auditLog);
   }
 
   var SECTIONS = [

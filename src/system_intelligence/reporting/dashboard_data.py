@@ -48,7 +48,7 @@ from system_intelligence.core.enums import (
 from system_intelligence.core.evidence import Evidence
 from system_intelligence.core.execution_record import ExecutionRecord
 from system_intelligence.core.findings import Finding
-from system_intelligence.core.governance import Approval
+from system_intelligence.core.governance import Approval, AuditLogEntry
 from system_intelligence.core.impact import ImpactAssessment
 from system_intelligence.core.proposals import Proposal
 from system_intelligence.core.recommendations import Recommendation
@@ -161,6 +161,7 @@ class DashboardData(BaseModel):
     executions: list[ExecutionRecord]
     verifications: list[Verification]
     approvals: list[Approval]
+    audit_log: list[AuditLogEntry]
     adrs: list[ADR]
     update_assessments: list[ImpactAssessment]
     update_unavailable: list[UpdateLookupFailureView]
@@ -390,6 +391,7 @@ def build_dashboard_data(
         executions=snapshot.executions,
         verifications=snapshot.verification,
         approvals=snapshot.approvals,
+        audit_log=snapshot.audit_log,
         adrs=snapshot.adrs,
         update_assessments=assessments,
         update_unavailable=[
