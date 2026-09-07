@@ -77,6 +77,36 @@ def test_generate_html_report_git_repository_with_branch() -> None:
     assert "<dt>Git branch</dt><dd>main</dd>" in html
 
 
+def test_generate_html_report_no_remote_configured() -> None:
+    repository = Repository(id="r1", name="repo", path=".", is_git_repository=True)
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "<dt>Remote</dt><dd>none configured</dd>" in html
+
+
+def test_generate_html_report_shows_configured_remote_url() -> None:
+    """`Repository.url` (the discovered `git remote get-url origin`, its
+    own dedicated Evidence in discovery/git_metadata.py) was genuinely
+    populated by discovery but never rendered by the static report's
+    overview -- it already renders every other GitMetadata-derived fact
+    (is_git_repository/default_branch, languages) sitting right next to
+    it."""
+    repository = Repository(
+        id="r1",
+        name="repo",
+        path=".",
+        is_git_repository=True,
+        url="https://example.com/octocat/demo.git",
+    )
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "<dt>Remote</dt><dd>https://example.com/octocat/demo.git</dd>" in html
+
+
 def test_generate_html_report_includes_components_capabilities_dependencies() -> None:
     dependency = Dependency(id="d1", name="pydantic", ecosystem="pypi", version_constraint=">=2")
     repository = Repository(id="r1", name="repo", path=".", dependencies=[dependency])

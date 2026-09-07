@@ -175,6 +175,7 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
     typer.echo(f"Target: {snapshot.target.locator}")
     typer.echo(f"Snapshot: {snapshot.id}")
     typer.echo(f"Git repository: {git_status}")
+    typer.echo(f"Remote: {repository.url or 'none configured'}")
     if repository.last_commit_date:
         dirty_suffix = ", uncommitted changes" if repository.is_dirty else ""
         typer.echo(f"Last commit: {repository.last_commit_date}{dirty_suffix}")

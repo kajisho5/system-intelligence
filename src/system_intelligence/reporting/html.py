@@ -49,6 +49,7 @@ def _render_overview(snapshot: Snapshot) -> str:
         git_branch = repository.default_branch or "yes (no remote branch detected)"
     else:
         git_branch = "not a git repository"
+    remote_url = (repository.url if repository else None) or "none configured"
     findings_count = len(snapshot.findings)
     capabilities_count = len(snapshot.capabilities)
     components_count = len(snapshot.components)
@@ -61,6 +62,7 @@ def _render_overview(snapshot: Snapshot) -> str:
         <dt>Snapshot</dt><dd>{_e(snapshot.id)}</dd>
         <dt>Generated</dt><dd>{_e(snapshot.created_at.isoformat())}</dd>
         <dt>Git branch</dt><dd>{_e(git_branch)}</dd>
+        <dt>Remote</dt><dd>{_e(remote_url)}</dd>
         <dt>Languages</dt><dd>{_e(languages)}</dd>
         <dt>Components</dt><dd>{components_count}</dd>
         <dt>Capabilities</dt><dd>{capabilities_count}</dd>
