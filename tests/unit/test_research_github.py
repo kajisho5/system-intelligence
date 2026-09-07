@@ -75,6 +75,39 @@ def test_search_respects_limit() -> None:
     assert len(results) == 1
 
 
+def test_search_requests_up_to_githubs_real_per_page_maximum() -> None:
+    """GitHub's Search API accepts `per_page` up to 100 (default 30, not a
+    hard ceiling) — clamping the requested `limit` to 30 instead of 100
+    would silently cap every `si research --limit N` at N=30, no matter
+    how high a caller asks, with no indication in the CLI's own help text
+    that such a ceiling exists."""
+    captured_urls: list[str] = []
+
+    def _get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        captured_urls.append(url)
+        return 200, json.dumps(_SEARCH_RESPONSE).encode()
+
+    provider = GitHubResearchProvider(http_get=_get)
+
+    provider.search("x", limit=50)
+
+    assert "per_page=50" in captured_urls[0]
+
+
+def test_search_clamps_limit_to_githubs_real_api_maximum_of_100() -> None:
+    captured_urls: list[str] = []
+
+    def _get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        captured_urls.append(url)
+        return 200, json.dumps(_SEARCH_RESPONSE).encode()
+
+    provider = GitHubResearchProvider(http_get=_get)
+
+    provider.search("x", limit=500)
+
+    assert "per_page=100" in captured_urls[0]
+
+
 def test_fetch_single_repository() -> None:
     body = json.dumps(_SEARCH_RESPONSE["items"][0]).encode()
     provider = GitHubResearchProvider(http_get=_fake_http_get(200, body))
