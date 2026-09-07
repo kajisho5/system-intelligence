@@ -348,6 +348,26 @@ def _render_verification(snapshot: Snapshot) -> str:
     """
 
 
+def _render_adrs(snapshot: Snapshot) -> str:
+    if not snapshot.adrs:
+        note = "No Architecture Decision Records discovered in this snapshot."
+        return _render_placeholder_section("adrs", "Architecture Decisions", note)
+    items = []
+    for adr in sorted(snapshot.adrs, key=lambda a: a.number or 0):
+        number = adr.number if adr.number is not None else "—"
+        items.append(
+            f"<li>{_e(number)}. {_e(adr.name)} — "
+            f"<span class='category'>{_e(adr.status or 'unknown')}</span> "
+            f"<span class='evidence-count'>({_e(adr.path or 'no path recorded')})</span></li>"
+        )
+    return f"""
+    <section id="adrs">
+      <h2>Architecture Decisions</h2>
+      <ul>{"".join(items)}</ul>
+    </section>
+    """
+
+
 def _render_placeholder_section(section_id: str, title: str, note: str) -> str:
     return f"""
     <section id="{section_id}">
@@ -425,6 +445,7 @@ def generate_html_report(snapshot: Snapshot) -> str:
         _render_research(snapshot),
         _render_proposals(snapshot),
         _render_verification(snapshot),
+        _render_adrs(snapshot),
         _render_placeholder_section(
             "history",
             "History",

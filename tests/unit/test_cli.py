@@ -72,6 +72,25 @@ def test_inspect_command_reports_discovered_agents(tmp_path: Path) -> None:
     assert "Agents: 1 (code-reviewer)" in result.stdout
 
 
+def test_inspect_command_reports_discovered_adrs(tmp_path: Path) -> None:
+    """`si inspect` already extracts Skills/Agents/CI jobs/Root documents
+    by name, and `discovery/adr.py::detect_adrs` already discovers ADRs
+    into `Snapshot.adrs` (fully surfaced in the dashboard's "Architecture
+    Decisions" tab) -- but this command never even read `snapshot.adrs`,
+    so a real, discovered ADR was completely invisible in this command's
+    summary."""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "ADR-001-use-pydantic.md").write_text(
+        "# ADR-001: Use pydantic\n\nStatus: Accepted\n", encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "ADRs: 1 (Use pydantic)" in result.stdout
+
+
 def test_inspect_command_reports_git_repository_yes_with_no_remote(tmp_path: Path) -> None:
     """A real, valid git repository with real commits but no configured
     (or unfetched) `origin` remote must never be reported as "not a git

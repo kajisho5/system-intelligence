@@ -147,7 +147,7 @@ def _format_named_list(label: str, items: list[str]) -> str:
 def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> None:
     """Read-only inventory of a local or GitHub target.
 
-    Covers git metadata, structure, Skills, Agents, CI, and docs. A GitHub
+    Covers git metadata, structure, Skills, Agents, CI, docs, and ADRs. A GitHub
     repository is shallow-cloned first (see `_TARGET_ARGUMENT`'s
     help text); manifest/ecosystem targets remain future work. Nothing is
     written unless `--out` is given.
@@ -187,6 +187,7 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
     typer.echo(_format_named_list("Agents", [a.name for a in agents]))
     typer.echo(_format_named_list("CI jobs", [j.name for j in result.ci_jobs]))
     typer.echo(_format_named_list("Root documents", [d.name for d in documents]))
+    typer.echo(_format_named_list("ADRs", [a.name for a in snapshot.adrs]))
     typer.echo(f"Evidence collected: {evidence_count}")
 
     if out is not None:

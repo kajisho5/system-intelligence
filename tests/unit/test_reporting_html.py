@@ -1,5 +1,5 @@
 from system_intelligence.core.capability import Capability
-from system_intelligence.core.entities import Agent, Dependency, Repository, Skill, Target
+from system_intelligence.core.entities import ADR, Agent, Dependency, Repository, Skill, Target
 from system_intelligence.core.enums import (
     CapabilityStatus,
     Confidence,
@@ -340,3 +340,35 @@ def test_generate_html_report_surfaces_regressions_even_when_tests_passed() -> N
     assert "passed: True" in html
     assert "a new HIGH-severity finding appeared after the change" in html
     assert "regressions found" in html
+
+
+def test_generate_html_report_shows_no_adrs_placeholder() -> None:
+    snapshot = Snapshot(target=_target())
+
+    html = generate_html_report(snapshot)
+
+    assert "No Architecture Decision Records discovered in this snapshot." in html
+
+
+def test_generate_html_report_shows_discovered_adrs() -> None:
+    """`Snapshot.adrs` (`discovery/adr.py::detect_adrs`) was fully surfaced
+    by the interactive dashboard's own "Architecture Decisions" tab, but
+    the static report never rendered it at all -- `discovery/inventory.py`'s
+    own docstring explicitly contrasts ADRs with `CIJob`, saying ADRs "get
+    their own `Snapshot.adrs` field directly... since they need no further
+    analysis-phase transformation before being worth persisting", ruling
+    out any deliberate deferral."""
+    adr = ADR(
+        id="adr1",
+        name="Use pydantic for models",
+        number=1,
+        status="Accepted",
+        path="docs/adr/0001-use-pydantic.md",
+    )
+    snapshot = Snapshot(target=_target(), adrs=[adr])
+
+    html = generate_html_report(snapshot)
+
+    assert "Use pydantic for models" in html
+    assert "Accepted" in html
+    assert "docs/adr/0001-use-pydantic.md" in html
