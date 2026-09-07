@@ -70,3 +70,43 @@ def split_tool_list(value: str) -> list[str]:
     if current:
         tokens.append("".join(current))
     return [t.strip() for t in tokens if t.strip()]
+
+
+def split_glob_list(value: str) -> list[str]:
+    """Split a single-line, comma-separated glob-pattern list on top-level commas.
+
+    Used for the `paths` Agent Skills frontmatter field (code.claude.com/
+    docs/en/skills: "Glob patterns that limit when this skill is
+    activated. Accepts a comma-separated string or a YAML list." -- only
+    the comma-separated string form is parseable by this project's flat
+    `key: value` frontmatter parser above; the YAML-list form is left
+    unparsed, the same documented limitation every other multi-value
+    frontmatter field here already has). A naive `str.split(",")` breaks
+    brace-expansion glob syntax (`src/**/*.{ts,tsx}`, a standard
+    bash/zsh/glob-library convention) whose comma is internal to one
+    pattern, not a separator -- mirrors `split_tool_list`'s own
+    paren-depth tracking, just for `{...}` instead of `(...)`. Unlike
+    `split_tool_list`, only a comma separates patterns, never bare
+    whitespace, since the docs describe this field as comma- (not
+    space-) separated, and a glob pattern could itself legitimately
+    contain a space.
+    """
+    patterns: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in value:
+        if char == "{":
+            depth += 1
+            current.append(char)
+        elif char == "}":
+            depth = max(0, depth - 1)
+            current.append(char)
+        elif depth == 0 and char == ",":
+            if current:
+                patterns.append("".join(current))
+                current = []
+        else:
+            current.append(char)
+    if current:
+        patterns.append("".join(current))
+    return [p.strip() for p in patterns if p.strip()]
