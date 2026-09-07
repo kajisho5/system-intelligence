@@ -129,6 +129,36 @@ def test_generate_html_report_includes_components_capabilities_dependencies() ->
     assert "standard format" in html
 
 
+def test_generate_html_report_dependency_graph_attributes_to_the_owning_component() -> None:
+    """The Dependency Graph previously drew every dependency as an edge
+    from a single, hard-coded node labeled "repository" regardless of
+    which Component actually declares it -- but `analysis/dependencies.py::
+    attach_dependencies_by_component` already correctly attributes each
+    Dependency to its real owning Component (e.g. a Skill's own
+    package.json, not the Repository's), the same way
+    `_render_capability_graph` right above it already resolves
+    `provider_ids` to real component names. A Skill's own dependency must
+    be labeled with the Skill's name, not "repository"."""
+    repo_dependency = Dependency(id="d1", name="top-level-dep", ecosystem="npm")
+    skill_dependency = Dependency(id="d2", name="left-pad", ecosystem="npm")
+    repository = Repository(id="r1", name="repo", path=".", dependencies=[repo_dependency])
+    skill = Skill(
+        id="s1",
+        name="demo-skill",
+        path="skills/demo/SKILL.md",
+        dependencies=[skill_dependency],
+    )
+    snapshot = Snapshot(target=_target(), components=[repository, skill])
+
+    html = generate_html_report(snapshot)
+
+    idx = html.index("left-pad")
+    row_start = html.rindex("<line ", 0, idx)
+    row = html[row_start:idx]
+    assert "demo-skill" in row
+    assert ">repository<" not in row
+
+
 def test_generate_html_report_no_findings_message() -> None:
     snapshot = Snapshot(target=_target())
     html = generate_html_report(snapshot)

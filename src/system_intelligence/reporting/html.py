@@ -132,22 +132,33 @@ def _render_capability_graph(snapshot: Snapshot) -> str:
 
 
 def _render_dependency_graph(snapshot: Snapshot) -> str:
-    dependencies = [dep for component in snapshot.components for dep in component.dependencies]
-    if not dependencies:
+    # Each Dependency is already attributed to the specific Component that
+    # actually declares it (`analysis/dependencies.py::
+    # attach_dependencies_by_component`) -- a Skill's own manifest is not
+    # the Repository's. Labeling every row with the owning component's real
+    # name, not a single hard-coded "repository" node, mirrors
+    # `_render_capability_graph`'s own already-correct pattern above.
+    component_names = {c.id: c.name for c in snapshot.components}
+    rows = [
+        (component.id, dependency)
+        for component in snapshot.components
+        for dependency in component.dependencies
+    ]
+    if not rows:
         return ""
     row_height = 28
-    height = row_height * len(dependencies) + 20
-    nodes = [
-        '<circle cx="60" cy="20" r="8" class="node-repository" />',
-        '<text x="10" y="15" class="label">repository</text>',
-    ]
-    for i, dependency in enumerate(dependencies):
+    height = row_height * len(rows) + 20
+    nodes = []
+    for i, (component_id, dependency) in enumerate(rows):
         y = 20 + i * row_height
+        owner_label = component_names.get(component_id, component_id)
         label = f"{dependency.name} ({dependency.ecosystem})"
         if dependency.version_constraint:
             label += f" {dependency.version_constraint}"
         nodes.append(
-            f'<line x1="60" y1="20" x2="220" y2="{y}" class="edge" />'
+            f'<line x1="60" y1="{y}" x2="220" y2="{y}" class="edge" />'
+            f'<circle cx="60" cy="{y}" r="5" class="node-repository" />'
+            f'<text x="10" y="{y + 4}" class="label">{_e(owner_label)}</text>'
             f'<circle cx="220" cy="{y}" r="5" class="node-dependency" />'
             f'<text x="235" y="{y + 4}" class="label">{_e(label)}</text>'
         )
