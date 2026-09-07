@@ -48,6 +48,51 @@ def test_detect_skills_assets_only(tmp_path: Path) -> None:
     assert skill.references == []
 
 
+def test_detect_skills_allowed_tools_field_populates_tool_names(tmp_path: Path) -> None:
+    """`allowed-tools` is a documented Agent Skills frontmatter field
+    (code.claude.com/docs/en/skills) -- verified live against a real,
+    vendored SKILL.md (playwright-cli) using this exact space-separated
+    form: `allowed-tools: Bash(playwright-cli:*) Bash(npx:*)`."""
+    skill_dir = tmp_path / "skills" / "example-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: example-skill\ndescription: x\nallowed-tools: Bash(git add *) Read\n---\n",
+        encoding="utf-8",
+    )
+
+    skills = detect_skills(tmp_path)
+
+    assert skills[0].tool_names == ["Bash(git add *)", "Read"]
+
+
+def test_detect_skills_disallowed_tools_field_populates_permissions(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "example-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: example-skill\ndescription: x\ndisallowed-tools: Write, Edit\n---\n",
+        encoding="utf-8",
+    )
+
+    skills = detect_skills(tmp_path)
+
+    assert skills[0].permissions == ["Write", "Edit"]
+
+
+def test_detect_skills_no_allowed_or_disallowed_tools_fields_leave_lists_empty(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "example-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: example-skill\ndescription: x\n---\n", encoding="utf-8"
+    )
+
+    skills = detect_skills(tmp_path)
+
+    assert skills[0].tool_names == []
+    assert skills[0].permissions == []
+
+
 def test_detect_skills_missing_frontmatter_fields(tmp_path: Path) -> None:
     skill_dir = tmp_path / "weird-skill"
     skill_dir.mkdir()

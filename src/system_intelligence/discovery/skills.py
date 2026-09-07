@@ -12,6 +12,15 @@ also docs/design/docs/17-reference-workflows.md's "inspect
 scripts/references/assets") -- are each listed independently: a Skill
 bundling only `assets/` (images, templates, data files it reads at
 runtime) is exactly as valid as one with only `scripts/`.
+
+`tool_names`/`permissions` are only ever populated from an explicit
+`allowed-tools:`/`disallowed-tools:` frontmatter field respectively --
+both documented Agent Skills frontmatter fields (verified against
+code.claude.com/docs/en/skills's own field reference: "Tools Claude can
+use without asking permission..."/"Tools removed from Claude's available
+pool...", the Skill-level counterpart to `discovery/agents.py`'s
+`tools:`/`disallowedTools:`), parsed with the same
+`discovery.frontmatter.split_tool_list` paren-aware tokenizer.
 """
 
 from __future__ import annotations
@@ -22,7 +31,7 @@ from system_intelligence.core.entities import Skill
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
-from system_intelligence.discovery.frontmatter import parse_frontmatter
+from system_intelligence.discovery.frontmatter import parse_frontmatter, split_tool_list
 from system_intelligence.discovery.paths import is_excluded
 
 _REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
@@ -61,6 +70,10 @@ def detect_skills(root: Path) -> list[Skill]:
         is_standard = fields is not None and all(f in fields for f in _REQUIRED_FRONTMATTER_FIELDS)
         name = fields.get("name") if fields else None
         description = fields.get("description") if fields else None
+        allowed_tools_field = fields.get("allowed-tools") if fields else None
+        tool_names = split_tool_list(allowed_tools_field) if allowed_tools_field else []
+        disallowed_tools_field = fields.get("disallowed-tools") if fields else None
+        permissions = split_tool_list(disallowed_tools_field) if disallowed_tools_field else []
 
         evidence = [found_evidence]
         if fields is not None:
@@ -94,6 +107,8 @@ def detect_skills(root: Path) -> list[Skill]:
                 scripts=scripts,
                 references=references,
                 assets=assets,
+                tool_names=tool_names,
+                permissions=permissions,
                 evidence=evidence,
             )
         )
