@@ -71,6 +71,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     repository = Repository(
         id=stable_id("repository", "root"),
         name=target.name,
+        is_git_repository=git_metadata.is_git_repository,
         url=git_metadata.remote_url,
         default_branch=git_metadata.default_branch,
         local_path=str(root),

@@ -41,6 +41,32 @@ def test_discover_local_repository(tmp_path: Path) -> None:
     assert "Python" in repository.languages  # type: ignore[attr-defined]
 
 
+def test_discover_local_repository_no_remote_is_still_a_git_repository(tmp_path: Path) -> None:
+    """A real git repository with real commits but no configured `origin`
+    remote must still be reported as `is_git_repository=True` -- distinct
+    from `default_branch` (which requires a resolvable remote symref and
+    stays unset here, correctly, since there is no remote)."""
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    result = discover_local_repository(str(tmp_path))
+
+    repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.is_git_repository is True  # type: ignore[attr-defined]
+    assert repository.default_branch is None  # type: ignore[attr-defined]
+
+
+def test_discover_local_repository_non_git_directory_is_not_a_git_repository(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+
+    result = discover_local_repository(str(tmp_path))
+
+    repository = next(c for c in result.snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.is_git_repository is False  # type: ignore[attr-defined]
+
+
 def test_discover_local_repository_populates_license(tmp_path: Path) -> None:
     (tmp_path / "LICENSE").write_text(
         "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining "

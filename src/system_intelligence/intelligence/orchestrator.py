@@ -78,6 +78,7 @@ class _OrchestrationContext:
 
 def _run_git_metadata(ctx: _OrchestrationContext) -> None:
     metadata = collect_git_metadata(ctx.root)
+    ctx.repository.is_git_repository = metadata.is_git_repository
     ctx.repository.url = metadata.remote_url
     ctx.repository.default_branch = metadata.default_branch
     ctx.repository.last_commit_sha = metadata.last_commit_sha

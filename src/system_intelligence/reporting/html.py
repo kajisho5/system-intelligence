@@ -45,7 +45,10 @@ def _render_overview(snapshot: Snapshot) -> str:
         languages = ", ".join(repository.languages)
     else:
         languages = "none detected"
-    branch = repository.default_branch if repository else None
+    if repository and repository.is_git_repository:
+        git_branch = repository.default_branch or "yes (no remote branch detected)"
+    else:
+        git_branch = "not a git repository"
     findings_count = len(snapshot.findings)
     capabilities_count = len(snapshot.capabilities)
     components_count = len(snapshot.components)
@@ -57,7 +60,7 @@ def _render_overview(snapshot: Snapshot) -> str:
         <dt>Target</dt><dd>{_e(snapshot.target.locator)}</dd>
         <dt>Snapshot</dt><dd>{_e(snapshot.id)}</dd>
         <dt>Generated</dt><dd>{_e(snapshot.created_at.isoformat())}</dd>
-        <dt>Git branch</dt><dd>{_e(branch) if branch else "not a git repository"}</dd>
+        <dt>Git branch</dt><dd>{_e(git_branch)}</dd>
         <dt>Languages</dt><dd>{_e(languages)}</dd>
         <dt>Components</dt><dd>{components_count}</dd>
         <dt>Capabilities</dt><dd>{capabilities_count}</dd>

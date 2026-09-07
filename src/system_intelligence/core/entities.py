@@ -69,8 +69,14 @@ class Repository(Component):
     """
 
     kind: ComponentKind = ComponentKind.REPOSITORY
+    is_git_repository: bool = False
     url: str | None = None
-    default_branch: str | None = None
+    default_branch: str | None = Field(
+        default=None,
+        description="The remote's own default branch, if resolvable -- unset for a real, "
+        "valid git repository with no configured/fetched remote, distinct from `False`/"
+        "'not a git repository' (`is_git_repository`).",
+    )
     local_path: str | None = None
     license: str | None = None
     languages: list[str] = Field(default_factory=list)

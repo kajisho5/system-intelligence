@@ -43,6 +43,39 @@ def test_generate_html_report_escapes_untrusted_content() -> None:
     assert "&lt;script&gt;" in html
 
 
+def test_generate_html_report_not_a_git_repository() -> None:
+    repository = Repository(id="r1", name="repo", path=".", is_git_repository=False)
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "not a git repository" in html
+
+
+def test_generate_html_report_git_repository_with_no_remote_branch() -> None:
+    """A real git repository with no configured/resolvable remote branch
+    must never be reported as "not a git repository" just because
+    `default_branch` happens to be unset -- those are distinct facts."""
+    repository = Repository(id="r1", name="repo", path=".", is_git_repository=True)
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "not a git repository" not in html
+    assert "no remote branch detected" in html
+
+
+def test_generate_html_report_git_repository_with_branch() -> None:
+    repository = Repository(
+        id="r1", name="repo", path=".", is_git_repository=True, default_branch="main"
+    )
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "<dt>Git branch</dt><dd>main</dd>" in html
+
+
 def test_generate_html_report_includes_components_capabilities_dependencies() -> None:
     dependency = Dependency(id="d1", name="pydantic", ecosystem="pypi", version_constraint=">=2")
     repository = Repository(id="r1", name="repo", path=".", dependencies=[dependency])

@@ -39,6 +39,17 @@ def test_documentation_audit_populates_repository_license(tmp_path: Path) -> Non
     assert repository.license == "MIT"  # type: ignore[attr-defined]
 
 
+def test_git_metadata_no_remote_is_still_a_git_repository(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    snapshot = run_capabilities(str(tmp_path), ["git_metadata"])
+
+    repository = next(c for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.is_git_repository is True  # type: ignore[attr-defined]
+    assert repository.default_branch is None  # type: ignore[attr-defined]
+
+
 def test_git_metadata_populates_last_commit_fields(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
     _init_repo(tmp_path)
