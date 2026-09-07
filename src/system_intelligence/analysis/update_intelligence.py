@@ -147,16 +147,26 @@ def _version_diff_item(current: ComponentState, available: ComponentState) -> St
 
 
 def _deprecation_diff_item(available: AvailableState) -> StateDiffItem | None:
-    if available.is_deprecated is not True:
-        return None
-    return StateDiffItem(
-        category=StateDiffCategory.DEPRECATED,
-        description=(
-            f"Available version {available.version!r} is marked deprecated by its publisher."
-        ),
-        confidence=Confidence.VERIFIED,
-        evidence=list(available.evidence),
-    )
+    if available.is_deprecated is True:
+        return StateDiffItem(
+            category=StateDiffCategory.DEPRECATED,
+            description=(
+                f"Available version {available.version!r} is marked deprecated by its publisher."
+            ),
+            confidence=Confidence.VERIFIED,
+            evidence=list(available.evidence),
+        )
+    if available.release_info is not None and available.release_info.is_yanked is True:
+        return StateDiffItem(
+            category=StateDiffCategory.DEPRECATED,
+            description=(
+                f"Available version {available.version!r} has been yanked/withdrawn by its "
+                "publisher."
+            ),
+            confidence=Confidence.VERIFIED,
+            evidence=list(available.evidence),
+        )
+    return None
 
 
 def diff_states(current: ComponentState, available: AvailableState) -> StateDiff:
@@ -346,6 +356,10 @@ def assess_impact(
         verdict = UpdateVerdict.NOT_ADVISABLE
         verdict_confidence = Confidence.HIGH
         rationale = "The latest available version is itself marked deprecated by its publisher."
+    elif to_state.release_info is not None and to_state.release_info.is_yanked is True:
+        verdict = UpdateVerdict.NOT_ADVISABLE
+        verdict_confidence = Confidence.HIGH
+        rationale = "The latest available version has been yanked/withdrawn by its publisher."
     elif breaking_items or unknown_dimensions:
         verdict = UpdateVerdict.REVIEW_REQUIRED
         verdict_confidence = Confidence.MEDIUM
