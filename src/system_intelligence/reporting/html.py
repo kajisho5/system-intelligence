@@ -276,11 +276,20 @@ def _render_recommendations(snapshot: Snapshot) -> str:
         return _render_placeholder_section("recommendations", "Recommendations", note)
     items = []
     for rec in snapshot.recommendations:
+        # docs/design/docs/04-domain-model.md mandates expected_benefit as a
+        # first-class part of the Recommendation contract, on par with
+        # effort/risk which this section already shows -- it was populated
+        # by every recommendation-producing path but never read here.
+        benefit = (
+            f"<p class='rationale'>Expected benefit: {_e(rec.expected_benefit)}</p>"
+            if rec.expected_benefit
+            else ""
+        )
         items.append(
             f"<li><span class='badge confidence-{rec.confidence.value}'>{_e(rec.confidence.value)}"
             f"</span> {_e(rec.objective)} <span class='evidence-count'>"
             f"(effort: {_e(rec.estimated_effort or 'unknown')}, risk: {_e(rec.risk or 'unknown')})"
-            f"</span><p class='rationale'>{_e(rec.rationale)}</p></li>"
+            f"</span><p class='rationale'>{_e(rec.rationale)}</p>{benefit}</li>"
         )
     return f"""
     <section id="recommendations">

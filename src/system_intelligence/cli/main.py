@@ -839,6 +839,8 @@ def check_updates(
             typer.echo(f"- {rec.objective}")
             typer.echo(f"    why: {rec.rationale}")
             typer.echo(f"    effort: {rec.estimated_effort}, risk: {rec.risk}")
+            if rec.expected_benefit:
+                typer.echo(f"    expected benefit: {rec.expected_benefit}")
             typer.echo(f"    confidence: {rec.confidence.value}")
     if record is not None:
         for rec in update_recommendations:
@@ -906,6 +908,8 @@ def improve(target: str = _TARGET_ARGUMENT) -> None:
         typer.echo(f"- {rec.objective}")
         typer.echo(f"    why: {rec.rationale}")
         typer.echo(f"    effort: {rec.estimated_effort}, risk: {rec.risk}")
+        if rec.expected_benefit:
+            typer.echo(f"    expected benefit: {rec.expected_benefit}")
         typer.echo(f"    confidence: {rec.confidence.value}")
 
 

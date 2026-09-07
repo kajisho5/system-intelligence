@@ -442,6 +442,21 @@ def test_generate_dashboard_html_executions_tab_links_to_the_opened_pull_request
     assert "e.pull_request_number" in html
 
 
+def test_generate_dashboard_html_wires_recommendation_expected_benefit() -> None:
+    """`Recommendation.expected_benefit` is a first-class, design-mandated
+    part of the Recommendation contract (docs/design/docs/04-domain-
+    model.md lists it alongside effort/risk, both of which this table
+    already renders) -- already embedded in `DATA.recommendations`' JSON
+    but `renderRecommendations` never read it back."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "Expected benefit" in html
+    assert "r.expected_benefit" in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)
