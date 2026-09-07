@@ -151,6 +151,11 @@ def test_target_kind_omitted_keeps_generic_wording() -> None:
         "Review any new external dependencies, network access, or credential/permission "
         "grants this introduces."
     )
+    assert proposal.implementation_stages == [
+        "Implement the capability against the stated requirements.",
+        "Add tests per the test strategy.",
+        "Document the capability per the documentation requirements.",
+    ]
 
 
 def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
@@ -164,6 +169,8 @@ def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
     assert "SKILL.md" in proposal.interfaces[0]
     assert proposal.security_considerations is not None
     assert "allowed-tools" in proposal.security_considerations
+    assert proposal.implementation_stages
+    assert any("SKILL.md" in stage for stage in proposal.implementation_stages)
 
 
 def test_target_kind_agent_populates_agent_md_interface() -> None:
@@ -243,6 +250,11 @@ def test_target_kind_without_specific_wording_falls_back_to_generic() -> None:
         "Review any new external dependencies, network access, or credential/permission "
         "grants this introduces."
     )
+    assert proposal.implementation_stages == [
+        "Implement the capability against the stated requirements.",
+        "Add tests per the test strategy.",
+        "Document the capability per the documentation requirements.",
+    ]
 
 
 def _update_assessment(verdict: UpdateVerdict) -> ImpactAssessment:
