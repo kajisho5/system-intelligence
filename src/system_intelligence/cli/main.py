@@ -68,7 +68,10 @@ from system_intelligence.proposals import (
     propose_component_update,
     propose_solution,
 )
-from system_intelligence.recommendations import generate_recommendations
+from system_intelligence.recommendations import (
+    generate_recommendations,
+    generate_update_recommendations,
+)
 from system_intelligence.reporting import (
     SnapshotDiff,
     build_dashboard_data,
@@ -460,7 +463,10 @@ def dashboard(
     `--check-updates` adds a network request per pypi/npm/cargo/go/maven dependency
     (skipped by default, unlike `si report`/`si diagnose`, which never
     touch the network at all); `--check-vulnerabilities` adds one more
-    per resolved version, for a known-vulnerability lookup (OSV.dev).
+    per resolved version, for a known-vulnerability lookup (OSV.dev). With
+    `--check-updates`, each actionable verdict's Recommendation
+    (`recommendations.generate_update_recommendations`) is merged into the
+    Recommendations screen alongside the Finding-based ones.
     """
     try:
         discovery = discover_local_repository(target)
@@ -506,6 +512,14 @@ def dashboard(
             _update_providers(),
             snapshot.relationships,
             vulnerability_providers,
+        )
+        snapshot = snapshot.model_copy(
+            update={
+                "recommendations": [
+                    *snapshot.recommendations,
+                    *generate_update_recommendations(update_check.assessments),
+                ]
+            }
         )
 
     data = build_dashboard_data(
@@ -708,10 +722,15 @@ def check_updates(
     verdict requires capability/dependency/interface impact to have
     actually been evaluated, which today's providers rarely can for an
     arbitrary third-party package. `REVIEW_REQUIRED` is the common, honest
-    outcome, not a shortcoming of this command. `--propose` (closing
-    "... -> Impact -> Recommendation -> Proposal") never produces a
-    Proposal for a NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN verdict —
-    there is nothing to propose in those cases. `--plan-out` closes
+    outcome, not a shortcoming of this command. Every actionable verdict
+    (i.e. not NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN) also always
+    closes "... -> Impact -> Recommendation" as a printed Recommendation
+    (`recommendations.generate_update_recommendations`), and, with
+    `--record`, is appended to `recommendations.json` so `si dashboard
+    --compare-with` surfaces it too. `--propose` separately closes
+    "... -> Impact -> Proposal" (never producing one for a
+    NOT_ADVISABLE/NO_UPDATE_AVAILABLE/UNKNOWN verdict — there is nothing
+    to propose in those cases). `--plan-out` closes
     "... -> Proposal -> ChangePlan" one step further, but only where doing
     so is fully deterministic (a pypi, npm, or go dependency pinned to an
     exact version, or a Cargo.toml dependency using its simple string
@@ -781,6 +800,18 @@ def check_updates(
         )
         for failure in check.unavailable:
             typer.echo(f"  - {failure.ecosystem}:{failure.name}: {failure.message}")
+
+    update_recommendations = generate_update_recommendations(check.assessments)
+    if update_recommendations:
+        typer.echo(f"\n{len(update_recommendations)} recommendation(s):")
+        for rec in update_recommendations:
+            typer.echo(f"- {rec.objective}")
+            typer.echo(f"    why: {rec.rationale}")
+            typer.echo(f"    effort: {rec.estimated_effort}, risk: {rec.risk}")
+            typer.echo(f"    confidence: {rec.confidence.value}")
+    if record is not None:
+        for rec in update_recommendations:
+            _append_json_record(record, "recommendations.json", rec)
 
     if propose or record is not None:
         proposals = [
