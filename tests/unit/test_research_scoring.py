@@ -87,6 +87,28 @@ def test_rank_candidates_prefers_license_and_activity_over_stars() -> None:
     assert ranked[1].stargazer_count == 100000
 
 
+def test_rank_candidates_unknown_archived_ranks_between_confirmed_states() -> None:
+    """An unknown archived status (e.g. a provider whose schema has no such
+    field, like the MCP registry) must never be silently treated as
+    "verified not archived" -- it should rank strictly below a candidate
+    confirmed not archived, and strictly above one confirmed archived."""
+    confirmed_not_archived = _result(
+        "a/confirmed-clean", license="MIT", pushed_days_ago=5, archived=False
+    )
+    unknown_archived = _result("b/unknown", license="MIT", pushed_days_ago=5, archived=None)
+    confirmed_archived = _result(
+        "c/confirmed-archived", license="MIT", pushed_days_ago=5, archived=True
+    )
+
+    ranked = rank_candidates([confirmed_archived, unknown_archived, confirmed_not_archived])
+
+    assert [r.result.identifier for r in ranked] == [
+        "a/confirmed-clean",
+        "b/unknown",
+        "c/confirmed-archived",
+    ]
+
+
 def test_rank_candidates_stable_for_ties() -> None:
     a = _result("a/a", license="MIT", pushed_days_ago=5)
     b = _result("b/b", license="MIT", pushed_days_ago=5)
