@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 
+from system_intelligence.analysis.dependencies import extract_dependencies
 from system_intelligence.analysis.update_intelligence import UpdateCheckResult, UpdateLookupFailure
 from system_intelligence.core.component_state import (
     AvailableState,
@@ -25,6 +27,7 @@ from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.core.state_diff import StateDiff, StateDiffItem
 from system_intelligence.core.verification import Verification
+from system_intelligence.discovery.structure import PackageManifest
 from system_intelligence.reporting.dashboard_data import DashboardData, build_dashboard_data
 
 
@@ -165,6 +168,36 @@ def test_build_dashboard_data_flattens_and_dedupes_dependencies() -> None:
 
     assert data.overview.dependency_count == 1
     assert len(data.dependencies) == 1
+
+
+def test_build_dashboard_data_never_collapses_a_package_declared_in_both_npm_sections(
+    tmp_path: Path,
+) -> None:
+    """The reverse of the dedup test above: two genuinely distinct
+    `Dependency` records (the same package name declared with a
+    different constraint in `dependencies` vs. `devDependencies` of one
+    package.json -- a real, if uncommon, occurrence) must never collapse
+    into one entry in `_all_dependencies`'s id-based dedup just because
+    `analysis/dependencies.py::_extract_package_json_dependencies` used
+    to build their `id` without including which section they came from.
+    Uses the real extractor, not hand-rolled ids, so this fails against
+    the pre-fix id scheme the same way the unit test in
+    test_analysis_dependencies.py does."""
+    (tmp_path / "package.json").write_text(
+        '{"dependencies": {"lodash": "^3.0.0"}, "devDependencies": {"lodash": "^4.0.0"}}',
+        encoding="utf-8",
+    )
+    manifests = [
+        PackageManifest(path="package.json", ecosystem="npm", language="JavaScript/TypeScript")
+    ]
+    dependencies = extract_dependencies(tmp_path, manifests)
+    repo = Repository(id="r1", name="repo", path=".", dependencies=dependencies)
+    snapshot = Snapshot(target=_target(), components=[repo])
+
+    data = build_dashboard_data(snapshot)
+
+    assert data.overview.dependency_count == 2
+    assert {d.version_constraint for d in data.dependencies} == {"^3.0.0", "^4.0.0"}
 
 
 def test_build_dashboard_data_groups_findings_by_severity() -> None:

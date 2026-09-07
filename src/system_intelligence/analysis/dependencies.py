@@ -202,7 +202,16 @@ def _extract_package_json_dependencies(path: Path, rel_path: str) -> list[Depend
         for name, version in section_value.items():
             dependencies.append(
                 Dependency(
-                    id=stable_id("dependency", "npm", rel_path, name),
+                    # `section` disambiguates a package name legitimately
+                    # declared in both `dependencies` and `devDependencies`
+                    # of the same package.json (e.g. left behind in one
+                    # section after being moved to the other) -- without
+                    # it, the two Dependency records collide on id even
+                    # though they can carry different version_constraints,
+                    # the same "must not collide into one id" concern
+                    # `_parse_pep508` already documents for the
+                    # cross-manifest case.
+                    id=stable_id("dependency", "npm", rel_path, section, name),
                     name=name,
                     ecosystem="npm",
                     version_constraint=str(version),
