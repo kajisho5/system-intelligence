@@ -325,12 +325,31 @@ _SCRIPT = r"""
         el("div", { class: "label" }, pair[0]));
     });
 
+    // The Repository component already carries every lifecycle fact the
+    // static report's Overview shows (reporting/html.py::_render_overview)
+    // -- license/default_branch/url/last_commit_date/is_dirty/languages --
+    // straight through DATA.components, so no new backend field is needed
+    // here; only this table was missing the rows for it.
+    var factRows = [
+      ["Target", o.target_name + " (" + o.target_locator + ")"],
+      ["Snapshot", o.snapshot_id],
+      ["Generated", o.generated_at],
+    ];
+    var repo = DATA.components.filter(function (c) { return c.kind === "repository"; })[0];
+    if (repo) {
+      factRows.push(["Git branch", repo.is_git_repository
+        ? (repo.default_branch || "yes (no remote branch detected)") : "not a git repository"]);
+      factRows.push(["Remote", repo.url || "none configured"]);
+      factRows.push(["License", repo.license || "unknown"]);
+      if (repo.last_commit_date) {
+        factRows.push(["Last commit",
+          repo.last_commit_date + (repo.is_dirty ? ", uncommitted changes" : "")]);
+      }
+      factRows.push(["Languages",
+        (repo.languages && repo.languages.length) ? repo.languages.join(", ") : "none detected"]);
+    }
     var facts = el("table", null,
-      el("tbody", null, [
-        ["Target", o.target_name + " (" + o.target_locator + ")"],
-        ["Snapshot", o.snapshot_id],
-        ["Generated", o.generated_at],
-      ].map(function (r) { return el("tr", null, el("td", null, r[0]), el("td", null, r[1])); })));
+      el("tbody", null, factRows.map(function (r) { return el("tr", null, el("td", null, r[0]), el("td", null, r[1])); })));
 
     var findingsBySeverity = el("div", null, Object.keys(o.finding_counts_by_severity).map(function (s) {
       return badge(s.toUpperCase() + ": " + o.finding_counts_by_severity[s], severityKind(s));
