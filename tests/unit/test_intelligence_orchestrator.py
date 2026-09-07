@@ -71,6 +71,27 @@ def test_relationship_graph_construction_produces_depends_on_edges(tmp_path: Pat
     assert len(depends_on) == 1
 
 
+def test_relationship_graph_construction_produces_uses_edges(tmp_path: Path) -> None:
+    """`analyze_local_repository` (the `si diagnose` engine) always calls
+    `attach_consumers` before `build_relationships`, so a component
+    declaring a dependency whose name matches a Skill's own capability
+    name produces a USES edge -- this second orchestration engine must
+    produce the identical fact for the same "diagnose" intent."""
+    skill_dir = tmp_path / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: x\n---\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"dependencies": {"demo": "1.0.0"}}', encoding="utf-8")
+
+    snapshot = run_capabilities(str(tmp_path), resolve_intent("diagnose"))
+
+    uses = [r for r in snapshot.relationships if r.type == RelationshipType.USES]
+    assert len(uses) == 1
+    demo_capability = next(c for c in snapshot.capabilities if c.name == "demo")
+    assert demo_capability.consumer_ids == [
+        next(c.id for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    ]
+
+
 def test_diagnose_intent_includes_relationship_graph(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "x"\ndependencies = ["pydantic"]\n', encoding="utf-8"
