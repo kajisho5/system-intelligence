@@ -107,6 +107,51 @@ def test_generate_html_report_shows_configured_remote_url() -> None:
     assert "<dt>Remote</dt><dd>https://example.com/octocat/demo.git</dd>" in html
 
 
+def test_generate_html_report_shows_unknown_license_by_default() -> None:
+    repository = Repository(id="r1", name="repo", path=".")
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "<dt>License</dt><dd>unknown</dd>" in html
+
+
+def test_generate_html_report_shows_detected_license() -> None:
+    """`Repository.license` (`discovery/ci_docs.py::detect_license`) was
+    already surfaced in `si inspect`'s text output but never rendered by
+    the static report's overview -- it renders every other Repository
+    fact sitting right next to it (Remote, Git branch, Languages)."""
+    repository = Repository(id="r1", name="repo", path=".", license="MIT")
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "<dt>License</dt><dd>MIT</dd>" in html
+
+
+def test_generate_html_report_omits_last_commit_when_unknown() -> None:
+    repository = Repository(id="r1", name="repo", path=".")
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "Last commit" not in html
+
+
+def test_generate_html_report_shows_last_commit_date_and_dirty_state() -> None:
+    """`Repository.last_commit_date`/`is_dirty` (`discovery/git_metadata.py`)
+    were already surfaced in `si inspect`'s text output but never rendered
+    by the static report's overview -- the same gap as `license` above."""
+    repository = Repository(
+        id="r1", name="repo", path=".", last_commit_date="2026-01-15T10:00:00+00:00", is_dirty=True
+    )
+    snapshot = Snapshot(target=_target(), components=[repository])
+
+    html = generate_html_report(snapshot)
+
+    assert "<dt>Last commit</dt><dd>2026-01-15T10:00:00+00:00, uncommitted changes</dd>" in html
+
+
 def test_generate_html_report_includes_components_capabilities_dependencies() -> None:
     dependency = Dependency(id="d1", name="pydantic", ecosystem="pypi", version_constraint=">=2")
     repository = Repository(id="r1", name="repo", path=".", dependencies=[dependency])

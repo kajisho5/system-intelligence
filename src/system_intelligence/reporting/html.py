@@ -50,6 +50,11 @@ def _render_overview(snapshot: Snapshot) -> str:
     else:
         git_branch = "not a git repository"
     remote_url = (repository.url if repository else None) or "none configured"
+    license_str = (repository.license if repository else None) or "unknown"
+    last_commit = None
+    if repository and repository.last_commit_date:
+        dirty_suffix = ", uncommitted changes" if repository.is_dirty else ""
+        last_commit = f"{repository.last_commit_date}{dirty_suffix}"
     findings_count = len(snapshot.findings)
     capabilities_count = len(snapshot.capabilities)
     components_count = len(snapshot.components)
@@ -63,6 +68,8 @@ def _render_overview(snapshot: Snapshot) -> str:
         <dt>Generated</dt><dd>{_e(snapshot.created_at.isoformat())}</dd>
         <dt>Git branch</dt><dd>{_e(git_branch)}</dd>
         <dt>Remote</dt><dd>{_e(remote_url)}</dd>
+        <dt>License</dt><dd>{_e(license_str)}</dd>
+        {f"<dt>Last commit</dt><dd>{_e(last_commit)}</dd>" if last_commit else ""}
         <dt>Languages</dt><dd>{_e(languages)}</dd>
         <dt>Components</dt><dd>{components_count}</dd>
         <dt>Capabilities</dt><dd>{capabilities_count}</dd>
