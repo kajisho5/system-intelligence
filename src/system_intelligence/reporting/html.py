@@ -154,13 +154,25 @@ def _render_capability_graph(snapshot: Snapshot) -> str:
     for i, capability in enumerate(snapshot.capabilities):
         y = 20 + i * row_height
         provider_label = ", ".join(component_names.get(pid, pid) for pid in capability.provider_ids)
+        # consumer_ids is a structural sibling of provider_ids (both
+        # Component-id lists, resolved the same way) but was never read
+        # here at all -- the dashboard's own Capabilities tab already
+        # renders it (a "Consumers: ..." chip list) from the identical
+        # Capability object this graph reads provider_ids from.
+        consumer_suffix = ""
+        if capability.consumer_ids:
+            consumer_label = ", ".join(
+                component_names.get(cid, cid) for cid in capability.consumer_ids
+            )
+            consumer_suffix = f" — consumers: {_e(consumer_label)}"
         nodes.append(
             f'<line x1="120" y1="{y}" x2="260" y2="{y}" class="edge" />'
             f'<circle cx="120" cy="{y}" r="5" class="node-provider" />'
             f'<text x="10" y="{y + 4}" class="label">{_e(provider_label)}</text>'
             f'<circle cx="260" cy="{y}" r="5" class="node-capability" />'
             f'<text x="275" y="{y + 4}" class="label">{_e(capability.name)} '
-            f"({_e(capability.status.value)}/{_e(capability.confidence.value)})</text>"
+            f"({_e(capability.status.value)}/{_e(capability.confidence.value)})"
+            f"{consumer_suffix}</text>"
         )
     svg_body = "\n".join(nodes)
     return f"""
