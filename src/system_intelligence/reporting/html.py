@@ -288,7 +288,8 @@ def _render_recommendations(snapshot: Snapshot) -> str:
         items.append(
             f"<li><span class='badge confidence-{rec.confidence.value}'>{_e(rec.confidence.value)}"
             f"</span> {_e(rec.objective)} <span class='evidence-count'>"
-            f"(effort: {_e(rec.estimated_effort or 'unknown')}, risk: {_e(rec.risk or 'unknown')})"
+            f"(effort: {_e(rec.estimated_effort or 'unknown')}, risk: {_e(rec.risk or 'unknown')}, "
+            f"required approval: {_e(rec.required_approval_level.name)})"
             f"</span><p class='rationale'>{_e(rec.rationale)}</p>{benefit}</li>"
         )
     return f"""

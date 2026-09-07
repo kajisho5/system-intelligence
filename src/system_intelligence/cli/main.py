@@ -842,6 +842,7 @@ def check_updates(
             if rec.expected_benefit:
                 typer.echo(f"    expected benefit: {rec.expected_benefit}")
             typer.echo(f"    confidence: {rec.confidence.value}")
+            typer.echo(f"    required approval: {rec.required_approval_level.name}")
     if record is not None:
         for rec in update_recommendations:
             _append_json_record(record, "recommendations.json", rec)
@@ -911,6 +912,7 @@ def improve(target: str = _TARGET_ARGUMENT) -> None:
         if rec.expected_benefit:
             typer.echo(f"    expected benefit: {rec.expected_benefit}")
         typer.echo(f"    confidence: {rec.confidence.value}")
+        typer.echo(f"    required approval: {rec.required_approval_level.name}")
 
 
 _PROBLEM_ARGUMENT = typer.Argument(..., help="The need or problem statement, in plain language.")

@@ -591,6 +591,19 @@ def test_improve_command_reports_expected_benefit(tmp_path: Path) -> None:
     assert "expected benefit: Resolves a high-severity documentation_gap finding." in result.stdout
 
 
+def test_improve_command_reports_required_approval_level(tmp_path: Path) -> None:
+    """`Recommendation.required_approval_level` is a first-class, design-
+    mandated part of the Recommendation contract (docs/design/docs/04-
+    domain-model.md's "approval requirement"), populated by every
+    recommendation-producing code path -- but this command's own echo
+    loop never printed it, the same sibling-field gap the
+    `expected_benefit` fix immediately above just closed."""
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "required approval: RECOMMEND" in result.stdout
+
+
 def test_improve_command_healthy_project_has_no_recommendations(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
     (tmp_path / "LICENSE").write_text("MIT\n", encoding="utf-8")
@@ -1549,6 +1562,35 @@ def test_check_updates_command_prints_expected_benefit(
 
     assert result.exit_code == 0
     assert "expected benefit: Resolves an available update for pydantic" in result.stdout
+
+
+def test_check_updates_command_prints_required_approval_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Recommendation.required_approval_level` is a first-class, design-
+    mandated part of the Recommendation contract (docs/design/docs/04-
+    domain-model.md's "approval requirement"), populated by every
+    recommendation-producing code path -- but this command's own echo
+    loop never printed it, the same sibling-field gap the
+    `expected_benefit` fix immediately above just closed."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "required approval: RECOMMEND" in result.stdout
 
 
 def test_check_updates_command_record_appends_recommendation_to_snapshot(
