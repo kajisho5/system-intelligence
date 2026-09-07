@@ -56,6 +56,10 @@ from system_intelligence.research.scoring import CandidateAssessment, rank_candi
 
 _TEST_STRATEGY = "Add tests covering the new/adopted capability's stated requirements."
 _DOCUMENTATION_REQUIREMENTS = "Document the capability and how it satisfies each requirement."
+_SECURITY_CONSIDERATIONS = (
+    "Review any new external dependencies, network access, or credential/permission "
+    "grants this introduces."
+)
 _ROLLBACK_STRATEGY = "Revert the change; no other component depends on it until adopted."
 
 #: Per-`ComponentKind` test/documentation guidance (docs/07-improvement-
@@ -93,6 +97,40 @@ _TEST_STRATEGY_BY_KIND: dict[ComponentKind, str] = {
     ComponentKind.REPOSITORY: (
         "Verify the new repository's own CI passes and its bootstrap instructions work "
         "from a clean checkout."
+    ),
+}
+#: Per-`ComponentKind` security-review guidance (docs/07-improvement-
+#: engine.md's "Proposal must contain" list, "security implications" --
+#: same required-content status as `test_strategy`/`documentation_
+#: requirements`/`rollback_strategy`, all of which already have their own
+#: entry here). `None`/any unlisted kind keeps the generic
+#: `_SECURITY_CONSIDERATIONS` wording, same fallback convention as the
+#: sibling `_BY_KIND` tables above.
+_SECURITY_CONSIDERATIONS_BY_KIND: dict[ComponentKind, str] = {
+    ComponentKind.SKILL: (
+        "Review the Skill's own allowed-tools/disallowed-tools frontmatter for scope "
+        "creep beyond what it actually needs."
+    ),
+    ComponentKind.AGENT: (
+        "Review the agent's declared tool/permission grants for scope creep beyond "
+        "what it actually needs."
+    ),
+    ComponentKind.MCP_SERVER: (
+        "Review each exposed tool/resource's schema for unintended data or system access."
+    ),
+    ComponentKind.TOOL: (
+        "Review the tool's own permission/credential requirements for least-privilege scope."
+    ),
+    ComponentKind.WORKFLOW: (
+        "Review each side effect for unintended write/network access beyond what's declared."
+    ),
+    ComponentKind.DOCUMENT: (
+        "Confirm it does not disclose sensitive internal details (credentials, internal "
+        "hostnames, unpublished plans)."
+    ),
+    ComponentKind.REPOSITORY: (
+        "Confirm its dependencies and CI configuration don't introduce unreviewed "
+        "third-party code execution."
     ),
 }
 _DOCUMENTATION_REQUIREMENTS_BY_KIND: dict[ComponentKind, str] = {
@@ -156,12 +194,22 @@ def _interfaces_for(target_kind: ComponentKind | None) -> list[str]:
     return _INTERFACES_BY_KIND.get(target_kind, [])
 
 
+def _security_considerations_for(target_kind: ComponentKind | None) -> str:
+    if target_kind is None:
+        return _SECURITY_CONSIDERATIONS
+    return _SECURITY_CONSIDERATIONS_BY_KIND.get(target_kind, _SECURITY_CONSIDERATIONS)
+
+
 _UPDATE_TEST_STRATEGY = (
     "Re-run the existing test suite after updating; add a regression test if the "
     "changelog or interface diff indicates a behavior change."
 )
 _UPDATE_DOCUMENTATION_REQUIREMENTS = (
     "Note the version bump and any migration steps from the changelog or release notes."
+)
+_UPDATE_SECURITY_CONSIDERATIONS = (
+    "Check the new version's changelog/release notes and any known-vulnerability "
+    "advisories (`si check-updates --check-vulnerabilities`) before merging."
 )
 _UPDATE_ROLLBACK_STRATEGY = (
     "Revert the manifest version constraint change; no code changes are made automatically."
@@ -269,12 +317,13 @@ def propose_solution(
     """Turn a stated need into a creation/adoption/integration Proposal.
 
     `target_kind` (docs/07-improvement-engine.md's "Creation proposals"
-    list) shapes `test_strategy`/`documentation_requirements` to how that
-    kind of component is actually verified and documented in practice --
-    e.g. a Skill's contract lives in its SKILL.md, an Agent is verified by
-    running scenarios rather than unit tests -- and populates `interfaces`
-    with that kind's own explicit, already-detected discovery convention
-    where one exists (a Skill's SKILL.md front matter, an Agent's
+    list) shapes `test_strategy`/`documentation_requirements`/
+    `security_considerations` to how that kind of component is actually
+    verified, documented, and reviewed in practice -- e.g. a Skill's
+    contract lives in its SKILL.md, an Agent is verified by running
+    scenarios rather than unit tests -- and populates `interfaces` with
+    that kind's own explicit, already-detected discovery convention where
+    one exists (a Skill's SKILL.md front matter, an Agent's
     `.claude/agents/*.md` front matter, ...). Omit it (the default) to get
     the original generic wording and an empty `interfaces` list, unchanged
     for every existing caller.
@@ -285,6 +334,7 @@ def propose_solution(
     test_strategy = _test_strategy_for(target_kind)
     documentation_requirements = _documentation_requirements_for(target_kind)
     interfaces = _interfaces_for(target_kind)
+    security_considerations = _security_considerations_for(target_kind)
 
     if not research_results:
         return Proposal(
@@ -299,6 +349,7 @@ def propose_solution(
             capabilities=list(requirements),
             interfaces=interfaces,
             test_strategy=test_strategy,
+            security_considerations=security_considerations,
             documentation_requirements=documentation_requirements,
             rollback_strategy=_ROLLBACK_STRATEGY,
             required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
@@ -320,6 +371,7 @@ def propose_solution(
             interfaces=interfaces,
             dependencies=[best.result.identifier],
             test_strategy=test_strategy,
+            security_considerations=security_considerations,
             documentation_requirements=documentation_requirements,
             rollback_strategy=_ROLLBACK_STRATEGY,
             required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
@@ -345,6 +397,7 @@ def propose_solution(
         interfaces=interfaces,
         dependencies=[best.result.identifier],
         test_strategy=test_strategy,
+        security_considerations=security_considerations,
         documentation_requirements=documentation_requirements,
         rollback_strategy=_ROLLBACK_STRATEGY,
         required_permission_level=PermissionLevel.GENERATE_LOCAL_ARTIFACTS,
@@ -408,6 +461,7 @@ def propose_component_update(assessment: ImpactAssessment) -> Proposal | None:
         ],
         changes=[change],
         test_strategy=_UPDATE_TEST_STRATEGY,
+        security_considerations=_UPDATE_SECURITY_CONSIDERATIONS,
         documentation_requirements=_UPDATE_DOCUMENTATION_REQUIREMENTS,
         rollback_strategy=_UPDATE_ROLLBACK_STRATEGY,
         required_permission_level=PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR,
