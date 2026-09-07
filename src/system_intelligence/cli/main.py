@@ -772,8 +772,14 @@ def check_updates(
     for assessment in check.assessments:
         diff = assessment.state_diff
         typer.echo(f"\n- {diff.identity.name} ({diff.identity.distribution_source})")
+        available_release_info = diff.to_state.release_info
+        released_at = (
+            f" (released {available_release_info.released_at.date().isoformat()})"
+            if available_release_info and available_release_info.released_at
+            else ""
+        )
         typer.echo(f"    current: {diff.from_state.version or 'unknown'}")
-        typer.echo(f"    available: {diff.to_state.version or 'unknown'}")
+        typer.echo(f"    available: {diff.to_state.version or 'unknown'}{released_at}")
         typer.echo(
             f"    verdict: {assessment.verdict.value} ({assessment.verdict_confidence.value})"
         )

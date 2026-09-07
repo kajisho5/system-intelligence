@@ -282,6 +282,20 @@ def _affected_by_dependency_scan(
     ]
 
 
+def _release_date_suffix(state: ComponentState) -> str:
+    """`" (released YYYY-MM-DD)"` when `state.release_info.released_at` is
+    known, else `""` -- every ecosystem provider populates this from real
+    registry data (PyPI's `upload_time_iso_8601`, npm's `time[version]`,
+    crates.io's `created_at`, the Go proxy's `Time`, Maven's
+    `lastUpdated`), but nothing downstream ever surfaced it, despite this
+    module's own docstring naming "release activity" as exactly what it
+    implements.
+    """
+    if state.release_info is None or state.release_info.released_at is None:
+        return ""
+    return f" (released {state.release_info.released_at.date().isoformat()})"
+
+
 def assess_impact(
     state_diff: StateDiff,
     components: list[Component],
@@ -365,7 +379,8 @@ def assess_impact(
         verdict_confidence = Confidence.MEDIUM
         unresolved = ", ".join(unknown_dimensions) or "none"
         rationale = (
-            f"An update from {from_state.version!r} to {to_state.version!r} is available, but "
+            f"An update from {from_state.version!r} to {to_state.version!r}"
+            f"{_release_date_suffix(to_state)} is available, but "
             f"{len(breaking_items)} breaking item(s) were flagged and/or the following "
             f"dimensions could not be evaluated from available evidence: {unresolved}."
         )
@@ -373,7 +388,8 @@ def assess_impact(
         verdict = UpdateVerdict.UPDATE_RECOMMENDED
         verdict_confidence = Confidence.HIGH
         rationale = (
-            f"An update from {from_state.version!r} to {to_state.version!r} is available; "
+            f"An update from {from_state.version!r} to {to_state.version!r}"
+            f"{_release_date_suffix(to_state)} is available; "
             "capability, dependency, and interface impact were all evaluated with no breaking "
             "changes found."
         )
