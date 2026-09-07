@@ -307,7 +307,13 @@ def _extract_cargo_dependencies(path: Path, rel_path: str) -> list[Dependency]:
                 evidence.append(_cargo_lock_evidence(lock_rel_path, name, resolved_version))
             dependencies.append(
                 Dependency(
-                    id=stable_id("dependency", "cargo", rel_path, name),
+                    # `section` disambiguates a crate legitimately declared
+                    # in more than one of Cargo's three dependency tables
+                    # (e.g. `serde` as both a normal and a dev-dependency,
+                    # possibly with different version/feature specs) -- the
+                    # same fix already applied to the npm extractor's
+                    # equivalent `dependencies`/`devDependencies` collision.
+                    id=stable_id("dependency", "cargo", rel_path, section, name),
                     name=name,
                     ecosystem="cargo",
                     version_constraint=constraint,

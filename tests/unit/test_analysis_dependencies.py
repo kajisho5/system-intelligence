@@ -375,6 +375,28 @@ def test_extract_cargo_dependencies_dev_and_build_sections(tmp_path: Path) -> No
     assert {d.name for d in dependencies} == {"criterion", "cc"}
 
 
+def test_extract_cargo_dependencies_same_crate_in_multiple_sections_gets_distinct_ids(
+    tmp_path: Path,
+) -> None:
+    """A crate legitimately declared in more than one of Cargo's three
+    dependency tables (e.g. `serde` as both a normal dependency and a
+    dev-dependency, with a different version) is a real, common pattern --
+    the resulting `Dependency` records must not collide on `id` just
+    because `_extract_cargo_dependencies` built it without including
+    which section the entry came from, the same bug already fixed for
+    npm's `dependencies`/`devDependencies` collision."""
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "x"\n[dependencies]\nserde = "1.0"\n[dev-dependencies]\nserde = "1.2"\n',
+        encoding="utf-8",
+    )
+    manifests = [PackageManifest(path="Cargo.toml", ecosystem="cargo", language="Rust")]
+
+    dependencies = extract_dependencies(tmp_path, manifests)
+
+    assert {d.version_constraint for d in dependencies} == {"1.0", "1.2"}
+    assert len({d.id for d in dependencies}) == 2
+
+
 def test_extract_cargo_dependencies_path_and_git_deps_without_version_are_skipped(
     tmp_path: Path,
 ) -> None:
