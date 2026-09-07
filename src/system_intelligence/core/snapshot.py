@@ -33,6 +33,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, SerializeAsAny
 
+from system_intelligence import __version__
 from system_intelligence.core.capability import Capability
 from system_intelligence.core.entities import (
     ADR,
@@ -57,7 +58,12 @@ from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.research import ResearchResult
 from system_intelligence.core.verification import Verification
 
-_SNAPSHOT_VERSION = "0.1.0"
+# Read from the package's own __version__ (not a separately hardcoded
+# literal) so this compatibility marker never drifts from the actual
+# tool version -- docs/design/docs/12-storage-and-state.md documents it
+# as "the one compatibility marker", not an independently-versioned
+# schema number.
+_SNAPSHOT_VERSION = __version__
 
 #: Concrete Component subtype per kind, so a round trip through the
 #: canonical JSON layout doesn't collapse everything back to the base

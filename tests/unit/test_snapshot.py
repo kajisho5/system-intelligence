@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from system_intelligence import __version__
 from system_intelligence.core.capability import Capability
 from system_intelligence.core.entities import Component, Repository, Skill, Target
 from system_intelligence.core.enums import (
@@ -15,6 +16,17 @@ from system_intelligence.core.snapshot import Snapshot
 
 def _target() -> Target:
     return Target(name="system-intelligence", kind=TargetKind.LOCAL_PATH, locator="/repo")
+
+
+def test_snapshot_tool_version_defaults_to_the_package_version() -> None:
+    """`Snapshot.tool_version` is documented (docs/design/docs/12-storage-
+    and-state.md) as "the one compatibility marker" for the tool's actual
+    version -- it must track `system_intelligence.__version__` directly,
+    not a separately hardcoded literal that could silently drift from it
+    on every future version bump."""
+    snapshot = Snapshot(target=_target())
+
+    assert snapshot.tool_version == __version__
 
 
 def test_snapshot_round_trips_through_directory(tmp_path: Path) -> None:
