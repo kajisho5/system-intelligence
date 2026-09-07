@@ -653,6 +653,29 @@ def test_propose_command_prints_capabilities_interfaces_and_strategies(tmp_path:
     assert "Rollback strategy: " in result.stdout
 
 
+def test_propose_command_prints_interface_fields_for_skill(tmp_path: Path) -> None:
+    """`Interfaces` only ever names the SKILL.md convention as a whole --
+    `Interface fields` is the field-level breakdown, grounded in exactly
+    what discovery/skills.py parses out of SKILL.md frontmatter, including
+    which fields are required vs optional."""
+    result = runner.invoke(
+        app,
+        [
+            "propose",
+            "Need a linter Skill",
+            "--requirement",
+            "lints Python",
+            "--target-kind",
+            "skill",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Interface fields:" in result.stdout
+    assert "- name (required):" in result.stdout
+    assert "- allowed-tools (optional):" in result.stdout
+
+
 def test_propose_command_unknown_target_kind_fails_clearly() -> None:
     result = runner.invoke(app, ["propose", "Need X", "--target-kind", "spaceship"])
 

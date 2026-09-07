@@ -482,6 +482,12 @@ _SCRIPT = r"""
       listOrNone(p.capabilities),
       el("h4", null, "Interfaces"),
       listOrNone(p.interfaces),
+      el("h4", null, "Interface fields"),
+      p.interface_fields.length
+        ? el("ul", null, p.interface_fields.map(function (f) {
+            return el("li", null, el("code", null, f.name), " (" + (f.required ? "required" : "optional") + "): " + f.description);
+          }))
+        : el("p", null, "None recorded."),
       el("h4", null, "Dependencies"),
       listOrNone(p.dependencies),
       el("h4", null, "Implementation stages"),

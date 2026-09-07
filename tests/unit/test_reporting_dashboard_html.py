@@ -2,6 +2,7 @@ import json
 
 from system_intelligence.core.entities import Repository, Target
 from system_intelligence.core.enums import TargetKind
+from system_intelligence.core.proposals import InterfaceField, Proposal
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.core.verification import Verification
 from system_intelligence.reporting.dashboard_data import build_dashboard_data
@@ -92,6 +93,44 @@ def test_generate_dashboard_html_wires_proposal_detail_toggle() -> None:
     html = generate_dashboard_html(data)
 
     assert "toggleProposalDetail" in html
+
+
+def test_generate_dashboard_html_wires_proposal_interface_fields() -> None:
+    """`p.interface_fields` (the field-level breakdown of `p.interfaces`,
+    e.g. SKILL.md's `name`/`description`/`allowed-tools`/...) must be
+    rendered in the same detail block, not just embedded in the JSON."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "Interface fields" in html
+    assert "p.interface_fields" in html
+
+
+def test_generate_dashboard_html_embeds_proposal_interface_fields_in_json() -> None:
+    proposal = Proposal(
+        kind="creation",
+        problem="Need a linter Skill",
+        interfaces=["SKILL.md front matter (name, description) as the discovery contract."],
+        interface_fields=[
+            InterfaceField(name="name", required=True, description="The Skill's own name."),
+            InterfaceField(
+                name="allowed-tools", required=False, description="Tools it is scoped to use."
+            ),
+        ],
+    )
+    snapshot = Snapshot(target=_target(), proposals=[proposal])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    start = html.index('id="si-dashboard-data">') + len('id="si-dashboard-data">')
+    end = html.index("</script>", start)
+    payload = json.loads(html[start:end])
+
+    fields = payload["proposals"][0]["interface_fields"]
+    assert {f["name"]: f["required"] for f in fields} == {"name": True, "allowed-tools": False}
 
 
 def test_generate_dashboard_html_component_detail_filters_assessments_by_affected_entity_ids() -> (

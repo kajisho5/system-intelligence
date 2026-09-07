@@ -25,6 +25,23 @@ class Change(BaseModel):
     required_permission_level: PermissionLevel = PermissionLevel.GENERATE_LOCAL_ARTIFACTS
 
 
+class InterfaceField(BaseModel):
+    """One concrete field of a Proposal's target-kind interface contract.
+
+    `Proposal.interfaces` (a single free-text sentence per kind) only ever
+    names the convention as a whole ("SKILL.md front matter..."); this is
+    the field-level breakdown docs/07-improvement-engine.md's "Proposal
+    must contain: interface" implies but `interfaces` alone doesn't give —
+    each entry mirrors a field this project's own discovery layer already
+    parses for that kind (never an invented shape), so a creation proposal
+    names exactly what discovery will later expect to find.
+    """
+
+    name: str = Field(description="The literal frontmatter/schema key, e.g. 'allowed-tools'.")
+    required: bool
+    description: str
+
+
 class Proposal(BaseModel):
     id: str = Field(default_factory=lambda: f"proposal-{uuid4().hex[:12]}")
     kind: str = Field(
@@ -39,6 +56,7 @@ class Proposal(BaseModel):
     proposed_component_name: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     interfaces: list[str] = Field(default_factory=list)
+    interface_fields: list[InterfaceField] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     implementation_stages: list[str] = Field(default_factory=list)
     changes: list[Change] = Field(default_factory=list)

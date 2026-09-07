@@ -175,6 +175,7 @@ def test_target_kind_omitted_keeps_generic_wording() -> None:
         == "Document the capability and how it satisfies each requirement."
     )
     assert proposal.interfaces == []
+    assert proposal.interface_fields == []
     assert proposal.security_considerations == (
         "Review any new external dependencies, network access, or credential/permission "
         "grants this introduces."
@@ -201,17 +202,43 @@ def test_target_kind_skill_shapes_test_and_documentation_strategy() -> None:
     assert any("SKILL.md" in stage for stage in proposal.implementation_stages)
 
 
+def test_target_kind_skill_populates_field_level_interface_schema() -> None:
+    """`interfaces` only ever names the SKILL.md convention as a whole --
+    `interface_fields` is the field-level breakdown (docs/07-improvement-
+    engine.md's "Proposal must contain: interface"), grounded in exactly
+    what discovery/skills.py actually parses out of SKILL.md frontmatter,
+    including which are required vs optional."""
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.SKILL)
+    field_names = {f.name for f in proposal.interface_fields}
+    assert field_names == {"name", "description", "allowed-tools", "disallowed-tools", "paths"}
+    required = {f.name for f in proposal.interface_fields if f.required}
+    assert required == {"name", "description"}
+    allowed_tools = next(f for f in proposal.interface_fields if f.name == "allowed-tools")
+    assert not allowed_tools.required
+    assert "tool_names" in allowed_tools.description
+
+
 def test_target_kind_agent_populates_agent_md_interface() -> None:
     proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.AGENT)
     assert len(proposal.interfaces) == 1
     assert ".claude/agents" in proposal.interfaces[0]
 
 
+def test_target_kind_agent_populates_field_level_interface_schema() -> None:
+    proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.AGENT)
+    field_names = {f.name for f in proposal.interface_fields}
+    assert field_names == {"name", "description", "model", "tools", "disallowedTools"}
+    required = {f.name for f in proposal.interface_fields if f.required}
+    assert required == {"name", "description"}
+
+
 def test_target_kind_without_dedicated_interface_stays_empty() -> None:
     """A ComponentKind with no single well-known interface convention
-    (e.g. DOCUMENT) must get an empty interfaces list, never a guessed one."""
+    (e.g. DOCUMENT) must get an empty interfaces list, never a guessed one --
+    same discipline applies to interface_fields."""
     proposal = propose_solution("Need X", requirements=["r"], target_kind=ComponentKind.DOCUMENT)
     assert proposal.interfaces == []
+    assert proposal.interface_fields == []
 
 
 def test_target_kind_tool_has_dedicated_documentation_requirements() -> None:
@@ -262,7 +289,42 @@ def test_target_kind_applies_to_integration_proposal() -> None:
     )
     assert proposal.kind == "integration"
     assert proposal.test_strategy is not None and "trigger" in proposal.test_strategy
-    assert len(proposal.interfaces) == 1 and "trigger" in proposal.interfaces[0]
+
+
+def test_target_kind_interface_fields_applies_to_adoption_proposal() -> None:
+    """`interface_fields` must reach the adoption construction site too,
+    not just creation -- the same wiring gap `interfaces` itself once had
+    before it was threaded through all three Proposal(...) call sites."""
+    candidate = _candidate("psf/markdown-it-py")
+    proposal = propose_solution(
+        "Need X",
+        research_results=[candidate],
+        functional_fit_confirmed=True,
+        target_kind=ComponentKind.SKILL,
+    )
+    assert proposal.kind == "adoption"
+    assert {f.name for f in proposal.interface_fields} == {
+        "name",
+        "description",
+        "allowed-tools",
+        "disallowed-tools",
+        "paths",
+    }
+
+
+def test_target_kind_interface_fields_applies_to_integration_proposal() -> None:
+    candidate = _candidate("someone/abandoned", license=None, archived=True)
+    proposal = propose_solution(
+        "Need X", research_results=[candidate], target_kind=ComponentKind.AGENT
+    )
+    assert proposal.kind == "integration"
+    assert {f.name for f in proposal.interface_fields} == {
+        "name",
+        "description",
+        "model",
+        "tools",
+        "disallowedTools",
+    }
 
 
 def test_target_kind_without_specific_wording_falls_back_to_generic() -> None:
