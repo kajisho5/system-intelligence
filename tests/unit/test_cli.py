@@ -2062,6 +2062,58 @@ def test_dashboard_command_check_updates_merges_recommendation(
     assert "Update pydantic from 2.0.0 to 2.9.0." in objectives
 
 
+def test_dashboard_command_compare_with_surfaces_recorded_update_recommendation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`si check-updates --record` appends an actionable verdict's
+    Recommendation to `recommendations.json` (see
+    `test_check_updates_command_record_appends_recommendation_to_snapshot`),
+    and `check_updates()`'s own docstring promises `si dashboard
+    --compare-with` then surfaces it -- but a fresh `dashboard()` run
+    unconditionally overwrites `snapshot.recommendations` with only
+    Finding-based ones before the `--compare-with` merge, and that merge
+    block never included `recommendations` among the fields it folds in
+    from the accumulator (unlike proposals/executions/verification/
+    approvals/research, all merged there already), so the recorded update
+    recommendation silently never reached the dashboard at all."""
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        return 200, json.dumps(_fake_pypi_response("pydantic", "2.9.0")).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+
+    snap_out = tmp_path / "snap"
+    runner.invoke(app, ["diagnose", str(target_dir), "--out", str(snap_out)])
+    snap_dir = next(snap_out.glob("snapshot-*"))
+
+    check_result = runner.invoke(app, ["check-updates", str(target_dir), "--record", str(snap_dir)])
+    assert check_result.exit_code == 0
+
+    out_dir = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        ["dashboard", str(target_dir), "--out", str(out_dir), "--compare-with", str(snap_dir)],
+    )
+
+    assert result.exit_code == 0
+    dashboard_json = json.loads(
+        (out_dir / "dashboard.html")
+        .read_text(encoding="utf-8")
+        .split('id="si-dashboard-data">', 1)[1]
+        .split("</script>", 1)[0]
+    )
+    objectives = [r["objective"] for r in dashboard_json["recommendations"]]
+    assert "Update pydantic from 2.0.0 to 2.9.0." in objectives
+
+
 def test_dashboard_command_check_vulnerabilities_populates_advisories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
