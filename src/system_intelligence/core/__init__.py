@@ -40,7 +40,7 @@ from system_intelligence.core.enums import (
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval, AuditLogEntry
-from system_intelligence.core.proposals import Change, Proposal
+from system_intelligence.core.proposals import Change, InterfaceField, Proposal
 from system_intelligence.core.recommendations import Recommendation
 from system_intelligence.core.relationships import Relationship
 from system_intelligence.core.research import ResearchResult
@@ -68,6 +68,7 @@ __all__ = [
     "EvidenceKind",
     "Finding",
     "Interface",
+    "InterfaceField",
     "MCPServer",
     "PermissionLevel",
     "Proposal",

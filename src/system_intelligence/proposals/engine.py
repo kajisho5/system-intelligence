@@ -49,7 +49,7 @@ from pathlib import Path
 from system_intelligence.core.enums import ComponentKind, Confidence, PermissionLevel, UpdateVerdict
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.impact import ImpactAssessment
-from system_intelligence.core.proposals import Change, Proposal
+from system_intelligence.core.proposals import Change, InterfaceField, Proposal
 from system_intelligence.core.research import ResearchResult
 from system_intelligence.execution.plan import ChangePlan
 from system_intelligence.research.scoring import CandidateAssessment, rank_candidates
@@ -218,6 +218,92 @@ _INTERFACES_BY_KIND: dict[ComponentKind, list[str]] = {
     ],
 }
 
+#: Field-level breakdown of `_INTERFACES_BY_KIND`'s own convention
+#: (`Proposal.interface_fields`) -- each entry mirrors exactly what this
+#: project's own discovery layer already reads for that kind
+#: (`discovery/skills.py`, `discovery/agents.py`), including which
+#: Component attribute it populates, never an invented field. Only SKILL
+#: and AGENT have one: those are the only two kinds with a single,
+#: explicit, already-parsed frontmatter convention this project has
+#: verified end-to-end -- every other kind (including any not listed
+#: here) gets the empty list, same as `_INTERFACES_BY_KIND`'s own
+#: fallback, rather than a guessed schema.
+_INTERFACE_FIELDS_BY_KIND: dict[ComponentKind, list[InterfaceField]] = {
+    ComponentKind.SKILL: [
+        InterfaceField(
+            name="name",
+            required=True,
+            description=(
+                "The Skill's own name (discovery/skills.py; required for is_standard_format)."
+            ),
+        ),
+        InterfaceField(
+            name="description",
+            required=True,
+            description=(
+                "One-line summary of what the Skill does (required for is_standard_format)."
+            ),
+        ),
+        InterfaceField(
+            name="allowed-tools",
+            required=False,
+            description=(
+                "Tools the Skill is scoped to use, in discovery/frontmatter.py::"
+                "split_tool_list's paren-aware list syntax; populates Skill.tool_names."
+            ),
+        ),
+        InterfaceField(
+            name="disallowed-tools",
+            required=False,
+            description="Tools explicitly denied, same list syntax; populates Skill.permissions.",
+        ),
+        InterfaceField(
+            name="paths",
+            required=False,
+            description=(
+                "Comma-separated glob pattern(s) that limit when the Skill activates "
+                "(discovery/frontmatter.py::split_glob_list); populates Skill.triggers."
+            ),
+        ),
+    ],
+    ComponentKind.AGENT: [
+        InterfaceField(
+            name="name",
+            required=True,
+            description=(
+                "The agent's own name (discovery/agents.py; required for is_standard_format)."
+            ),
+        ),
+        InterfaceField(
+            name="description",
+            required=True,
+            description=(
+                "One-line summary of what the agent does (required for is_standard_format)."
+            ),
+        ),
+        InterfaceField(
+            name="model",
+            required=False,
+            description=(
+                "Model provider/id this subagent should run on; populates Agent.model_provider."
+            ),
+        ),
+        InterfaceField(
+            name="tools",
+            required=False,
+            description=(
+                "Tools the agent is granted, same paren-aware list syntax as a Skill's "
+                "allowed-tools; populates Agent.tool_names."
+            ),
+        ),
+        InterfaceField(
+            name="disallowedTools",
+            required=False,
+            description="Tools explicitly denied, same list syntax; populates Agent.permissions.",
+        ),
+    ],
+}
+
 
 def _test_strategy_for(target_kind: ComponentKind | None) -> str:
     if target_kind is None:
@@ -235,6 +321,12 @@ def _interfaces_for(target_kind: ComponentKind | None) -> list[str]:
     if target_kind is None:
         return []
     return _INTERFACES_BY_KIND.get(target_kind, [])
+
+
+def _interface_fields_for(target_kind: ComponentKind | None) -> list[InterfaceField]:
+    if target_kind is None:
+        return []
+    return _INTERFACE_FIELDS_BY_KIND.get(target_kind, [])
 
 
 def _security_considerations_for(target_kind: ComponentKind | None) -> str:
@@ -375,9 +467,12 @@ def propose_solution(
     verified by running scenarios rather than unit tests -- and populates
     `interfaces` with that kind's own explicit, already-detected discovery
     convention where one exists (a Skill's SKILL.md front matter, an
-    Agent's `.claude/agents/*.md` front matter, ...). Omit it (the
-    default) to get the original generic wording and an empty
-    `interfaces` list, unchanged for every existing caller.
+    Agent's `.claude/agents/*.md` front matter, ...), and `interface_fields`
+    with that same convention's field-level breakdown (SKILL/AGENT only --
+    the two kinds with one explicit, already-parsed frontmatter contract;
+    every other kind gets the empty list, same as `interfaces`). Omit it
+    (the default) to get the original generic wording and empty
+    `interfaces`/`interface_fields` lists, unchanged for every existing caller.
     """
     evidence = evidence or []
     requirements = requirements or []
@@ -385,6 +480,7 @@ def propose_solution(
     test_strategy = _test_strategy_for(target_kind)
     documentation_requirements = _documentation_requirements_for(target_kind)
     interfaces = _interfaces_for(target_kind)
+    interface_fields = _interface_fields_for(target_kind)
     security_considerations = _security_considerations_for(target_kind)
     implementation_stages = _implementation_stages_for(target_kind)
 
@@ -400,6 +496,7 @@ def propose_solution(
             ),
             capabilities=list(requirements),
             interfaces=interfaces,
+            interface_fields=interface_fields,
             implementation_stages=implementation_stages,
             test_strategy=test_strategy,
             security_considerations=security_considerations,
@@ -422,6 +519,7 @@ def propose_solution(
             proposed_component_name=best.result.identifier,
             capabilities=list(requirements),
             interfaces=interfaces,
+            interface_fields=interface_fields,
             dependencies=[best.result.identifier],
             implementation_stages=implementation_stages,
             test_strategy=test_strategy,
@@ -449,6 +547,7 @@ def propose_solution(
         why_existing_solutions_insufficient=reason,
         capabilities=list(requirements),
         interfaces=interfaces,
+        interface_fields=interface_fields,
         dependencies=[best.result.identifier],
         implementation_stages=implementation_stages,
         test_strategy=test_strategy,
