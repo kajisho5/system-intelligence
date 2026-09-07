@@ -9,11 +9,16 @@ from system_intelligence.analysis.gaps import (
     load_declared_requirements,
 )
 from system_intelligence.core.capability import Capability
+from system_intelligence.core.entities import Repository
 from system_intelligence.core.enums import CapabilityStatus, Confidence
 
 
 def _capability(name: str, status: CapabilityStatus = CapabilityStatus.AVAILABLE) -> Capability:
     return Capability(name=name, status=status, confidence=Confidence.HIGH)
+
+
+def _repository() -> Repository:
+    return Repository(id="r1", name="repo", path=".")
 
 
 def test_load_declared_requirements_returns_none_when_file_missing(tmp_path: Path) -> None:
@@ -74,18 +79,19 @@ def test_load_declared_requirements_wrong_shape_raises(tmp_path: Path) -> None:
 def test_detect_capability_gaps_reports_missing_capability() -> None:
     declared = DeclaredRequirements(capabilities=[DeclaredCapability(name="PDF export")])
 
-    findings = detect_capability_gaps(declared, capabilities=[])
+    findings = detect_capability_gaps(declared, capabilities=[], repository=_repository())
 
     assert len(findings) == 1
     assert findings[0].category == "capability_gap"
     assert "PDF export" in findings[0].statement
+    assert findings[0].affected_entity_ids == ["r1"]
 
 
 def test_detect_capability_gaps_satisfied_by_exact_case_insensitive_match() -> None:
     declared = DeclaredRequirements(capabilities=[DeclaredCapability(name="PDF Export")])
     capabilities = [_capability("pdf export")]
 
-    findings = detect_capability_gaps(declared, capabilities)
+    findings = detect_capability_gaps(declared, capabilities, _repository())
 
     assert findings == []
 
@@ -96,7 +102,7 @@ def test_detect_capability_gaps_never_matches_a_partial_status_capability() -> N
     declared = DeclaredRequirements(capabilities=[DeclaredCapability(name="PDF export")])
     capabilities = [_capability("PDF export", status=CapabilityStatus.PARTIAL)]
 
-    findings = detect_capability_gaps(declared, capabilities)
+    findings = detect_capability_gaps(declared, capabilities, _repository())
 
     assert len(findings) == 1
 
@@ -107,18 +113,20 @@ def test_detect_capability_gaps_never_fuzzy_matches() -> None:
     declared = DeclaredRequirements(capabilities=[DeclaredCapability(name="PDF export")])
     capabilities = [_capability("PDF exporting")]
 
-    findings = detect_capability_gaps(declared, capabilities)
+    findings = detect_capability_gaps(declared, capabilities, _repository())
 
     assert len(findings) == 1
 
 
 def test_detect_capability_gaps_no_declared_requirements_produces_no_findings() -> None:
-    findings = detect_capability_gaps(DeclaredRequirements(), capabilities=[_capability("x")])
+    findings = detect_capability_gaps(
+        DeclaredRequirements(), capabilities=[_capability("x")], repository=_repository()
+    )
     assert findings == []
 
 
 def test_audit_capability_gaps_missing_file_contributes_zero_findings(tmp_path: Path) -> None:
-    findings = audit_capability_gaps(tmp_path, capabilities=[])
+    findings = audit_capability_gaps(tmp_path, capabilities=[], repository=_repository())
     assert findings == []
 
 
@@ -128,10 +136,11 @@ def test_audit_capability_gaps_invalid_file_produces_one_finding_not_a_crash(
     (tmp_path / ".si").mkdir()
     (tmp_path / ".si" / "requirements.json").write_text("not json", encoding="utf-8")
 
-    findings = audit_capability_gaps(tmp_path, capabilities=[])
+    findings = audit_capability_gaps(tmp_path, capabilities=[], repository=_repository())
 
     assert len(findings) == 1
     assert findings[0].category == "invalid_requirements_file"
+    assert findings[0].affected_entity_ids == ["r1"]
 
 
 def test_audit_capability_gaps_end_to_end(tmp_path: Path) -> None:
@@ -141,7 +150,7 @@ def test_audit_capability_gaps_end_to_end(tmp_path: Path) -> None:
     )
     capabilities = [_capability("satisfied")]
 
-    findings = audit_capability_gaps(tmp_path, capabilities)
+    findings = audit_capability_gaps(tmp_path, capabilities, _repository())
 
     assert len(findings) == 1
     assert "missing" in findings[0].statement

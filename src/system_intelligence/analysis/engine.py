@@ -107,7 +107,7 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
         *detect_duplicate_capabilities(capabilities),
         *audit_unused_skills([*skills, *agents], root),
         *detect_circular_dependencies(root),
-        *audit_capability_gaps(root, capabilities),
+        *audit_capability_gaps(root, capabilities, repository),
     ]
 
     updated_components = _attach_dependencies_by_component(
