@@ -52,6 +52,26 @@ def test_inspect_command_reports_summary(tmp_path: Path) -> None:
     assert "Root documents: 1 (README.md)" in result.stdout
 
 
+def test_inspect_command_reports_discovered_agents(tmp_path: Path) -> None:
+    """`si inspect` already lists discovered Skills by name but never even
+    listed Agents at all -- a peer Component discovered the same way, with
+    its own dedicated `agents = [...]` extraction never wired to any
+    output line, so a real `.claude/agents/*.md` Agent was completely
+    invisible in this command's summary, even though it fully appears in
+    both the static report and the dashboard."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "code-reviewer.md").write_text(
+        "---\nname: code-reviewer\ndescription: Reviews code for bugs\n---\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Agents: 1 (code-reviewer)" in result.stdout
+
+
 def test_inspect_command_reports_git_repository_yes_with_no_remote(tmp_path: Path) -> None:
     """A real, valid git repository with real commits but no configured
     (or unfetched) `origin` remote must never be reported as "not a git

@@ -174,6 +174,42 @@ def test_generate_html_report_includes_components_capabilities_dependencies() ->
     assert "standard format" in html
 
 
+def test_generate_html_report_shows_skill_tool_scope() -> None:
+    """`Skill.tool_names`/`permissions` (`allowed-tools`/`disallowed-tools`
+    frontmatter, `discovery/skills.py`) were already discovered and stored
+    but never rendered by any of the three user-facing surfaces -- a
+    security-relevant fact (which tools a Skill explicitly forbids itself
+    from using) invisible without opening the raw JSON snapshot."""
+    skill = Skill(
+        id="s1",
+        name="my-skill",
+        path="skills/my-skill/SKILL.md",
+        tool_names=["Bash(git add *)", "Read"],
+        permissions=["Write", "Edit"],
+    )
+    snapshot = Snapshot(target=_target(), components=[skill])
+
+    html = generate_html_report(snapshot)
+
+    assert "tools: Bash(git add *), Read" in html
+    assert "disallowed: Write, Edit" in html
+
+
+def test_generate_html_report_shows_agent_tool_scope() -> None:
+    agent = Agent(
+        id="a1",
+        name="code-reviewer",
+        tool_names=["Read", "Grep"],
+        permissions=["Write", "Edit"],
+    )
+    snapshot = Snapshot(target=_target(), components=[agent])
+
+    html = generate_html_report(snapshot)
+
+    assert "tools: Read, Grep" in html
+    assert "disallowed: Write, Edit" in html
+
+
 def test_generate_html_report_dependency_graph_attributes_to_the_owning_component() -> None:
     """The Dependency Graph previously drew every dependency as an edge
     from a single, hard-coded node labeled "repository" regardless of

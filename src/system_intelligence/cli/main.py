@@ -145,9 +145,10 @@ def _format_named_list(label: str, items: list[str]) -> str:
 
 @app.command()
 def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> None:
-    """Read-only inventory of a local or GitHub target (git metadata, structure, Skills, CI, docs).
+    """Read-only inventory of a local or GitHub target.
 
-    A GitHub repository is shallow-cloned first (see `_TARGET_ARGUMENT`'s
+    Covers git metadata, structure, Skills, Agents, CI, and docs. A GitHub
+    repository is shallow-cloned first (see `_TARGET_ARGUMENT`'s
     help text); manifest/ecosystem targets remain future work. Nothing is
     written unless `--out` is given.
     """
@@ -160,6 +161,7 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
     snapshot = result.snapshot
     repository = next(c for c in snapshot.components if isinstance(c, Repository))
     skills = [c for c in snapshot.components if c.kind == ComponentKind.SKILL]
+    agents = [c for c in snapshot.components if c.kind == ComponentKind.AGENT]
     documents = [c for c in snapshot.components if c.kind == ComponentKind.DOCUMENT]
     evidence_count = sum(len(c.evidence) for c in snapshot.components)
 
@@ -182,6 +184,7 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
     typer.echo(f"License: {repository.license or 'unknown'}")
     typer.echo(f"Languages: {', '.join(repository.languages) or 'none detected'}")
     typer.echo(_format_named_list("Skills", [s.name for s in skills]))
+    typer.echo(_format_named_list("Agents", [a.name for a in agents]))
     typer.echo(_format_named_list("CI jobs", [j.name for j in result.ci_jobs]))
     typer.echo(_format_named_list("Root documents", [d.name for d in documents]))
     typer.echo(f"Evidence collected: {evidence_count}")
