@@ -282,6 +282,21 @@ _SCRIPT = r"""
     return c ? c.name : id;
   }
 
+  function entityName(id) {
+    // Unlike Finding.affected_entity_ids (always Component ids -- every
+    // producer in analysis/*.py only ever attaches those), an
+    // ImpactAssessment's affected_entity_ids can legitimately include
+    // Capability ids too: analysis/update_intelligence.py::_traverse_affected
+    // walks PROVIDES/USES edges onward from a changed Component into the
+    // Capabilities it provides/its consumers use. componentName() alone
+    // would silently fall through to the raw internal id string for one of
+    // those -- so this also checks DATA.capabilities before giving up.
+    var name = componentName(id);
+    if (name !== id) return name;
+    var cap = DATA.capabilities.filter(function (x) { return x.id === id; })[0];
+    return cap ? cap.name : id;
+  }
+
   // Mirrors core.enums.PermissionLevel's declaration order — PermissionLevel
   // is an int Enum, so it serializes to JSON as its integer value.
   var PERMISSION_LEVEL_NAMES = ["OBSERVE", "ANALYZE", "RECOMMEND", "GENERATE_LOCAL_ARTIFACTS",
@@ -396,7 +411,7 @@ _SCRIPT = r"""
         a.unknown_dimensions.length
           ? el("p", null, "Unresolved dimensions: " + a.unknown_dimensions.join(", ")) : null,
         a.affected_entity_ids.length
-          ? el("p", null, "Affects: ", a.affected_entity_ids.map(componentName).map(chip)) : null,
+          ? el("p", null, "Affects: ", a.affected_entity_ids.map(entityName).map(chip)) : null,
         items.length ? el("ul", null, items) : el("p", null, "No further evidenced differences beyond the version change."));
     });
     var failures = DATA.update_unavailable.length ? el("div", null,

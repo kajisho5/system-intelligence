@@ -123,6 +123,28 @@ def test_generate_dashboard_html_component_detail_filters_assessments_by_affecte
     ) in html
 
 
+def test_generate_dashboard_html_updates_affects_line_resolves_capability_ids() -> None:
+    """`renderUpdates`'s "Affects: " line previously ran every id in
+    `ImpactAssessment.affected_entity_ids` through `componentName`, which
+    only ever searches `DATA.components` -- but that list can legitimately
+    contain Capability ids too: `analysis/update_intelligence.py::
+    _traverse_affected` walks PROVIDES/USES edges onward from a changed
+    Component into the Capabilities it provides/its consumers use (`core/
+    impact.py`'s own field description: "Component ids... plus any
+    Capability and consumer-Component ids"). A Capability id fell through
+    `componentName`'s lookup and rendered as the raw internal id string
+    (e.g. "capability-3f9a2b1c8d4e") instead of its real name. Fixed via a
+    new `entityName` helper that also checks `DATA.capabilities`."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "a.affected_entity_ids.map(componentName).map(chip)" not in html
+    assert "a.affected_entity_ids.map(entityName).map(chip)) : null," in html
+    assert "function entityName(id)" in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)
