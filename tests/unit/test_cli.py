@@ -1281,6 +1281,33 @@ def test_check_updates_command_record_appends_proposal_to_snapshot(
     assert recorded[0]["kind"] == "component_update"
 
 
+def test_check_updates_command_shows_release_date_when_known(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target_dir = tmp_path / "target"
+    target_dir.mkdir()
+    (target_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["pydantic==2.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    def _fake_http_get(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        response = _fake_pypi_response("pydantic", "2.9.0")
+        response["releases"] = {"2.9.0": [{"upload_time_iso_8601": "2026-01-15T00:00:00.000000Z"}]}
+        return 200, json.dumps(response).encode()
+
+    monkeypatch.setattr(
+        "system_intelligence.research.providers.pypi._default_http_get", _fake_http_get
+    )
+
+    result = runner.invoke(app, ["check-updates", str(target_dir)])
+
+    assert result.exit_code == 0
+    assert "available: 2.9.0 (released 2026-01-15)" in result.stdout
+    why_line = next(line for line in result.stdout.splitlines() if line.strip().startswith("why:"))
+    assert "(released 2026-01-15)" in why_line
+
+
 def test_check_updates_command_prints_recommendation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

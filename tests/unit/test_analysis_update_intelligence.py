@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from system_intelligence.analysis.update_intelligence import (
     assess_impact,
     build_current_state,
@@ -293,6 +295,38 @@ def test_assess_impact_never_recommends_update_from_version_alone() -> None:
 
     assert assessment.verdict == UpdateVerdict.REVIEW_REQUIRED
     assert assessment.unknown_dimensions  # capability/dependency/interface/installation unresolved
+
+
+def test_assess_impact_rationale_includes_release_date_when_known() -> None:
+    """release_info.released_at is populated with real data by every
+    ecosystem provider but was never surfaced anywhere -- it must appear
+    in the verdict rationale when known, not be silently discarded."""
+    dep = _dependency(resolved_version="0.8.2")
+    current = build_current_state(dep)
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(
+        identity=identity,
+        provider="npm",
+        version="0.9.2",
+        release_info=ReleaseInfo(version="0.9.2", released_at=datetime(2026, 1, 15, tzinfo=UTC)),
+    )
+    diff = diff_states(current, available)
+
+    assessment = assess_impact(diff, [])
+
+    assert "(released 2026-01-15)" in assessment.verdict_rationale
+
+
+def test_assess_impact_rationale_omits_release_date_when_unknown() -> None:
+    dep = _dependency(resolved_version="0.8.2")
+    current = build_current_state(dep)
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    diff = diff_states(current, available)
+
+    assessment = assess_impact(diff, [])
+
+    assert "released" not in assessment.verdict_rationale
 
 
 def test_assess_impact_finds_affected_components() -> None:
