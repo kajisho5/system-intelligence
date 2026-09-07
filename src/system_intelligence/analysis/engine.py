@@ -17,19 +17,15 @@ from system_intelligence.analysis.capabilities import (
     extract_capabilities,
 )
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
-from system_intelligence.analysis.dependencies import extract_dependencies_by_manifest
+from system_intelligence.analysis.dependencies import (
+    attach_dependencies_by_component,
+    extract_dependencies_by_manifest,
+)
 from system_intelligence.analysis.documentation import audit_documentation
 from system_intelligence.analysis.gaps import audit_capability_gaps
 from system_intelligence.analysis.relationships import build_relationships
 from system_intelligence.analysis.unused import audit_unused_skills
-from system_intelligence.core.entities import (
-    Agent,
-    Component,
-    Dependency,
-    Document,
-    Repository,
-    Skill,
-)
+from system_intelligence.core.entities import Agent, Document, Repository, Skill
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery.inventory import DiscoveryResult
 
@@ -37,55 +33,6 @@ from system_intelligence.discovery.inventory import DiscoveryResult
 @dataclass(frozen=True)
 class AnalysisResult:
     snapshot: Snapshot
-
-
-def _component_directory(component: Component) -> str | None:
-    """The directory (relative to the repo root) whose manifest would belong
-    to `component`, if any. `None` means there is nothing to attribute a
-    manifest to — the Repository is always "." (see `discovery.inventory`);
-    any other Component only has a known directory when discovery recorded
-    its own `path` (e.g. a Skill's `path` is its `SKILL.md` file, so its
-    directory is that file's parent). Never guessed from a name or kind.
-    """
-    if isinstance(component, Repository):
-        return "."
-    if component.path is None:
-        return None
-    return str(Path(component.path).parent)
-
-
-def _attach_dependencies_by_component(
-    components: list[Component],
-    dependencies_by_directory: dict[str, list[Dependency]],
-    repository_id: str,
-) -> list[Component]:
-    """Attribute each manifest's dependencies to the Component whose own
-    directory the manifest lives in, falling back to the Repository when no
-    other Component's directory matches — never a new Component, never a
-    silent drop.
-    """
-    directory_to_component_id: dict[str, str] = {}
-    for component in components:
-        directory = _component_directory(component)
-        if directory is None:
-            continue
-        # First match wins: two Components should not legitimately share a
-        # directory (each Skill is keyed by its own SKILL.md path), so this
-        # only ever matters for the Repository's own "." entry.
-        directory_to_component_id.setdefault(directory, component.id)
-
-    dependencies_by_component_id: dict[str, list[Dependency]] = {}
-    for directory, dependencies in dependencies_by_directory.items():
-        component_id = directory_to_component_id.get(directory, repository_id)
-        dependencies_by_component_id.setdefault(component_id, []).extend(dependencies)
-
-    def _with_dependencies(component: Component) -> Component:
-        extra = dependencies_by_component_id.get(component.id)
-        if not extra:
-            return component
-        return component.model_copy(update={"dependencies": [*component.dependencies, *extra]})
-
-    return [_with_dependencies(component) for component in components]
 
 
 def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
@@ -110,7 +57,7 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
         *audit_capability_gaps(root, capabilities, repository),
     ]
 
-    updated_components = _attach_dependencies_by_component(
+    updated_components = attach_dependencies_by_component(
         snapshot.components, dependencies_by_directory, repository.id
     )
     capabilities = attach_consumers(capabilities, updated_components)

@@ -94,6 +94,29 @@ def test_dependency_extraction_without_skill_detection(tmp_path: Path) -> None:
     assert {d.name for d in repository.dependencies} == {"pydantic"}
 
 
+def test_dependency_extraction_attributes_to_owning_skill_not_repository(tmp_path: Path) -> None:
+    """`analyze_local_repository` (the `si diagnose` engine) attributes a
+    Skill's own manifest to that Skill, not the Repository -- this second
+    orchestration engine must produce the identical fact for the same
+    "diagnose" intent, not silently dump every manifest onto the
+    Repository regardless of which Component's directory it lives in."""
+    skill_dir = tmp_path / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: x\n---\n", encoding="utf-8")
+    (skill_dir / "package.json").write_text(
+        '{"dependencies": {"left-pad": "1.0.0"}}', encoding="utf-8"
+    )
+
+    snapshot = run_capabilities(str(tmp_path), resolve_intent("diagnose"))
+
+    skill = next(c for c in snapshot.components if c.kind == ComponentKind.SKILL)
+    repository = next(c for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert {d.name for d in skill.dependencies} == {"left-pad"}
+    assert repository.dependencies == []
+    depends_on = [r for r in snapshot.relationships if r.type == RelationshipType.DEPENDS_ON]
+    assert any(r.source_id == skill.id for r in depends_on)
+
+
 def test_agent_detection_runs_independently(tmp_path: Path) -> None:
     agents_dir = tmp_path / ".claude" / "agents"
     agents_dir.mkdir(parents=True)
