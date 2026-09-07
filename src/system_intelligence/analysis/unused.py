@@ -11,6 +11,7 @@ confirmation).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from system_intelligence.core.entities import Agent, Skill
@@ -66,6 +67,15 @@ def _find_references(component: Skill | Agent, file_contents: dict[str, str]) ->
     """
     component_path = Path(component.path) if component.path else None
     component_dir_parts = component_path.parent.parts if component_path else ()
+    # Word-boundary match, not a bare substring check: a plain `in` test
+    # (the previous implementation) treats "read" as "referenced" by
+    # matching inside "already", "readme", etc. -- every other name-match
+    # in this codebase (`analysis/capabilities.py`'s exact dict-key
+    # matches, `proposals/engine.py`'s `\b`-bounded manifest-patcher
+    # regexes) already avoids this, so a short/common component name
+    # (`read`, `run`, `test`, `docs`, ...) was the one case where this
+    # detector could never actually flag an unused component.
+    name_pattern = re.compile(r"\b" + re.escape(component.name) + r"\b")
 
     referencing_files: list[str] = []
     for rel_path_str, text in file_contents.items():
@@ -74,7 +84,7 @@ def _find_references(component: Skill | Agent, file_contents: dict[str, str]) ->
             continue
         if component_dir_parts and rel_parts[: len(component_dir_parts)] == component_dir_parts:
             continue
-        if component.name in text:
+        if name_pattern.search(text):
             referencing_files.append(rel_path_str)
     return referencing_files
 

@@ -20,6 +20,26 @@ def test_classify_skill_usage_unreferenced(tmp_path: Path) -> None:
     assert references == []
 
 
+def test_classify_skill_usage_short_name_not_matched_as_substring(tmp_path: Path) -> None:
+    """A bare substring check previously treated `read` as "referenced"
+    because it occurs inside `already` -- any short/common component name
+    (`read`, `run`, `test`, `docs`, ...) could then never actually be
+    flagged as unused. Word-boundary matching fixes this without
+    affecting an exact-word reference (see the test below)."""
+    skill_dir = tmp_path / "skills" / "read"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: read\n---\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "This project already has extensive documentation.\n", encoding="utf-8"
+    )
+
+    skill = Skill(name="read", path="skills/read/SKILL.md")
+    status, references = classify_skill_usage(skill, tmp_path)
+
+    assert status == UsageStatus.UNREFERENCED
+    assert references == []
+
+
 def test_classify_skill_usage_referenced(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "used"
     skill_dir.mkdir(parents=True)
