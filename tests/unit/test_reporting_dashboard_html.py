@@ -233,6 +233,28 @@ def test_generate_dashboard_html_overview_changes_card_reflects_update_check_cha
     assert "no update check was run (--check-updates)" in html
 
 
+def test_generate_dashboard_html_overview_surfaces_repository_lifecycle_facts() -> None:
+    """The interactive dashboard's Overview "Snapshot facts" table only ever
+    showed Target/Snapshot/Generated -- unlike the static report's own
+    Overview (`reporting/html.py::_render_overview`), which already shows
+    Git branch/Remote/License/Last commit/Languages from the same
+    Repository object. `DATA.components` already embeds every one of those
+    fields on the Repository component (`DashboardData.components` uses
+    `SerializeAsAny[Component]` precisely so subclass-only fields like
+    `Repository.url`/`license` survive serialization) -- this table just
+    never read them, even though the data was already there."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert 'c.kind === "repository"' in html
+    assert "repo.license" in html
+    assert "repo.last_commit_date" in html
+    assert '["Git branch",' in html
+    assert '["License", repo.license' in html
+
+
 def test_generate_dashboard_html_never_touches_a_remote() -> None:
     snapshot = Snapshot(target=_target())
     data = build_dashboard_data(snapshot)
