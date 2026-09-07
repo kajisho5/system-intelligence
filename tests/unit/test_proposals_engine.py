@@ -114,6 +114,33 @@ def test_unknown_activity_reason_when_no_push_signal() -> None:
     assert "activity could not be determined" in reason
 
 
+def test_unknown_archived_status_never_qualifies_as_high_quality() -> None:
+    """A candidate with a license and recent activity but an *unknown*
+    archived status (e.g. from a provider whose schema has no such field,
+    like the MCP registry) must never be silently treated as "verified not
+    archived" and promoted to adoption -- "we don't know" is not the same
+    fact as "confirmed not archived"."""
+    candidate = ResearchResult(
+        query="q",
+        provider="mcp-registry",
+        source="https://example.com/a/a",
+        identifier="a/a",
+        license="MIT",
+        license_confidence=Confidence.VERIFIED,
+        maintenance_signals={
+            "last_push_at": datetime.now(UTC).isoformat()
+        },  # no "archived" key at all
+    )
+
+    proposal = propose_solution(
+        "Need X", research_results=[candidate], functional_fit_confirmed=True
+    )
+
+    assert proposal.kind == "integration"
+    reason = proposal.why_existing_solutions_insufficient or ""
+    assert "archived status could not be determined" in reason
+
+
 def test_best_candidate_selected_and_alternatives_listed() -> None:
     good = _candidate("good/repo")
     bad = _candidate("bad/repo", license=None, pushed_days_ago=3000, archived=True)

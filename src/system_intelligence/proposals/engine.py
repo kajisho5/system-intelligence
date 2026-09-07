@@ -336,7 +336,7 @@ def _is_high_quality_candidate(assessment: CandidateAssessment) -> bool:
     return (
         assessment.has_license
         and assessment.is_recently_active is True
-        and not assessment.is_archived
+        and assessment.is_archived is False
     )
 
 
@@ -348,8 +348,10 @@ def _insufficiency_reason(assessment: CandidateAssessment) -> str:
         reasons.append("not recently active")
     if assessment.is_recently_active is None:
         reasons.append("activity could not be determined")
-    if assessment.is_archived:
+    if assessment.is_archived is True:
         reasons.append("archived")
+    if assessment.is_archived is None:
+        reasons.append("archived status could not be determined")
     detail = ", ".join(reasons) if reasons else "insufficient evidence to confirm fit"
     return f"{assessment.result.identifier}: {detail}"
 

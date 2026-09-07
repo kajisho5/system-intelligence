@@ -87,17 +87,21 @@ def rank_candidates(results: list[ResearchResult]) -> list[CandidateAssessment]:
     """Order candidates by verifiable, non-popularity signals only.
 
     Sort key (descending): has a license, is recently active (unknown ranks
-    between active and inactive), is not archived. Tied candidates keep
-    their relative input order (Python's sort is stable).
+    between active and inactive), is not archived (unknown ranks between
+    confirmed-not-archived and confirmed-archived -- never tied with
+    confirmed-not-archived, since "we don't know" is not the same fact as
+    "verified not archived"). Tied candidates keep their relative input
+    order (Python's sort is stable).
     """
     assessments = [assess_candidate(r) for r in results]
     active_rank = {True: 2, None: 1, False: 0}
+    not_archived_rank = {False: 2, None: 1, True: 0}
 
     def sort_key(a: CandidateAssessment) -> tuple[int, int, int]:
         return (
             1 if a.has_license else 0,
             active_rank[a.is_recently_active],
-            0 if a.is_archived else 1,
+            not_archived_rank[a.is_archived],
         )
 
     return sorted(assessments, key=sort_key, reverse=True)

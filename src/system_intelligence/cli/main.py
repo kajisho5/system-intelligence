@@ -562,6 +562,7 @@ _RESEARCH_PROVIDER_OPTION = typer.Option(
 )
 
 _ACTIVITY_LABEL = {True: "active", False: "stale", None: "unknown"}
+_ARCHIVED_LABEL = {True: "archived", False: "not archived", None: "archived: unknown"}
 _RESEARCH_PROVIDER_ERRORS: tuple[type[Exception], ...] = (GitHubResearchError, MCPRegistryError)
 
 
@@ -625,7 +626,7 @@ def research(
         r = assessment.result
         license_str = r.license or "unknown"
         activity = _ACTIVITY_LABEL[assessment.is_recently_active]
-        archived = "archived" if assessment.is_archived else "not archived"
+        archived = _ARCHIVED_LABEL[assessment.is_archived]
         stars = "unknown" if assessment.stargazer_count is None else str(assessment.stargazer_count)
         typer.echo(f"\n- {r.identifier}")
         typer.echo(f"    source: {r.source}")

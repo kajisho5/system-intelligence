@@ -363,6 +363,10 @@ def test_research_command_mcp_registry_provider(
     assert result.exit_code == 0
     assert "com.pulsemcp/remote-filesystem" in result.stdout
     assert "license: unknown (unknown)" in result.stdout
+    # The MCP registry's own schema has no "archived" field at all -- this
+    # must never be displayed as the fabricated claim "not archived".
+    assert "archived: unknown" in result.stdout
+    assert "not archived" not in result.stdout
 
 
 def test_research_command_unknown_provider_fails_clearly(tmp_path: Path) -> None:
