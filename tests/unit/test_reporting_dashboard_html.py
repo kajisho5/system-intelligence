@@ -3,6 +3,7 @@ import json
 from system_intelligence.core.entities import Repository, Target
 from system_intelligence.core.enums import TargetKind
 from system_intelligence.core.snapshot import Snapshot
+from system_intelligence.core.verification import Verification
 from system_intelligence.reporting.dashboard_data import build_dashboard_data
 from system_intelligence.reporting.dashboard_html import generate_dashboard_html
 
@@ -143,6 +144,32 @@ def test_generate_dashboard_html_updates_affects_line_resolves_capability_ids() 
     assert "a.affected_entity_ids.map(componentName).map(chip)" not in html
     assert "a.affected_entity_ids.map(entityName).map(chip)) : null," in html
     assert "function entityName(id)" in html
+
+
+def test_generate_dashboard_html_component_detail_shows_regressions_even_when_tests_passed() -> (
+    None
+):
+    """The component detail panel's "Verifications" section previously
+    derived its badge/label from `tests_passed` alone -- but a Verification
+    can pass its own command yet still have `regressions_found` non-empty
+    (new findings appeared in the after-snapshot), which `si verify`
+    (cli/main.py) treats as a failing run too. Without this, the dashboard
+    badge could read green "success" for a Verification the CLI itself
+    flagged and exited non-zero for."""
+    verification = Verification(
+        component_id="r1",
+        tests_run=["pytest"],
+        tests_passed=True,
+        regressions_found=["a new HIGH-severity finding appeared after the change"],
+    )
+    repository = Repository(id="r1", name="repo", path=".")
+    snapshot = Snapshot(target=_target(), components=[repository], verification=[verification])
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "hasRegressions" in html
+    assert "v.regressions_found" in html
 
 
 def test_generate_dashboard_html_never_touches_a_remote() -> None:

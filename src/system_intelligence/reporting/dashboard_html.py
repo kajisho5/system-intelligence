@@ -543,8 +543,17 @@ _SCRIPT = r"""
       assessments.length ? el("ul", null, assessments.map(function (a) { return el("li", null, badge(a.verdict, verdictKind(a.verdict)), " " + a.verdict_rationale); })) : el("p", null, "Not checked."),
       el("h4", null, "Verifications"),
       verifications.length ? el("ul", null, verifications.map(function (v) {
+        // A Verification can pass its own command (tests_passed=true) yet
+        // still have regressions_found (new findings appeared in the
+        // after-snapshot) -- si verify treats that combination as failing
+        // too (cli/main.py), so the badge must not read "success" for it.
+        var hasRegressions = (v.regressions_found || []).length > 0;
         var label = v.tests_passed === null ? "unknown" : String(v.tests_passed);
-        return el("li", null, badge(label, v.tests_passed ? "success" : "critical"), " " + (v.tests_run[0] || ""));
+        return el("li", null,
+          badge(label, v.tests_passed && !hasRegressions ? "success" : "critical"), " " + (v.tests_run[0] || ""),
+          hasRegressions
+            ? el("ul", null, v.regressions_found.map(function (r) { return el("li", null, r); }))
+            : null);
       })) : el("p", null, "None recorded for this component."),
       el("h4", null, "Evidence"),
       c.evidence.length ? el("ul", null, c.evidence.map(function (e) { return el("li", null, "[" + e.kind + "] " + e.observation); })) : el("p", null, "None recorded."));
