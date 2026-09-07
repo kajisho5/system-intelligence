@@ -612,7 +612,7 @@ def research(
     provider = _research_provider(provider_name)
     cache = ResearchCache(directory=cache_dir)
 
-    results = None if no_cache else cache.get(provider.name, query)
+    results = None if no_cache else cache.get(provider.name, query, limit=limit)
     from_cache = results is not None
     if results is None:
         try:
@@ -620,7 +620,7 @@ def research(
         except _RESEARCH_PROVIDER_ERRORS as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(code=1) from exc
-        cache.set(provider.name, query, results)
+        cache.set(provider.name, query, results, limit=limit)
 
     if not results:
         typer.echo(f"No candidates found for {query!r}.")
