@@ -15,11 +15,14 @@ parses for `SKILL.md` (see `discovery/frontmatter.py`).
 Every field is recorded only when the frontmatter itself states it —
 `model_provider` is set to the raw value of the frontmatter's own
 `model:` field (e.g. `"sonnet"`, `"opus"`, `"inherit"`) when present,
-never inferred or normalized into a vendor name, and `tool_names` is only
-ever populated from an explicit `tools:` field, split on commas. A file
-with no frontmatter, or frontmatter missing `name`/`description`, is
-still reported (mirroring `detect_skills`'s own "found but not standard
-format" handling) rather than silently dropped.
+never inferred or normalized into a vendor name, and `tool_names`/
+`permissions` are only ever populated from an explicit `tools:`/
+`disallowedTools:` field respectively, each split on commas (both
+documented Claude Code subagent frontmatter fields, verified against
+code.claude.com/docs/en/sub-agents's own "Supported frontmatter fields"
+table). A file with no frontmatter, or frontmatter missing `name`/
+`description`, is still reported (mirroring `detect_skills`'s own "found
+but not standard format" handling) rather than silently dropped.
 """
 
 from __future__ import annotations
@@ -72,6 +75,12 @@ def detect_agents(root: Path) -> list[Agent]:
         model = fields.get("model") if fields else None
         tools_field = fields.get("tools") if fields else None
         tool_names = [t.strip() for t in tools_field.split(",") if t.strip()] if tools_field else []
+        disallowed_tools_field = fields.get("disallowedTools") if fields else None
+        permissions = (
+            [t.strip() for t in disallowed_tools_field.split(",") if t.strip()]
+            if disallowed_tools_field
+            else []
+        )
 
         evidence = [found_evidence]
         if fields is not None:
@@ -100,6 +109,7 @@ def detect_agents(root: Path) -> list[Agent]:
                 is_standard_format=is_standard,
                 model_provider=model,
                 tool_names=tool_names,
+                permissions=permissions,
                 evidence=evidence,
             )
         )
