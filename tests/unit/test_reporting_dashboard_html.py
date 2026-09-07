@@ -274,6 +274,27 @@ def test_generate_dashboard_html_wires_component_tool_scope_into_detail_panel() 
     assert "c.permissions" in html
 
 
+def test_generate_dashboard_html_wires_skill_bundle_contents_into_detail_panel() -> None:
+    """`Skill.triggers`/`scripts`/`references`/`assets` were already
+    embedded in `DATA.components`' JSON -- the same "already embedded,
+    never read back" gap the tool-scope fix immediately above already
+    closed for `tool_names`/`permissions` -- but `toggleComponentDetail`
+    never surfaced them, unlike every other Skill fact that panel shows."""
+    snapshot = Snapshot(target=_target())
+    data = build_dashboard_data(snapshot)
+
+    html = generate_dashboard_html(data)
+
+    assert "Triggers" in html
+    assert "Bundled scripts" in html
+    assert "Bundled references" in html
+    assert "Bundled assets" in html
+    assert "c.triggers" in html
+    assert "c.scripts" in html
+    assert "c.references" in html
+    assert "c.assets" in html
+
+
 def test_generate_dashboard_html_wires_audit_log_into_settings_screen() -> None:
     """`Snapshot.audit_log` (`si execute --record`'s real `AuditLogEntry`
     rows, the governance audit trail) was the only accumulated-record

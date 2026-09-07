@@ -195,6 +195,31 @@ def test_generate_html_report_shows_skill_tool_scope() -> None:
     assert "disallowed: Write, Edit" in html
 
 
+def test_generate_html_report_shows_skill_bundle_contents() -> None:
+    """`Skill.triggers`/`scripts`/`references`/`assets` (`discovery/
+    skills.py`) were already discovered and stored -- the same class of
+    field the tool-scope fix immediately above already addressed for
+    `tool_names`/`permissions` -- but never rendered by any of the three
+    user-facing surfaces, invisible without opening the raw JSON snapshot."""
+    skill = Skill(
+        id="s1",
+        name="my-skill",
+        path="skills/my-skill/SKILL.md",
+        triggers=["src/**/*.py"],
+        scripts=["scripts/run.sh"],
+        references=["references/spec.md"],
+        assets=["assets/logo.png"],
+    )
+    snapshot = Snapshot(target=_target(), components=[skill])
+
+    html = generate_html_report(snapshot)
+
+    assert "triggers: src/**/*.py" in html
+    assert "scripts: scripts/run.sh" in html
+    assert "references: references/spec.md" in html
+    assert "assets: assets/logo.png" in html
+
+
 def test_generate_html_report_shows_agent_tool_scope() -> None:
     agent = Agent(
         id="a1",
