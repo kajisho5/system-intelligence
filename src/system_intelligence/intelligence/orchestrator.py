@@ -21,7 +21,10 @@ from system_intelligence.analysis.capabilities import (
     extract_capabilities,
 )
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
-from system_intelligence.analysis.dependencies import extract_dependencies
+from system_intelligence.analysis.dependencies import (
+    attach_dependencies_by_component,
+    extract_dependencies_by_manifest,
+)
 from system_intelligence.analysis.documentation import audit_documentation
 from system_intelligence.analysis.gaps import audit_capability_gaps
 from system_intelligence.analysis.relationships import build_relationships
@@ -108,8 +111,28 @@ def _run_ci_test_audit(ctx: _OrchestrationContext) -> None:
 
 
 def _run_dependency_extraction(ctx: _OrchestrationContext) -> None:
+    """Attribute each manifest's dependencies to whichever already-detected
+    Component's own directory it lives in (a Skill's own `package.json`
+    becomes that Skill's dependencies, not the Repository's) -- the same
+    `attach_dependencies_by_component` `analysis/engine.py::
+    analyze_local_repository` already uses, so the two orchestration
+    engines cannot independently drift on this attribution as they once
+    did. Falls back to the Repository when no Skill/Agent/Document is
+    known yet (e.g. the narrow `dependencies_only` intent, which
+    deliberately never runs `skill_detection`/`agent_detection`) --
+    exactly the same fallback `attach_dependencies_by_component` already
+    applies for an unmatched directory.
+    """
     manifests = ctx.structure.package_manifests if ctx.structure else []
-    ctx.repository.dependencies = extract_dependencies(ctx.root, manifests)
+    dependencies_by_directory = extract_dependencies_by_manifest(ctx.root, manifests)
+    components: list[Component] = [ctx.repository, *ctx.skills, *ctx.agents, *ctx.documents]
+    updated_components = attach_dependencies_by_component(
+        components, dependencies_by_directory, ctx.repository.id
+    )
+    ctx.repository = next(c for c in updated_components if isinstance(c, Repository))
+    ctx.skills = [c for c in updated_components if isinstance(c, Skill)]
+    ctx.agents = [c for c in updated_components if isinstance(c, Agent)]
+    ctx.documents = [c for c in updated_components if isinstance(c, Document)]
 
 
 def _run_capability_extraction(ctx: _OrchestrationContext) -> None:

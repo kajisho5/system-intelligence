@@ -30,7 +30,7 @@ from pathlib import Path
 
 from defusedxml import ElementTree as SafeElementTree
 
-from system_intelligence.core.entities import Dependency
+from system_intelligence.core.entities import Component, Dependency, Repository
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
@@ -478,3 +478,59 @@ def extract_dependencies(root: Path, manifests: list[PackageManifest]) -> list[D
     """
     by_directory = extract_dependencies_by_manifest(root, manifests)
     return [dependency for dependencies in by_directory.values() for dependency in dependencies]
+
+
+def component_directory(component: Component) -> str | None:
+    """The directory (relative to the repo root) whose manifest would belong
+    to `component`, if any. `None` means there is nothing to attribute a
+    manifest to — the Repository is always "." (see `discovery.inventory`);
+    any other Component only has a known directory when discovery recorded
+    its own `path` (e.g. a Skill's `path` is its `SKILL.md` file, so its
+    directory is that file's parent). Never guessed from a name or kind.
+    """
+    if isinstance(component, Repository):
+        return "."
+    if component.path is None:
+        return None
+    return str(Path(component.path).parent)
+
+
+def attach_dependencies_by_component(
+    components: list[Component],
+    dependencies_by_directory: dict[str, list[Dependency]],
+    repository_id: str,
+) -> list[Component]:
+    """Attribute each manifest's dependencies to the Component whose own
+    directory the manifest lives in, falling back to the Repository when no
+    other Component's directory matches — never a new Component, never a
+    silent drop.
+
+    Shared by `analysis/engine.py::analyze_local_repository` and
+    `intelligence/orchestrator.py::run_capabilities` so the two
+    orchestration engines cannot independently drift on this attribution,
+    as they once did (one attributed a Skill's own manifest to that Skill,
+    the other unconditionally dumped every manifest's dependencies onto
+    the Repository regardless of which Component's directory it lived in).
+    """
+    directory_to_component_id: dict[str, str] = {}
+    for component in components:
+        directory = component_directory(component)
+        if directory is None:
+            continue
+        # First match wins: two Components should not legitimately share a
+        # directory (each Skill is keyed by its own SKILL.md path), so this
+        # only ever matters for the Repository's own "." entry.
+        directory_to_component_id.setdefault(directory, component.id)
+
+    dependencies_by_component_id: dict[str, list[Dependency]] = {}
+    for directory, dependencies in dependencies_by_directory.items():
+        component_id = directory_to_component_id.get(directory, repository_id)
+        dependencies_by_component_id.setdefault(component_id, []).extend(dependencies)
+
+    def _with_dependencies(component: Component) -> Component:
+        extra = dependencies_by_component_id.get(component.id)
+        if not extra:
+            return component
+        return component.model_copy(update={"dependencies": [*component.dependencies, *extra]})
+
+    return [_with_dependencies(component) for component in components]
