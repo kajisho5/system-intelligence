@@ -21,6 +21,17 @@ use without asking permission..."/"Tools removed from Claude's available
 pool...", the Skill-level counterpart to `discovery/agents.py`'s
 `tools:`/`disallowedTools:`), parsed with the same
 `discovery.frontmatter.split_tool_list` paren-aware tokenizer.
+
+`triggers` -- listed as a Skill property alongside `scripts`/`references`
+in docs/design/docs/05-analysis-engine.md since Phase 1, but never
+populated by anything until now -- is only ever populated from an
+explicit `paths:` field (code.claude.com/docs/en/skills: "Glob patterns
+that limit when this skill is activated... Accepts a comma-separated
+string or a YAML list"), parsed with `discovery.frontmatter.
+split_glob_list`. Only the comma-separated string form is parsed; the
+YAML-list form is left unparsed, the same limitation this project's
+flat-key-value frontmatter parser already has for every other
+multi-value field.
 """
 
 from __future__ import annotations
@@ -31,7 +42,11 @@ from system_intelligence.core.entities import Skill
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
-from system_intelligence.discovery.frontmatter import parse_frontmatter, split_tool_list
+from system_intelligence.discovery.frontmatter import (
+    parse_frontmatter,
+    split_glob_list,
+    split_tool_list,
+)
 from system_intelligence.discovery.paths import is_excluded
 
 _REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
@@ -74,6 +89,8 @@ def detect_skills(root: Path) -> list[Skill]:
         tool_names = split_tool_list(allowed_tools_field) if allowed_tools_field else []
         disallowed_tools_field = fields.get("disallowed-tools") if fields else None
         permissions = split_tool_list(disallowed_tools_field) if disallowed_tools_field else []
+        paths_field = fields.get("paths") if fields else None
+        triggers = split_glob_list(paths_field) if paths_field else []
 
         evidence = [found_evidence]
         if fields is not None:
@@ -109,6 +126,7 @@ def detect_skills(root: Path) -> list[Skill]:
                 assets=assets,
                 tool_names=tool_names,
                 permissions=permissions,
+                triggers=triggers,
                 evidence=evidence,
             )
         )

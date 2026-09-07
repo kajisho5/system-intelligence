@@ -91,6 +91,37 @@ def test_detect_skills_no_allowed_or_disallowed_tools_fields_leave_lists_empty(
 
     assert skills[0].tool_names == []
     assert skills[0].permissions == []
+    assert skills[0].triggers == []
+
+
+def test_detect_skills_paths_field_populates_triggers(tmp_path: Path) -> None:
+    """`paths` is a documented Agent Skills frontmatter field
+    (code.claude.com/docs/en/skills: "Glob patterns that limit when this
+    skill is activated") -- `Skill.triggers` has existed on the model
+    since Phase 1 (docs/design/docs/05-analysis-engine.md lists it
+    alongside `scripts`/`references`) but nothing ever populated it."""
+    skill_dir = tmp_path / "skills" / "example-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: example-skill\ndescription: x\npaths: src/**/*.{ts,tsx}, docs/**/*.md\n---\n",
+        encoding="utf-8",
+    )
+
+    skills = detect_skills(tmp_path)
+
+    assert skills[0].triggers == ["src/**/*.{ts,tsx}", "docs/**/*.md"]
+
+
+def test_detect_skills_no_paths_field_leaves_triggers_empty(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "example-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: example-skill\ndescription: x\n---\n", encoding="utf-8"
+    )
+
+    skills = detect_skills(tmp_path)
+
+    assert skills[0].triggers == []
 
 
 def test_detect_skills_missing_frontmatter_fields(tmp_path: Path) -> None:
