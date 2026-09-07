@@ -120,6 +120,24 @@ def test_detect_agents_tools_field_trims_whitespace(tmp_path: Path) -> None:
     assert agents[0].tool_names == ["Read", "Write"]
 
 
+def test_detect_agents_tools_field_keeps_parenthesized_comma_as_one_specifier(
+    tmp_path: Path,
+) -> None:
+    """`Agent(worker, researcher)` (code.claude.com/docs/en/sub-agents) is
+    one tool specifier whose parenthesized argument list itself contains
+    a comma -- a naive comma-split previously broke it into two tokens."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "a.md").write_text(
+        "---\nname: a\ndescription: x\ntools: Agent(worker, researcher), Read, Bash\n---\n",
+        encoding="utf-8",
+    )
+
+    agents = detect_agents(tmp_path)
+
+    assert agents[0].tool_names == ["Agent(worker, researcher)", "Read", "Bash"]
+
+
 def test_detect_agents_disallowed_tools_field_populates_permissions(tmp_path: Path) -> None:
     """`disallowedTools` is a documented Claude Code subagent frontmatter
     field (code.claude.com/docs/en/sub-agents) -- `Agent.permissions` has

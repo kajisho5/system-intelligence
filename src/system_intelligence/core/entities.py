@@ -112,6 +112,8 @@ class Skill(Component):
     scripts: list[str] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
     assets: list[str] = Field(default_factory=list)
+    tool_names: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
 
 
 class MCPServer(Component):

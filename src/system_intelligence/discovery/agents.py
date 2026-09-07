@@ -17,10 +17,14 @@ Every field is recorded only when the frontmatter itself states it —
 `model:` field (e.g. `"sonnet"`, `"opus"`, `"inherit"`) when present,
 never inferred or normalized into a vendor name, and `tool_names`/
 `permissions` are only ever populated from an explicit `tools:`/
-`disallowedTools:` field respectively, each split on commas (both
-documented Claude Code subagent frontmatter fields, verified against
+`disallowedTools:` field respectively (both documented Claude Code
+subagent frontmatter fields, verified against
 code.claude.com/docs/en/sub-agents's own "Supported frontmatter fields"
-table). A file with no frontmatter, or frontmatter missing `name`/
+table), parsed via `discovery.frontmatter.split_tool_list` rather than a
+naive comma-split — the same docs describe an `Agent(worker, researcher)`
+specifier form whose parenthesized argument list itself contains a
+comma, which a plain `.split(",")` would incorrectly break into two
+tokens. A file with no frontmatter, or frontmatter missing `name`/
 `description`, is still reported (mirroring `detect_skills`'s own "found
 but not standard format" handling) rather than silently dropped.
 """
@@ -33,7 +37,7 @@ from system_intelligence.core.entities import Agent
 from system_intelligence.core.enums import Confidence
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.core.ids import stable_id
-from system_intelligence.discovery.frontmatter import parse_frontmatter
+from system_intelligence.discovery.frontmatter import parse_frontmatter, split_tool_list
 from system_intelligence.discovery.paths import is_excluded
 
 _REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
@@ -74,13 +78,9 @@ def detect_agents(root: Path) -> list[Agent]:
         description = fields.get("description") if fields else None
         model = fields.get("model") if fields else None
         tools_field = fields.get("tools") if fields else None
-        tool_names = [t.strip() for t in tools_field.split(",") if t.strip()] if tools_field else []
+        tool_names = split_tool_list(tools_field) if tools_field else []
         disallowed_tools_field = fields.get("disallowedTools") if fields else None
-        permissions = (
-            [t.strip() for t in disallowed_tools_field.split(",") if t.strip()]
-            if disallowed_tools_field
-            else []
-        )
+        permissions = split_tool_list(disallowed_tools_field) if disallowed_tools_field else []
 
         evidence = [found_evidence]
         if fields is not None:
