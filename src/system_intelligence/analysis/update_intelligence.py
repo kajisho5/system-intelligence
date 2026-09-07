@@ -471,29 +471,45 @@ def check_dependency_updates(
     known-vulnerability lookup for whichever version(s) could be resolved.
     A failed or missing lookup never blocks the freshness check itself —
     see `_fetch_advisories`.
+
+    The network fetch itself is deduplicated by `(ecosystem, name)` — a
+    provider only ever resolves a package name to its latest available
+    version (verified against every real provider in `research/providers/`:
+    the lookup URL/query is built from `identity.name` alone), so calling
+    it twice for the same name would just repeat one HTTP request. But two
+    different `Dependency` entities can legitimately share a name while
+    pinned at different *current* versions — a real, documented scenario
+    (`analysis/dependencies.py`'s own docstring: a monorepo with more than
+    one manifest "can legitimately declare the same package name at
+    different constraints, and those must not collide into one id"). Each
+    such `Dependency` still gets its own current-state diff and impact
+    assessment below; only the fetched `AvailableState`/failure is shared.
     """
-    seen: set[tuple[str, str]] = set()
+    fetched: dict[tuple[str, str], AvailableState | None] = {}
+    failed_keys: set[tuple[str, str]] = set()
     assessments: list[ImpactAssessment] = []
     unavailable: list[UpdateLookupFailure] = []
     for component in components:
         for dependency in component.dependencies:
             key = (dependency.ecosystem, dependency.name)
-            if key in seen:
+            if key in failed_keys:
                 continue
             provider = providers.get(dependency.ecosystem)
             if provider is None:
                 continue
-            seen.add(key)
             identity = _identity_for(dependency)
-            try:
-                available = provider.fetch_available_state(identity)
-            except ComponentUpdateError as exc:
-                unavailable.append(
-                    UpdateLookupFailure(
-                        ecosystem=dependency.ecosystem, name=dependency.name, message=str(exc)
+            if key not in fetched:
+                try:
+                    fetched[key] = provider.fetch_available_state(identity)
+                except ComponentUpdateError as exc:
+                    failed_keys.add(key)
+                    unavailable.append(
+                        UpdateLookupFailure(
+                            ecosystem=dependency.ecosystem, name=dependency.name, message=str(exc)
+                        )
                     )
-                )
-                continue
+                    continue
+            available = fetched[key]
             if available is None:
                 continue
             current = build_current_state(dependency)

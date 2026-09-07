@@ -579,8 +579,10 @@ class _FakeProvider:
     def __init__(self, available: AvailableState | None = None, error: Exception | None = None):
         self._available = available
         self._error = error
+        self.call_count = 0
 
     def fetch_available_state(self, identity: ComponentIdentity) -> AvailableState | None:
+        self.call_count += 1
         if self._error:
             raise self._error
         return self._available
@@ -660,19 +662,48 @@ def test_check_dependency_updates_forwards_relationships_to_impact_assessment() 
     assert check.assessments[0].affected_entity_ids == ["other-component"]
 
 
-def test_check_dependency_updates_deduplicates_shared_dependency() -> None:
+def test_check_dependency_updates_dedupes_the_network_fetch_only() -> None:
+    """Two components sharing one (ecosystem, name) must only trigger one
+    network fetch (a provider only ever resolves a package name -- calling
+    it twice would just repeat one HTTP request) -- but each component's own
+    Dependency must still get its own impact assessment. Previously the
+    second component's dependency was skipped outright once its
+    (ecosystem, name) key had been "seen", not just its fetch."""
     dep_a = _dependency(id="a", resolved_version="0.8.2")
     dep_b = _dependency(id="b", resolved_version="0.8.2")
     repo_a = Repository(id="r1", name="repo-a", path="a", dependencies=[dep_a])
     repo_b = Repository(id="r2", name="repo-b", path="b", dependencies=[dep_b])
     identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
     available = AvailableState(identity=identity, provider="npm", version="0.9.2")
+    provider = _FakeProvider(available=available)
+
+    check = check_dependency_updates([repo_a, repo_b], providers={"npm": provider})
+
+    assert provider.call_count == 1
+    assert len(check.assessments) == 2
+
+
+def test_check_dependency_updates_assesses_distinct_current_versions_separately() -> None:
+    """The same package name pinned at two different current versions across
+    two components (a real, documented monorepo scenario -- see
+    `analysis/dependencies.py`'s own docstring on why `Dependency.id` is
+    keyed by manifest path) must each be diffed against the available
+    version on their own terms, not have one silently dropped because the
+    other was processed first under the same (ecosystem, name) key."""
+    dep_outdated = _dependency(id="a", resolved_version="0.8.2")
+    dep_current = _dependency(id="b", resolved_version="0.9.2")
+    repo_outdated = Repository(id="r1", name="repo-outdated", path="a", dependencies=[dep_outdated])
+    repo_current = Repository(id="r2", name="repo-current", path="b", dependencies=[dep_current])
+    identity = ComponentIdentity(component_kind=ComponentKind.PACKAGE, name="ffmpeg-skill")
+    available = AvailableState(identity=identity, provider="npm", version="0.9.2")
 
     check = check_dependency_updates(
-        [repo_a, repo_b], providers={"npm": _FakeProvider(available=available)}
+        [repo_outdated, repo_current], providers={"npm": _FakeProvider(available=available)}
     )
 
-    assert len(check.assessments) == 1
+    assert len(check.assessments) == 2
+    versions = {a.state_diff.from_state.version for a in check.assessments}
+    assert versions == {"0.8.2", "0.9.2"}
 
 
 def test_assess_impact_carries_advisories_without_changing_verdict() -> None:
