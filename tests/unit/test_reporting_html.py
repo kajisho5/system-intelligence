@@ -3,6 +3,7 @@ from system_intelligence.core.entities import ADR, Agent, Dependency, Repository
 from system_intelligence.core.enums import (
     CapabilityStatus,
     Confidence,
+    PermissionLevel,
     Severity,
     TargetKind,
 )
@@ -281,6 +282,26 @@ def test_generate_html_report_shows_recommendation_expected_benefit() -> None:
     html = generate_html_report(snapshot)
 
     assert "Makes it easier for users to track what changed between releases." in html
+
+
+def test_generate_html_report_shows_recommendation_required_approval_level() -> None:
+    """`Recommendation.required_approval_level` is a first-class, design-
+    mandated part of the Recommendation contract (docs/design/docs/04-
+    domain-model.md lists "approval requirement" alongside effort/risk,
+    both of which this section already renders) -- the dashboard's own
+    Recommendations table already renders it, but `_render_recommendations`
+    never did, the same sibling-field gap the `expected_benefit` fix
+    immediately above just closed for a different field on this model."""
+    recommendation = Recommendation(
+        objective="Rotate the leaked API key",
+        rationale="A key was found committed to the repository.",
+        required_approval_level=PermissionLevel.CREATE_BRANCH_OR_DRAFT_PR,
+    )
+    snapshot = Snapshot(target=_target(), recommendations=[recommendation])
+
+    html = generate_html_report(snapshot)
+
+    assert "required approval: CREATE_BRANCH_OR_DRAFT_PR" in html
 
 
 def test_generate_html_report_dependency_graph_attributes_to_the_owning_component() -> None:
