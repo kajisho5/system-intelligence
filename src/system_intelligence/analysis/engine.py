@@ -106,7 +106,7 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
         *audit_ci_and_tests(repository, root, discovery.ci_jobs),
         *detect_duplicate_capabilities(capabilities),
         *audit_unused_skills([*skills, *agents], root),
-        *detect_circular_dependencies(root),
+        *detect_circular_dependencies(root, repository),
         *audit_capability_gaps(root, capabilities, repository),
     ]
 
