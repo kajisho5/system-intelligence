@@ -50,7 +50,7 @@ class GitHubResearchProvider:
         self._http_get = http_get or _default_http_get
 
     def search(self, query: str, *, limit: int = 10) -> list[ResearchResult]:
-        params = urllib.parse.urlencode({"q": query, "per_page": min(max(limit, 1), 30)})
+        params = urllib.parse.urlencode({"q": query, "per_page": min(max(limit, 1), 100)})
         data = self._get_json(f"{_API_BASE}/search/repositories?{params}")
         items = data.get("items", [])
         if not isinstance(items, list):
