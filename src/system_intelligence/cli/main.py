@@ -1000,6 +1000,8 @@ def propose(
         typer.echo(f"Capabilities: {', '.join(proposal.capabilities)}")
     if proposal.interfaces:
         typer.echo(f"Interfaces: {', '.join(proposal.interfaces)}")
+    if proposal.implementation_stages:
+        typer.echo(f"Implementation stages: {', '.join(proposal.implementation_stages)}")
     if proposal.test_strategy:
         typer.echo(f"Test strategy: {proposal.test_strategy}")
     if proposal.security_considerations:

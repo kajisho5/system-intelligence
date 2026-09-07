@@ -61,6 +61,11 @@ _SECURITY_CONSIDERATIONS = (
     "grants this introduces."
 )
 _ROLLBACK_STRATEGY = "Revert the change; no other component depends on it until adopted."
+_IMPLEMENTATION_STAGES = [
+    "Implement the capability against the stated requirements.",
+    "Add tests per the test strategy.",
+    "Document the capability per the documentation requirements.",
+]
 
 #: Per-`ComponentKind` test/documentation guidance (docs/07-improvement-
 #: engine.md's "Creation proposals" list). Each kind is verified and
@@ -133,6 +138,44 @@ _SECURITY_CONSIDERATIONS_BY_KIND: dict[ComponentKind, str] = {
         "third-party code execution."
     ),
 }
+#: Per-`ComponentKind` implementation-stage breakdown (docs/07-improvement-
+#: engine.md's "Proposal must contain" list, "implementation stages" --
+#: same required-content status as `test_strategy`/`security_
+#: considerations`/`documentation_requirements`/`rollback_strategy`, all of
+#: which already have their own entry here). `None`/any unlisted kind
+#: keeps the generic `_IMPLEMENTATION_STAGES` sequence, same fallback
+#: convention as the sibling `_BY_KIND` tables above.
+_IMPLEMENTATION_STAGES_BY_KIND: dict[ComponentKind, list[str]] = {
+    ComponentKind.SKILL: [
+        "Author the SKILL.md front matter and instructions.",
+        "Add any scripts/references/assets it bundles.",
+        "Verify it through its own declared entry points per the test strategy.",
+    ],
+    ComponentKind.AGENT: [
+        "Author the .claude/agents/<name>.md front matter, including tool/model grants.",
+        "Run representative end-to-end task scenarios per the test strategy.",
+    ],
+    ComponentKind.MCP_SERVER: [
+        "Implement the server's exposed tools/resources against their schemas.",
+        "Validate each one live per the test strategy.",
+    ],
+    ComponentKind.TOOL: [
+        "Implement the CLI/API contract.",
+        "Add tests covering each stated requirement per the test strategy.",
+    ],
+    ComponentKind.WORKFLOW: [
+        "Implement each trigger condition and its side effect(s).",
+        "Run it end-to-end per the test strategy.",
+    ],
+    ComponentKind.DOCUMENT: [
+        "Draft the document against the stated requirements.",
+        "Review it for accuracy and completeness per the test strategy.",
+    ],
+    ComponentKind.REPOSITORY: [
+        "Bootstrap the repository (license, CI, README) and its initial content.",
+        "Verify CI passes and the bootstrap instructions work per the test strategy.",
+    ],
+}
 _DOCUMENTATION_REQUIREMENTS_BY_KIND: dict[ComponentKind, str] = {
     ComponentKind.SKILL: "Document the capability in the Skill's own SKILL.md.",
     ComponentKind.AGENT: (
@@ -198,6 +241,12 @@ def _security_considerations_for(target_kind: ComponentKind | None) -> str:
     if target_kind is None:
         return _SECURITY_CONSIDERATIONS
     return _SECURITY_CONSIDERATIONS_BY_KIND.get(target_kind, _SECURITY_CONSIDERATIONS)
+
+
+def _implementation_stages_for(target_kind: ComponentKind | None) -> list[str]:
+    if target_kind is None:
+        return _IMPLEMENTATION_STAGES
+    return _IMPLEMENTATION_STAGES_BY_KIND.get(target_kind, _IMPLEMENTATION_STAGES)
 
 
 _UPDATE_TEST_STRATEGY = (
@@ -318,15 +367,15 @@ def propose_solution(
 
     `target_kind` (docs/07-improvement-engine.md's "Creation proposals"
     list) shapes `test_strategy`/`documentation_requirements`/
-    `security_considerations` to how that kind of component is actually
-    verified, documented, and reviewed in practice -- e.g. a Skill's
-    contract lives in its SKILL.md, an Agent is verified by running
-    scenarios rather than unit tests -- and populates `interfaces` with
-    that kind's own explicit, already-detected discovery convention where
-    one exists (a Skill's SKILL.md front matter, an Agent's
-    `.claude/agents/*.md` front matter, ...). Omit it (the default) to get
-    the original generic wording and an empty `interfaces` list, unchanged
-    for every existing caller.
+    `security_considerations`/`implementation_stages` to how that kind of
+    component is actually verified, documented, reviewed, and built in
+    practice -- e.g. a Skill's contract lives in its SKILL.md, an Agent is
+    verified by running scenarios rather than unit tests -- and populates
+    `interfaces` with that kind's own explicit, already-detected discovery
+    convention where one exists (a Skill's SKILL.md front matter, an
+    Agent's `.claude/agents/*.md` front matter, ...). Omit it (the
+    default) to get the original generic wording and an empty
+    `interfaces` list, unchanged for every existing caller.
     """
     evidence = evidence or []
     requirements = requirements or []
@@ -335,6 +384,7 @@ def propose_solution(
     documentation_requirements = _documentation_requirements_for(target_kind)
     interfaces = _interfaces_for(target_kind)
     security_considerations = _security_considerations_for(target_kind)
+    implementation_stages = _implementation_stages_for(target_kind)
 
     if not research_results:
         return Proposal(
@@ -348,6 +398,7 @@ def propose_solution(
             ),
             capabilities=list(requirements),
             interfaces=interfaces,
+            implementation_stages=implementation_stages,
             test_strategy=test_strategy,
             security_considerations=security_considerations,
             documentation_requirements=documentation_requirements,
@@ -370,6 +421,7 @@ def propose_solution(
             capabilities=list(requirements),
             interfaces=interfaces,
             dependencies=[best.result.identifier],
+            implementation_stages=implementation_stages,
             test_strategy=test_strategy,
             security_considerations=security_considerations,
             documentation_requirements=documentation_requirements,
@@ -396,6 +448,7 @@ def propose_solution(
         capabilities=list(requirements),
         interfaces=interfaces,
         dependencies=[best.result.identifier],
+        implementation_stages=implementation_stages,
         test_strategy=test_strategy,
         security_considerations=security_considerations,
         documentation_requirements=documentation_requirements,
