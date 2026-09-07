@@ -45,9 +45,25 @@ def test_inspect_command_reports_summary(tmp_path: Path) -> None:
     result = runner.invoke(app, ["inspect", str(tmp_path)])
 
     assert result.exit_code == 0
+    assert "Git repository: no" in result.stdout
     assert "License: unknown" in result.stdout
     assert "Languages: Python" in result.stdout
     assert "Root documents: 1 (README.md)" in result.stdout
+
+
+def test_inspect_command_reports_git_repository_yes_with_no_remote(tmp_path: Path) -> None:
+    """A real, valid git repository with real commits but no configured
+    (or unfetched) `origin` remote must never be reported as "not a git
+    repository" just because `default_branch` (which requires a
+    resolvable remote symref) happens to be unset -- those are two
+    distinct facts."""
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    result = runner.invoke(app, ["inspect", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Git repository: yes (no remote branch detected)" in result.stdout
 
 
 def test_inspect_command_reports_known_license(tmp_path: Path) -> None:

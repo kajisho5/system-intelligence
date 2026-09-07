@@ -163,7 +163,14 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
     documents = [c for c in snapshot.components if c.kind == ComponentKind.DOCUMENT]
     evidence_count = sum(len(c.evidence) for c in snapshot.components)
 
-    git_status = f"yes, branch={repository.default_branch}" if repository.default_branch else "no"
+    if repository.is_git_repository:
+        git_status = (
+            f"yes, branch={repository.default_branch}"
+            if repository.default_branch
+            else "yes (no remote branch detected)"
+        )
+    else:
+        git_status = "no"
 
     typer.echo(f"Target: {snapshot.target.locator}")
     typer.echo(f"Snapshot: {snapshot.id}")
