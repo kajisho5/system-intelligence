@@ -74,6 +74,14 @@ class Repository(Component):
     local_path: str | None = None
     license: str | None = None
     languages: list[str] = Field(default_factory=list)
+    last_commit_sha: str | None = None
+    last_commit_author: str | None = None
+    last_commit_date: str | None = Field(
+        default=None, description="ISO 8601 committer date of the last commit (git log's %cI)."
+    )
+    is_dirty: bool | None = Field(
+        default=None, description="Whether the working tree had uncommitted changes."
+    )
 
 
 class Software(Component):

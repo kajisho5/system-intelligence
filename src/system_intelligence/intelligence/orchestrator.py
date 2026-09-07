@@ -80,6 +80,10 @@ def _run_git_metadata(ctx: _OrchestrationContext) -> None:
     metadata = collect_git_metadata(ctx.root)
     ctx.repository.url = metadata.remote_url
     ctx.repository.default_branch = metadata.default_branch
+    ctx.repository.last_commit_sha = metadata.last_commit_sha
+    ctx.repository.last_commit_author = metadata.last_commit_author
+    ctx.repository.last_commit_date = metadata.last_commit_date
+    ctx.repository.is_dirty = metadata.is_dirty
     ctx.repository.evidence = [*ctx.repository.evidence, *metadata.evidence]
 
 

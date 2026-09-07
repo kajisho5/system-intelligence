@@ -1,8 +1,17 @@
+import subprocess
 from pathlib import Path
 
 from system_intelligence.core.enums import ComponentKind, RelationshipType
 from system_intelligence.intelligence.intents import resolve_intent
 from system_intelligence.intelligence.orchestrator import run_capabilities
+
+
+def _init_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
+    subprocess.run(["git", "add", "."], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=path, check=True)
 
 
 def test_documentation_only_flags_missing_docs_without_other_findings(tmp_path: Path) -> None:
@@ -28,6 +37,19 @@ def test_documentation_audit_populates_repository_license(tmp_path: Path) -> Non
 
     repository = next(c for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
     assert repository.license == "MIT"  # type: ignore[attr-defined]
+
+
+def test_git_metadata_populates_last_commit_fields(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Hi\n", encoding="utf-8")
+    _init_repo(tmp_path)
+
+    snapshot = run_capabilities(str(tmp_path), ["git_metadata"])
+
+    repository = next(c for c in snapshot.components if c.kind == ComponentKind.REPOSITORY)
+    assert repository.last_commit_sha  # type: ignore[attr-defined]
+    assert repository.last_commit_author == "Test"  # type: ignore[attr-defined]
+    assert repository.last_commit_date  # type: ignore[attr-defined]
+    assert repository.is_dirty is False  # type: ignore[attr-defined]
 
 
 def test_documentation_only_does_not_detect_skills_or_languages(tmp_path: Path) -> None:

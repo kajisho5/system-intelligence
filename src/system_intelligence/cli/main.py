@@ -168,6 +168,9 @@ def inspect(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> N
     typer.echo(f"Target: {snapshot.target.locator}")
     typer.echo(f"Snapshot: {snapshot.id}")
     typer.echo(f"Git repository: {git_status}")
+    if repository.last_commit_date:
+        dirty_suffix = ", uncommitted changes" if repository.is_dirty else ""
+        typer.echo(f"Last commit: {repository.last_commit_date}{dirty_suffix}")
     typer.echo(f"License: {repository.license or 'unknown'}")
     typer.echo(f"Languages: {', '.join(repository.languages) or 'none detected'}")
     typer.echo(_format_named_list("Skills", [s.name for s in skills]))
