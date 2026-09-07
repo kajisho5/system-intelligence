@@ -298,6 +298,16 @@ def _collect_evidence(
         add(research_result.evidence, f"research:{research_result.identifier}")
     for assessment in update_assessments:
         add(assessment.evidence, f"update:{assessment.state_diff.identity.name}")
+    for adr in snapshot.adrs:
+        add(adr.evidence, f"adr:{adr.name}")
+    for relationship in snapshot.relationships:
+        add(relationship.evidence, f"relationship:{relationship.type.value}")
+    for recommendation in snapshot.recommendations:
+        add(recommendation.evidence, f"recommendation:{recommendation.id}")
+    for proposal in snapshot.proposals:
+        add(proposal.evidence, f"proposal:{proposal.id}")
+    for verification in snapshot.verification:
+        add(verification.evidence, f"verification:{verification.id}")
 
     return list(by_id.values())
 
