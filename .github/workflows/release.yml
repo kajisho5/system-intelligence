@@ -1,0 +1,95 @@
+name: Release
+
+# Single workflow, triggered only by a push to main -- deliberately never
+# split into a separate tag-triggered workflow. GITHUB_TOKEN-authored
+# pushes (including this job's own tag/commit pushes below) never trigger
+# other workflow runs (GitHub's own anti-recursion rule), so a second,
+# tag-triggered workflow would simply never fire; keeping every step in
+# one job here is what makes the whole pipeline actually run end to end.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: needed for `git log <tag>..HEAD` and tag lookup
+
+      - name: Resolve next version from merged-PR labels (dry run)
+        id: draft
+        uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+          dry-run: true # never creates/updates release-drafter's own GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Decide version, update files, generate changelog
+        id: version
+        env:
+          RESOLVED_VERSION: ${{ steps.draft.outputs.resolved_version }}
+        run: python .github/scripts/prepare_release.py
+
+      - name: Commit version bump and changelog
+        if: steps.version.outputs.should_release == 'true' && steps.version.outputs.is_auto_bump == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/system_intelligence/__init__.py CHANGELOG.md
+          git commit -m "chore(release): v${{ steps.version.outputs.new_version }}"
+          git push origin HEAD:main
+
+      - name: Commit changelog only (manual version bump, no version-file change needed)
+        if: steps.version.outputs.should_release == 'true' && steps.version.outputs.is_auto_bump == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): CHANGELOG for v${{ steps.version.outputs.new_version }}"
+          git push origin HEAD:main
+
+      - name: Tag release
+        if: steps.version.outputs.should_release == 'true'
+        run: |
+          git tag "v${{ steps.version.outputs.new_version }}"
+          git push origin "v${{ steps.version.outputs.new_version }}"
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.new_version }}" \
+            --title "v${{ steps.version.outputs.new_version }}" \
+            --notes-file "${{ steps.version.outputs.release_notes_path }}"
+
+      - name: Check for a configured PyPI token
+        id: check-pypi
+        run: echo "has_token=${{ secrets.PYPI_API_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        if: steps.version.outputs.should_release == 'true' && steps.check-pypi.outputs.has_token == 'true'
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Publish to PyPI
+        if: steps.version.outputs.should_release == 'true' && steps.check-pypi.outputs.has_token == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

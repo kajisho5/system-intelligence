@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # This repo's own CI/release workflows -- always worth keeping current
+  # regardless of the target repos this tool analyzes.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Python: the only package ecosystem this project itself depends on
+  # (pyproject.toml, no package.json/Cargo.toml/go.mod at the repo root).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"

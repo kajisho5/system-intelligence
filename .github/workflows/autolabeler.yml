@@ -1,0 +1,43 @@
+name: PR Autolabeler
+
+# pull_request_target (not pull_request): runs with the base repo's
+# workflow file and token even for a fork PR, so a fork PR still gets
+# labeled. This workflow never checks out the PR head or runs anything
+# from it -- it only reads the PR's own title/branch/file metadata via
+# the GitHub API and applies labels, so a fork can never get this
+# workflow to execute its own code.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write # label creation lives under the Issues API
+
+jobs:
+  autolabel:
+    runs-on: ubuntu-latest
+    steps:
+      # release-drafter's autolabeler applies a label by name but does not
+      # document creating missing labels first -- ensure the ones
+      # release-drafter.yml's autolabeler/version-resolver reference
+      # already exist so labeling never silently no-ops on a fresh repo.
+      # Idempotent: `gh label create` errors (harmlessly) if a label
+      # already exists, so failures here are always ignored.
+      - name: Ensure release-drafter labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create breaking --repo "$GITHUB_REPOSITORY" --color "b60205" --description "Breaking change (major version bump)" || true
+          gh label create fix --repo "$GITHUB_REPOSITORY" --color "d73a4a" --description "Bug fix (patch version bump)" || true
+          gh label create feature --repo "$GITHUB_REPOSITORY" --color "0e8a16" --description "New feature (minor version bump)" || true
+          gh label create chore --repo "$GITHUB_REPOSITORY" --color "cccccc" --description "Maintenance, no user-facing change (patch version bump)" || true
+          gh label create documentation --repo "$GITHUB_REPOSITORY" --color "0075ca" --description "Documentation only (patch version bump)" || true
+
+      - name: Apply autolabeler rules
+        uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
