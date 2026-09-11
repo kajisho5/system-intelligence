@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1 (2026-09-11)
+
+- fix(ci): use the dedicated autolabeler sub-action, not the main release-drafter action (#114) (327e58d)
+
 ## v0.2.0 (2026-09-11)
 
 - feat(ci): add release automation, PR autolabeling, Dependabot, CodeQL, PR template (#105) (ad50353)
