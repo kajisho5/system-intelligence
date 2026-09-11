@@ -1,0 +1,60 @@
+# Config for release-drafter/release-drafter, used two ways in this repo:
+#
+# 1. .github/workflows/autolabeler.yml runs the same action on every PR
+#    event to apply the `autolabeler:` rules below to the PR itself.
+# 2. .github/workflows/release.yml runs the action in dry-run mode on every
+#    push to main purely to read its `resolved_version` output (computed
+#    from `version-resolver:` below against the labels merged PRs already
+#    carry) -- it never lets release-drafter create/update its own GitHub
+#    Release or notes; this repo's own release.yml writes CHANGELOG.md and
+#    the Release body itself, from `git log`, to avoid depending on
+#    release-drafter's own PR-title interpolation for that step.
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+# Matches this repo's actual PR title conventions (see PRs #84-#104):
+# Conventional-Commits-style `type(scope): description` / `type: description`
+# (e.g. "fix(reporting): ...", "chore: ...") and a plain-imperative fallback
+# ("Fix ...", "Add ...") from before that convention was adopted.
+autolabeler:
+  - label: 'breaking'
+    title:
+      - '/^\w+(\([^)]*\))?!:/'
+  - label: 'fix'
+    title:
+      - '/^fix(\([^)]*\))?:/i'
+      - '/^Fix /'
+  - label: 'feature'
+    title:
+      - '/^feat(\([^)]*\))?:/i'
+      - '/^Add /'
+  - label: 'chore'
+    title:
+      - '/^chore(\([^)]*\))?:/i'
+  - label: 'documentation'
+    title:
+      - '/^docs(\([^)]*\))?:/i'
+
+# No label -> patch, per this repo's own default-safe convention.
+version-resolver:
+  major:
+    labels:
+      - 'breaking'
+      - 'major'
+  minor:
+    labels:
+      - 'feature'
+      - 'minor'
+  patch:
+    labels:
+      - 'fix'
+      - 'chore'
+      - 'documentation'
+      - 'patch'
+  default: patch
+
+template: |
+  ## Changes
+
+  $CHANGES

@@ -17,4 +17,8 @@ htmlcov/
 .si/
 *.snapshot.json
 
+# Written by .github/scripts/prepare_release.py during release.yml, as a
+# transient --notes-file for `gh release create`; never committed.
+.github/RELEASE_NOTES.md
+
 .DS_Store
