@@ -36,7 +36,7 @@ jobs:
           gh label create documentation --repo "$GITHUB_REPOSITORY" --color "0075ca" --description "Documentation only (patch version bump)" || true
 
       - name: Apply autolabeler rules
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter.yml
         env:

@@ -28,7 +28,7 @@ jobs:
 
       - name: Resolve next version from merged-PR labels (dry run)
         id: draft
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter.yml
           dry-run: true # never creates/updates release-drafter's own GitHub Release
