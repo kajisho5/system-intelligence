@@ -41,7 +41,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-_VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+# No trailing `\s*` before `$`: in MULTILINE mode `\s` also matches `\n`,
+# and when this is the file's very last line (as `__init__.py`'s
+# `__version__` line below always is), a trailing `\s*$` greedily
+# consumes the file's own final newline into the match -- silently
+# dropping it from the `.subn()` replacement, which has none of its own.
+_VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"$', re.MULTILINE)
 _TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+)$")
 
 
@@ -63,7 +68,9 @@ def write_pyproject_version(pyproject_path: Path, new_version: str) -> None:
 
 def write_init_version(init_path: Path, new_version: str) -> None:
     text = init_path.read_text(encoding="utf-8")
-    pattern = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+    # No trailing `\s*` before `$` -- see _VERSION_RE's own comment; this
+    # line is always the file's last line, so the risk is not hypothetical.
+    pattern = re.compile(r'^__version__\s*=\s*"([^"]+)"$', re.MULTILINE)
     updated, count = pattern.subn(f'__version__ = "{new_version}"', text, count=1)
     if count != 1:
         raise ValueError(f'expected exactly one __version__ = "..." line in {init_path}')
