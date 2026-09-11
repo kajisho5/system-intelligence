@@ -28,12 +28,32 @@ jobs:
 
       - name: Resolve next version from merged-PR labels (dry run)
         id: draft
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter.yml
-          dry-run: true # never creates/updates release-drafter's own GitHub Release
+          dry-run: true # only ever read for its resolved_version output below
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Defensive cleanup: this repo's flow always creates a fully-formed,
+      # published Release itself further down (never a rolling preview),
+      # so any leftover draft -- from the dry-run step above, or from any
+      # other release-drafter invocation elsewhere in this repo's
+      # workflows -- is always stale clutter, never wanted state. Confirmed
+      # necessary in practice: this repo's very first run left an
+      # unpublished "v0.1.0" draft behind despite `dry-run: true`.
+      - name: Remove any stray draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+              --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName'); do
+            echo "Deleting stray draft release: $tag"
+            # No --cleanup-tag: a draft's tag_name is metadata only -- the
+            # git tag ref it names is never actually created until publish,
+            # so there is normally no real tag here to clean up.
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+          done
 
       - uses: actions/setup-python@v5
         with:
