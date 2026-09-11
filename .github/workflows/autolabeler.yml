@@ -35,8 +35,16 @@ jobs:
           gh label create chore --repo "$GITHUB_REPOSITORY" --color "cccccc" --description "Maintenance, no user-facing change (patch version bump)" || true
           gh label create documentation --repo "$GITHUB_REPOSITORY" --color "0075ca" --description "Documentation only (patch version bump)" || true
 
+      # A dedicated sub-action, distinct from the main
+      # release-drafter/release-drafter action used in release.yml -- the
+      # main action is documented as designed for push-to-main events (it
+      # also drafts/updates its own rolling GitHub Release), and using it
+      # here instead of this one left a stray, unpublished "v0.1.0" draft
+      # Release behind on this repo's very first run. This sub-action only
+      # ever touches PR labels (confirmed via its own action.yml: no
+      # release-related inputs/outputs at all).
       - name: Apply autolabeler rules
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter/autolabeler@v7
         with:
           config-name: release-drafter.yml
         env:
