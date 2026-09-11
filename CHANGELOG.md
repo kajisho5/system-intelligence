@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2 (2026-09-11)
+
+- fix(ci): stop autolabeling major/breaking from PR text; fix version-bump newline loss (#115) (0673ae3)
+
 ## v0.2.1 (2026-09-11)
 
 - fix(ci): use the dedicated autolabeler sub-action, not the main release-drafter action (#114) (327e58d)
