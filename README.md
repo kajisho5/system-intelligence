@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/app-icon-dark.png">
+    <img src="brand/app-icon.png" width="128" alt="system-intelligence app icon">
+  </picture>
+</p>
+
 # System Intelligence
 
 A general-purpose AI system intelligence layer for discovering, understanding,
