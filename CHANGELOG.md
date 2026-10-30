@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4 (2026-10-30)
+
+- docs: add app icon and wordmark (made with fresnel) (#119) (402a386)
+
 ## v0.2.3 (2026-10-30)
 
 - Add ECOSYSTEM_ROADMAP.md: gaps, wiring and PR-sized steps from the 2026-10-30 ecosystem audit (#118) (c315c09)
