@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3 (2026-10-30)
+
+- Add ECOSYSTEM_ROADMAP.md: gaps, wiring and PR-sized steps from the 2026-10-30 ecosystem audit (#118) (c315c09)
+
 ## v0.2.2 (2026-09-11)
 
 - fix(ci): stop autolabeling major/breaking from PR text; fix version-bump newline loss (#115) (0673ae3)
