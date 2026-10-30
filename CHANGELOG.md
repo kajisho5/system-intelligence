@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.5 (2026-10-30)
+
+- ci: pin third-party actions by commit SHA (#120) (5d708ea)
+
 ## v0.2.4 (2026-10-30)
 
 - docs: add app icon and wordmark (made with fresnel) (#119) (402a386)
