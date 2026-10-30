@@ -28,7 +28,7 @@ jobs:
 
       - name: Resolve next version from merged-PR labels (dry run)
         id: draft
-        uses: release-drafter/release-drafter@v7
+        uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
         with:
           config-name: release-drafter.yml
           dry-run: true # only ever read for its resolved_version output below
@@ -110,6 +110,6 @@ jobs:
 
       - name: Publish to PyPI
         if: steps.version.outputs.should_release == 'true' && steps.check-pypi.outputs.has_token == 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
