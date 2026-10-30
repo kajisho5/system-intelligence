@@ -44,7 +44,7 @@ jobs:
       # ever touches PR labels (confirmed via its own action.yml: no
       # release-related inputs/outputs at all).
       - name: Apply autolabeler rules
-        uses: release-drafter/release-drafter/autolabeler@v7
+        uses: release-drafter/release-drafter/autolabeler@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
         with:
           config-name: release-drafter.yml
         env:
