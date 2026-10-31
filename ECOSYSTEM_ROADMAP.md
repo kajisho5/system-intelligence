@@ -13,7 +13,7 @@ v0.2.2, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates
 
 | Owned job | Status | Note |
 |---|---|---|
-| エコシステム監査 | partial | general-purpose auditor; does not read ecosystem.json ownership or capability contracts |
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); no `--read-only` flag yet |
 
 ## Wiring
 
@@ -23,7 +23,7 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
 
 - [x] **1. Capability-contract discovery** — run `<skill> contract --json` read-only, validate against the OS schema ([#121](https://github.com/kajisho5/system-intelligence/pull/121), ADR-011)
   - Done when: artifacts-skill and ingest-skill schema problems appear as findings
-- [ ] **2. Ownership-map analyzer** — read ecosystem.json owns; flag overlaps and unowned jobs
+- [x] **2. Ownership-map analyzer** — read ecosystem.json owns; flag overlaps and unowned jobs ([#122](https://github.com/kajisho5/system-intelligence/pull/122), ADR-012)
   - Done when: finds the publish / ffmpeg-skill platform-table overlap
 - [ ] **3. `--read-only` flag** — refuses execute/improve; used by the OS audit
   - Done when: test

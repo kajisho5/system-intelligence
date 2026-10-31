@@ -19,9 +19,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from system_intelligence.analysis.contracts import audit_capability_contracts
+from system_intelligence.analysis.contracts import (
+    audit_capability_contracts,
+    contract_identities,
+    extract_contract_capabilities,
+)
 from system_intelligence.core.entities import Repository
-from system_intelligence.core.enums import Confidence, Severity
+from system_intelligence.core.enums import CapabilityStatus, Confidence, Severity
 from system_intelligence.core.evidence import Evidence, EvidenceKind
 from system_intelligence.discovery.contracts import ContractObservation, read_contract_file
 from system_intelligence.integrations.ai_video_os import (
@@ -160,3 +164,88 @@ def test_statements_are_stable_across_runs() -> None:
     document = json.loads((FIXTURES / "ingest-skill-0.1.0.contract.json").read_text("utf-8"))
 
     assert _audit(_observation(document)) == _audit(_observation(document))
+
+
+def test_valid_contract_provides_become_capabilities() -> None:
+    [_, observation] = [
+        _fixture("ingest-skill-0.1.0.contract.json"),
+        _fixture("ingest-skill-0.1.x.contract.json"),
+    ]
+
+    capabilities = extract_contract_capabilities(
+        [observation], _repository(), load_capability_contract_schema()
+    )
+
+    assert [c.name for c in capabilities] == [
+        "ingest.offload",
+        "ingest.verify",
+        "ingest.inventory",
+        "ingest.fetch",
+    ]
+    offload = capabilities[0]
+    assert offload.id == "capability:contract:ingest:ingest.offload"
+    assert offload.provider_ids == ["r1"]
+    assert offload.status == CapabilityStatus.AVAILABLE
+    assert offload.confidence == Confidence.HIGH
+    assert offload.description == "Tool ingest/offload"
+    [evidence] = offload.evidence
+    assert (evidence.source, evidence.locator) == (
+        "ingest-skill-0.1.x.contract.json",
+        "/provides/0",
+    )
+
+
+def test_contract_with_violations_contributes_no_capabilities() -> None:
+    observation = _fixture("ingest-skill-0.1.0.contract.json")
+    schema = load_capability_contract_schema()
+
+    assert extract_contract_capabilities([observation], _repository(), schema) == []
+    # Without a schema nothing is rejected, so its provides are read.
+    assert extract_contract_capabilities([observation], _repository(), None) != []
+
+
+def test_lifecycle_sets_capability_status() -> None:
+    document = {
+        "skill_id": "x",
+        "provides": [
+            {"id": f"x.{lifecycle.lower()}", "lifecycle": lifecycle, "tool_id": "x/t"}
+            for lifecycle in ("STABLE", "EXPERIMENTAL", "DEPRECATED", "PROPOSED", "RETIRED")
+        ]
+        + [{"id": "x.none", "tool_id": "x/t"}, {"tool_id": "no id"}],
+    }
+
+    capabilities = extract_contract_capabilities([_observation(document)], _repository())
+
+    assert [(c.name, c.status) for c in capabilities] == [
+        ("x.stable", CapabilityStatus.AVAILABLE),
+        ("x.experimental", CapabilityStatus.AVAILABLE),
+        ("x.deprecated", CapabilityStatus.DEPRECATED),
+        ("x.proposed", CapabilityStatus.MISSING),
+        ("x.retired", CapabilityStatus.MISSING),
+        ("x.none", CapabilityStatus.UNKNOWN),
+    ]
+
+
+def test_same_contract_from_two_sources_is_one_capability_with_both_sources() -> None:
+    document = {"skill_id": "x", "provides": [{"id": "x.a", "lifecycle": "STABLE", "tool_id": "t"}]}
+
+    [capability] = extract_contract_capabilities(
+        [_observation(document, "a.json"), _observation(document, "b.json")], _repository()
+    )
+
+    assert [e.source for e in capability.evidence] == ["a.json", "b.json"]
+
+
+def test_unavailable_and_non_object_contracts_contribute_nothing(tmp_path: Path) -> None:
+    observations = [read_contract_file(tmp_path / "missing.json"), _observation([1])]
+
+    assert extract_contract_capabilities(observations, _repository()) == []
+
+
+def test_contract_identities() -> None:
+    assert contract_identities(
+        {"skill_id": "ingest", "id": "ingest", "skill": {"id": "ingest", "package": "ingest-skill"}}
+    ) == ["ingest", "ingest-skill"]
+    assert contract_identities({"skill": {"id": "ffmpeg-skill"}}) == ["ffmpeg-skill"]
+    assert contract_identities({"skill": "x", "id": " ", "skill_id": 3}) == []
+    assert contract_identities([]) == []
