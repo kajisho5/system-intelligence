@@ -1,6 +1,8 @@
 import json
 import os
+import shlex
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -57,11 +59,13 @@ def test_declared_path_outside_root_is_refused(tmp_path: Path, path: str) -> Non
     assert observation.error is not None and "outside the target root" in observation.error
 
 
-def test_declared_symlink_escaping_root_is_refused(tmp_path: Path) -> None:
+def test_declared_symlink_escaping_root_is_refused(
+    tmp_path: Path, make_symlink: Callable[[Path, Path], None]
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     (tmp_path / "secret.json").write_text("{}", encoding="utf-8")
-    (root / "contract.json").symlink_to(tmp_path / "secret.json")
+    make_symlink(root / "contract.json", tmp_path / "secret.json")
     _declare(root, ["contract.json"])
 
     [observation] = read_declared_contracts(root)
@@ -115,12 +119,16 @@ def test_oversized_contract_file_is_not_read(
 
 
 def test_command_stdout_is_parsed() -> None:
-    observation = run_contract_command(_python('print(\'{"skill_id": "x"}\')'))
+    argv = _python('print(\'{"skill_id": "x"}\')')
+    observation = run_contract_command(argv)
 
     assert observation.kind == "command"
     assert observation.document == {"skill_id": "x"}
     assert observation.evidence.kind == EvidenceKind.RUNTIME_TELEMETRY
-    assert observation.label.startswith(sys.executable)
+    # The label is the command line in --contract-command's own (POSIX shell)
+    # syntax, so it splits back into the argv on every OS. A Windows path
+    # such as C:\...\python.exe is quoted in it, not left bare.
+    assert shlex.split(observation.label) == argv
 
 
 def test_command_gets_a_minimal_environment(monkeypatch: pytest.MonkeyPatch) -> None:

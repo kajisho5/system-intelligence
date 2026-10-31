@@ -1,5 +1,5 @@
 import json
-import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -58,12 +58,13 @@ def test_listed_path_outside_root_is_refused(tmp_path: Path, path: str) -> None:
     assert refused.error is not None and "outside the target root" in refused.error
 
 
-@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
-def test_listed_symlink_escaping_root_is_refused(tmp_path: Path) -> None:
+def test_listed_symlink_escaping_root_is_refused(
+    tmp_path: Path, make_symlink: Callable[[Path, Path], None]
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     (tmp_path / "outside.json").write_text("{}", encoding="utf-8")
-    (root / "link.json").symlink_to(tmp_path / "outside.json")
+    make_symlink(root / "link.json", tmp_path / "outside.json")
     _declare(root, {"maps": [{"path": "link.json"}]})
 
     [_, refused] = read_declared_ownership(root)

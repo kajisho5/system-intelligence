@@ -105,7 +105,7 @@ def scan_structure(root: Path) -> StructureScanResult:
         manifest_info = PACKAGE_MANIFESTS.get(path.name)
         if manifest_info:
             ecosystem, language = manifest_info
-            rel_path = str(path.relative_to(root))
+            rel_path = path.relative_to(root).as_posix()
             manifests.append(PackageManifest(path=rel_path, ecosystem=ecosystem, language=language))
             observation = (
                 f"Package manifest {path.name!r} found, implying the {ecosystem!r} ecosystem"

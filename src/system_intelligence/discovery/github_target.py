@@ -99,6 +99,8 @@ def clone_github_repository(spec: str) -> Path:
         argv,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )

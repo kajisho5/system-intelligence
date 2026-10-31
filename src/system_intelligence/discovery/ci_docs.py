@@ -62,7 +62,7 @@ def detect_ci_jobs(root: Path) -> list[CIJob]:
 
     jobs: list[CIJob] = []
     for workflow_path in sorted(workflows_dir.glob("*.y*ml")):
-        rel_path = str(workflow_path.relative_to(root))
+        rel_path = workflow_path.relative_to(root).as_posix()
         jobs.append(
             CIJob(
                 id=stable_id("cijob", rel_path),

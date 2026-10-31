@@ -90,6 +90,8 @@ def export_json_schemas(directory: Path) -> list[Path]:
     for name in sorted(_SCHEMAS):
         schema = _SCHEMAS[name].json_schema()
         path = directory / f"{name}.schema.json"
-        path.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+        )
         written.append(path)
     return written

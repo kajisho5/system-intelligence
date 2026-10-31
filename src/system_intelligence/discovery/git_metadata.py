@@ -38,6 +38,8 @@ def _run_git(repo_path: Path, *args: str) -> str | None:
         cwd=repo_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:

@@ -55,7 +55,9 @@ _REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
 def _list_relative_files(directory: Path, relative_to: Path) -> list[str]:
     if not directory.is_dir():
         return []
-    return [str(p.relative_to(relative_to)) for p in sorted(directory.glob("**/*")) if p.is_file()]
+    return [
+        p.relative_to(relative_to).as_posix() for p in sorted(directory.glob("**/*")) if p.is_file()
+    ]
 
 
 def detect_skills(root: Path) -> list[Skill]:
@@ -77,7 +79,7 @@ def detect_skills(root: Path) -> list[Skill]:
 
         found_evidence = Evidence(
             kind=EvidenceKind.FILE,
-            source=str(rel_path),
+            source=rel_path.as_posix(),
             observation="SKILL.md file found",
             confidence=Confidence.VERIFIED,
         )
@@ -103,7 +105,7 @@ def detect_skills(root: Path) -> list[Skill]:
             evidence.append(
                 Evidence(
                     kind=EvidenceKind.FILE,
-                    source=str(rel_path),
+                    source=rel_path.as_posix(),
                     locator="frontmatter",
                     observation=observation,
                     confidence=Confidence.VERIFIED,
@@ -116,9 +118,9 @@ def detect_skills(root: Path) -> list[Skill]:
 
         skills.append(
             Skill(
-                id=stable_id("skill", str(rel_path)),
+                id=stable_id("skill", rel_path.as_posix()),
                 name=name or skill_dir.name,
-                path=str(rel_path),
+                path=rel_path.as_posix(),
                 description=description,
                 is_standard_format=is_standard,
                 scripts=scripts,
