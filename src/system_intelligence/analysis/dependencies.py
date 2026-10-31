@@ -290,7 +290,7 @@ def _extract_cargo_dependencies(path: Path, rel_path: str) -> list[Dependency]:
     resolved_versions = (
         _extract_cargo_lock_resolved_versions(lock_path) if lock_path.is_file() else {}
     )
-    lock_rel_path = str(Path(rel_path).parent / "Cargo.lock")
+    lock_rel_path = (Path(rel_path).parent / "Cargo.lock").as_posix()
 
     dependencies: list[Dependency] = []
     for section in ("dependencies", "dev-dependencies", "build-dependencies"):
@@ -479,7 +479,7 @@ def extract_dependencies_by_manifest(
         dependencies = extractor(root / manifest.path, manifest.path)
         if not dependencies:
             continue
-        directory = str(Path(manifest.path).parent)
+        directory = Path(manifest.path).parent.as_posix()
         by_directory.setdefault(directory, []).extend(dependencies)
     return by_directory
 
@@ -511,7 +511,7 @@ def component_directory(component: Component) -> str | None:
         return "."
     if component.path is None:
         return None
-    return str(Path(component.path).parent)
+    return Path(component.path).parent.as_posix()
 
 
 def attach_dependencies_by_component(

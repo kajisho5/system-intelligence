@@ -199,3 +199,17 @@ def test_snapshot_adrs_defaults_to_empty(tmp_path: Path) -> None:
     restored = Snapshot.read_from_directory(out_dir, target=_target())
 
     assert restored.adrs == []
+
+
+def test_snapshot_files_are_utf8_with_lf_line_endings_on_every_os(tmp_path: Path) -> None:
+    """The canonical snapshot (ADR-003) is byte-identical across OSes (ADR-014)."""
+    snapshot = Snapshot(
+        target=_target(),
+        components=[Component(name="梶山-core", kind=ComponentKind.PACKAGE, path="src/core")],
+    )
+
+    snapshot.write_to_directory(tmp_path)
+
+    for path in tmp_path.iterdir():
+        assert b"\r\n" not in path.read_bytes(), path.name
+    assert "梶山-core".encode() in (tmp_path / "components.json").read_bytes()

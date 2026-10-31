@@ -75,4 +75,6 @@ class ResearchCache:
             "cached_at": datetime.now(UTC).isoformat(),
             "results": [r.model_dump(mode="json") for r in results],
         }
-        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+        )

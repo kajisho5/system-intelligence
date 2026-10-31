@@ -1073,7 +1073,7 @@ def test_execute_command_push_opens_a_draft_pr_with_approval(
     assert result.exit_code == 0
     assert "Draft PR opened: https://github.com/o/r/pull/9" in result.stdout
     branches = subprocess.run(
-        ["git", "branch"], cwd=remote, capture_output=True, text=True, check=True
+        ["git", "branch"], cwd=remote, capture_output=True, text=True, encoding="utf-8", check=True
     ).stdout
     assert "si/add-license" in branches
 
@@ -2605,3 +2605,134 @@ def test_watch_ownership_findings_do_not_drift_between_identical_runs(tmp_path: 
 
     assert second.exit_code == 0
     assert "No drift detected" in second.stdout
+
+
+# --- --read-only (ADR-013) ---------------------------------------------------
+
+
+def _output(result: object) -> str:
+    return result.stdout + (result.stderr or "")  # type: ignore[attr-defined]
+
+
+def _git_branches(path: Path) -> str:
+    return subprocess.run(
+        ["git", "branch"],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        (["improve", "."], "improvement plan"),
+        (["propose", "need a cache"], "proposals"),
+        (["execute", "plan.json"], "branches and commits"),
+        (["verify", "pytest"], "inside the target checkout"),
+    ],
+)
+def test_read_only_refuses_improvement_and_execution_commands(args: list[str], reason: str) -> None:
+    result = runner.invoke(app, ["--read-only", *args])
+
+    assert result.exit_code == 1
+    assert f"--read-only refuses 'si {args[0]}'" in _output(result)
+    assert reason in _output(result)
+
+
+def test_read_only_execute_with_approval_changes_nothing(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            {
+                "actor": "human:test",
+                "scope": "repository",
+                "action": "create_local_branch_and_commit",
+                "target": str(tmp_path),
+                "permission_level": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = _git_branches(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["--read-only", "execute", str(plan_file), str(tmp_path)]
+        + ["--approve", "--approval-file", str(approval_file)],
+    )
+
+    assert result.exit_code == 1
+    assert "Plan preview" not in result.stdout
+    assert not (tmp_path / "LICENSE").exists()
+    assert _git_branches(tmp_path) == before
+
+
+def test_read_only_is_also_set_by_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SI_READ_ONLY", "1")
+
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "--read-only refuses 'si improve'" in _output(result)
+
+
+def test_read_only_environment_can_be_switched_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SI_READ_ONLY", "0")
+
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "recommendation(s)" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("option", "reason"),
+    [(["--propose"], "update proposals"), (["--plan-out"], "ChangePlans")],
+)
+def test_read_only_refuses_check_updates_improvement_options(
+    tmp_path: Path, option: list[str], reason: str
+) -> None:
+    args = [*option, str(tmp_path / "plans")] if option == ["--plan-out"] else option
+    result = runner.invoke(app, ["--read-only", "check-updates", str(tmp_path), *args])
+
+    assert result.exit_code == 1
+    assert f"--read-only refuses 'si check-updates {option[0]}'" in _output(result)
+    assert reason in _output(result)
+    assert not (tmp_path / "plans").exists()
+
+
+def test_read_only_check_updates_assessment_still_runs(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["--read-only", "check-updates", str(tmp_path)])
+
+    assert result.exit_code == 0, _output(result)
+    assert "--read-only refuses" not in _output(result)
+
+
+def test_read_only_audit_commands_still_run(tmp_path: Path) -> None:
+    """The OS audit's own commands: diagnose --out and watch --state-dir."""
+    target = tmp_path / "target"
+    target.mkdir()
+
+    diagnose = runner.invoke(
+        app, ["--read-only", "diagnose", str(target), "--out", str(tmp_path / "out")]
+    )
+    watch = runner.invoke(
+        app, ["--read-only", "watch", str(target), "--state-dir", str(tmp_path / "state")]
+    )
+    plan = runner.invoke(app, ["--read-only", "plan", "--list"])
+
+    assert diagnose.exit_code == 0, _output(diagnose)
+    assert len(list((tmp_path / "out").iterdir())) == 1
+    assert watch.exit_code == 0, _output(watch)
+    assert "recording this scan as the baseline" in watch.stdout
+    assert plan.exit_code == 0
+    assert list(target.iterdir()) == []

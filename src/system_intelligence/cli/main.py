@@ -133,6 +133,44 @@ for _name, _summary in _PLANNED_COMMANDS.items():
     _register_placeholder(_name, _summary)
 
 
+# `--read-only` stops System Intelligence at findings (ADR-013): discovery,
+# analysis, research and reporting run; the improvement and execution stages
+# are refused before they start. Each entry says why, in the refusal itself.
+_READ_ONLY_REFUSED_COMMANDS = {
+    "improve": "it turns findings into an improvement plan",
+    "propose": "it writes proposals and implementer handoff packets",
+    "execute": "it creates branches and commits and can push",
+    "verify": "it runs a command inside the target checkout",
+}
+_READ_ONLY_OPTION = typer.Option(
+    False,
+    "--read-only",
+    envvar="SI_READ_ONLY",
+    help=(
+        "Audit mode: refuse every command or option that improves, changes or runs "
+        "anything in the target (improve, propose, execute, verify, and check-updates "
+        "--propose/--plan-out). Also set by SI_READ_ONLY=1."
+    ),
+)
+
+
+def _refuse_read_only(what: str, reason: str) -> None:
+    typer.echo(f"error: --read-only refuses {what}: {reason}.", err=True)
+    raise typer.Exit(code=1)
+
+
+def _is_read_only(ctx: typer.Context) -> bool:
+    return bool(ctx.find_root().params.get("read_only", False))
+
+
+@app.callback()
+def main(ctx: typer.Context, read_only: bool = _READ_ONLY_OPTION) -> None:
+    """System Intelligence: discover, understand, audit, research, and improve software systems."""
+    reason = _READ_ONLY_REFUSED_COMMANDS.get(ctx.invoked_subcommand or "")
+    if read_only and reason is not None:
+        _refuse_read_only(f"'si {ctx.invoked_subcommand}'", reason)
+
+
 _TARGET_ARGUMENT = typer.Argument(
     ".",
     help=(
@@ -400,7 +438,7 @@ def report(
 
     out.mkdir(parents=True, exist_ok=True)
     report_path = out / "report.html"
-    report_path.write_text(generate_html_report(snapshot), encoding="utf-8")
+    report_path.write_text(generate_html_report(snapshot), encoding="utf-8", newline="\n")
     snapshot_dir = out / snapshot.id
     snapshot.write_to_directory(snapshot_dir)
 
@@ -555,7 +593,7 @@ def watch(
     snapshot_dir = state_dir / snapshot.id
     snapshot.write_to_directory(snapshot_dir)
     latest_pointer.parent.mkdir(parents=True, exist_ok=True)
-    latest_pointer.write_text(snapshot.id, encoding="utf-8")
+    latest_pointer.write_text(snapshot.id, encoding="utf-8", newline="\n")
 
     if out is not None:
         out_snapshot_dir = out / snapshot.id
@@ -693,7 +731,7 @@ def dashboard(
 
     out.mkdir(parents=True, exist_ok=True)
     dashboard_path = out / "dashboard.html"
-    dashboard_path.write_text(generate_dashboard_html(data), encoding="utf-8")
+    dashboard_path.write_text(generate_dashboard_html(data), encoding="utf-8", newline="\n")
     snapshot_dir = out / snapshot.id
     snapshot.write_to_directory(snapshot_dir)
 
@@ -869,6 +907,7 @@ _CHECK_UPDATES_VULNERABILITIES_OPTION = typer.Option(
 
 @app.command(name="check-updates")
 def check_updates(
+    ctx: typer.Context,
     target: str = _TARGET_ARGUMENT,
     propose: bool = _CHECK_UPDATES_PROPOSE_OPTION,
     record: Path | None = _CHECK_UPDATES_RECORD_OPTION,
@@ -910,7 +949,17 @@ def check_updates(
     advisories`) — a separate, informational fact from the update verdict
     itself: a known-vulnerable current version never by itself unlocks
     `UPDATE_RECOMMENDED` (see `analysis.update_intelligence.assess_impact`).
+
+    Under `si --read-only`, `--propose` and `--plan-out` are refused
+    (ADR-013); the assessment itself still runs.
     """
+    if _is_read_only(ctx):
+        if propose:
+            _refuse_read_only("'si check-updates --propose'", "it writes update proposals")
+        if plan_out is not None:
+            _refuse_read_only(
+                "'si check-updates --plan-out'", "it writes ChangePlans for 'si execute'"
+            )
     try:
         discovery = discover_local_repository(target)
     except TargetResolutionError as exc:
@@ -1014,6 +1063,7 @@ def check_updates(
             plan_path.write_text(
                 json.dumps(change_plan.to_plan_file_dict(), indent=2, ensure_ascii=False),
                 encoding="utf-8",
+                newline="\n",
             )
             typer.echo(f"ChangePlan written to {plan_path}")
             written += 1
@@ -1199,7 +1249,7 @@ def propose(
     typer.echo(f"Required permission level: {proposal.required_permission_level.name}")
 
     if out is not None:
-        out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
+        out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8", newline="\n")
         typer.echo(f"\nProposal written to {out}")
 
     if record is not None:
@@ -1207,7 +1257,9 @@ def propose(
 
     if handoff_out is not None and target is not None:
         packet = build_handoff_packet(proposal, target)
-        handoff_out.write_text(json.dumps(packet, indent=2, ensure_ascii=False), encoding="utf-8")
+        handoff_out.write_text(
+            json.dumps(packet, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+        )
         typer.echo(f"\nHandoff packet written to {handoff_out}")
 
 
@@ -1284,7 +1336,9 @@ def _append_json_record(directory: Path, filename: str, record: BaseModel) -> No
     path = directory / filename
     existing: list[object] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
     existing.append(record.model_dump(mode="json"))
-    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    path.write_text(
+        json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+    )
 
 
 _PLAN_FILE_ARGUMENT = typer.Argument(
@@ -1653,6 +1707,8 @@ def doctor() -> None:
             [git_path, "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         in_git_repo = result.returncode == 0 and result.stdout.strip() == "true"

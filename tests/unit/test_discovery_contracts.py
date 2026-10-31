@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -57,11 +58,13 @@ def test_declared_path_outside_root_is_refused(tmp_path: Path, path: str) -> Non
     assert observation.error is not None and "outside the target root" in observation.error
 
 
-def test_declared_symlink_escaping_root_is_refused(tmp_path: Path) -> None:
+def test_declared_symlink_escaping_root_is_refused(
+    tmp_path: Path, make_symlink: Callable[[Path, Path], None]
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     (tmp_path / "secret.json").write_text("{}", encoding="utf-8")
-    (root / "contract.json").symlink_to(tmp_path / "secret.json")
+    make_symlink(root / "contract.json", tmp_path / "secret.json")
     _declare(root, ["contract.json"])
 
     [observation] = read_declared_contracts(root)

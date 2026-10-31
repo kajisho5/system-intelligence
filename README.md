@@ -78,6 +78,13 @@ read-only into a temp directory first):
 | `si watch <target>` | Drift since the last `si watch` run for this target, via a self-managed `--state-dir` history (no daemon — repeat it yourself, or from cron/CI) |
 | `si doctor`, `si version` | Environment check, installed version |
 
+`si --read-only <command>` (or `SI_READ_ONLY=1`) is audit mode: discovery,
+analysis, research and reporting run as usual, while `si improve`, `si
+propose`, `si execute`, `si verify` and `si check-updates --propose`/`--plan-out`
+are refused before they start (exit 1, the reason on stderr). An automated
+audit sets it so nothing it runs can change, plan changes to, or run a
+command in the repositories it reads (ADR-013).
+
 `si execute`/`si verify`/`si research`/`si propose`/`si check-updates` all
 accept `--record <snapshot-dir>` to attach their result to an existing
 canonical snapshot so a later `si dashboard` can show it.
@@ -220,6 +227,10 @@ pip-audit
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the ground rules (evidence-first,
 read-only by default, deterministic-first, no video-production assumptions in
 core) before adding a new module.
+
+CI runs the tests on Linux, macOS and Windows with Python 3.11 and 3.12;
+text I/O always names its encoding, and snapshots are written with LF line
+endings and `/`-separated paths on every OS (ADR-014).
 
 ## Safety
 

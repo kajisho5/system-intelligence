@@ -70,6 +70,9 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=system_intelligence --cov-report=term-missing"
+# Only raised when PYTHONWARNDEFAULTENCODING=1 (as CI sets): text I/O that
+# falls back to the locale encoding (cp1252 on Windows) fails the run (ADR-014).
+filterwarnings = ["error::EncodingWarning"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
