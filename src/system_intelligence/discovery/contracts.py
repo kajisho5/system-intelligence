@@ -121,7 +121,7 @@ def _file_observation(path: Path, label: str) -> ContractObservation:
     )
 
 
-def _confined(root: Path, relative: str) -> Path | None:
+def confined_path(root: Path, relative: str) -> Path | None:
     """`root / relative`, or None if it is absolute or escapes `root` (incl. via symlink)."""
     if Path(relative).is_absolute():
         return None
@@ -159,7 +159,7 @@ def read_declared_contracts(root: Path) -> list[ContractObservation]:
 
     observations: list[ContractObservation] = []
     for entry in parsed.contracts:
-        path = _confined(root, entry.path)
+        path = confined_path(root, entry.path)
         if path is None:
             observations.append(
                 declaration_error(

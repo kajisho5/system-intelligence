@@ -41,6 +41,7 @@ from system_intelligence.discovery.contracts import (
     collect_contracts,
 )
 from system_intelligence.discovery.git_metadata import collect_git_metadata
+from system_intelligence.discovery.ownership import OwnershipObservation, collect_ownership
 from system_intelligence.discovery.skills import detect_skills
 from system_intelligence.discovery.structure import PackageManifest, scan_structure
 from system_intelligence.discovery.target import resolve_target
@@ -52,6 +53,7 @@ class DiscoveryResult:
     ci_jobs: list[CIJob]
     package_manifests: list[PackageManifest]
     contracts: list[ContractObservation] = field(default_factory=list)
+    ownership: list[OwnershipObservation] = field(default_factory=list)
 
 
 def discover_local_repository(
@@ -59,6 +61,7 @@ def discover_local_repository(
     contract_files: Sequence[Path] = (),
     contract_commands: Sequence[Sequence[str]] = (),
     contract_timeout: float = DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+    ownership_maps: Sequence[Path] = (),
 ) -> DiscoveryResult:
     """Run every Phase 2 discovery detector against a local path or a
     GitHub repository (`discovery.target.resolve_target`).
@@ -73,6 +76,11 @@ def discover_local_repository(
     `.si/contracts.json` always, plus `contract_files`/`contract_commands`
     only when the caller passes them (a command is never inferred from the
     target).
+
+    `ownership` holds every ownership document collected by
+    `discovery.ownership.collect_ownership`: the target's own static
+    `.si/ownership.json` (and the maps it lists) always, plus
+    `ownership_maps` when the caller passes them. Both are only read.
     """
     target = resolve_target(locator)
     root = Path(target.locator)
@@ -86,6 +94,7 @@ def discover_local_repository(
     agents = detect_agents(root)
     adrs = detect_adrs(root)
     contracts = collect_contracts(root, contract_files, contract_commands, contract_timeout)
+    ownership = collect_ownership(root, ownership_maps)
 
     repository = Repository(
         id=stable_id("repository", "root"),
@@ -112,4 +121,5 @@ def discover_local_repository(
         ci_jobs=ci_jobs,
         package_manifests=structure.package_manifests,
         contracts=contracts,
+        ownership=ownership,
     )

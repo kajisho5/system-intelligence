@@ -65,6 +65,7 @@ from system_intelligence.execution import (
 )
 from system_intelligence.integrations.ai_video_os import (
     CAPABILITY_CONTRACT_SCHEMA_LABEL,
+    INACTIVE_COMPONENT_STATUSES,
     load_capability_contract_schema,
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
@@ -171,6 +172,13 @@ _CONTRACT_SCHEMA_OPTION = typer.Option(
     help="JSON Schema file to validate contracts against. Defaults to the bundled AI Video "
     "Production OS capability contract schema.",
 )
+_OWNERSHIP_MAP_OPTION = typer.Option(
+    [],
+    "--ownership-map",
+    help="An ownership map to audit for overlapping and unowned jobs, e.g. the AI Video "
+    "Production OS ecosystem.json ({'components': [{'repo': ..., 'owns': [...]}]}). "
+    "Repeatable. Read only.",
+)
 
 
 def _load_contract_schema(path: Path | None) -> tuple[dict[str, Any], str]:
@@ -194,8 +202,10 @@ def _discover_and_analyze(
     contract_commands: list[str],
     contract_timeout: float,
     contract_schema: Path | None,
+    ownership_maps: list[Path],
 ) -> AnalysisResult:
-    """Discovery + analysis shared by diagnose/report/watch/dashboard, with contracts."""
+    """Discovery + analysis shared by diagnose/report/watch/dashboard, with contracts
+    and ownership maps."""
     schema, schema_label = _load_contract_schema(contract_schema)
     argvs: list[list[str]] = []
     for command in contract_commands:
@@ -214,12 +224,16 @@ def _discover_and_analyze(
             contract_files=contract_files,
             contract_commands=argvs,
             contract_timeout=contract_timeout,
+            ownership_maps=ownership_maps,
         )
     except TargetResolutionError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     return analyze_local_repository(
-        discovery, contract_schema=schema, contract_schema_label=schema_label
+        discovery,
+        contract_schema=schema,
+        contract_schema_label=schema_label,
+        inactive_owner_statuses=INACTIVE_COMPONENT_STATUSES,
     )
 
 
@@ -297,6 +311,7 @@ def diagnose(
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
     contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
     """Structured health assessment: discovery plus deterministic analysis.
 
@@ -308,10 +323,20 @@ def diagnose(
     `--contract-file`/`--contract-command` (and a target's own
     `.si/contracts.json`) add Capability Contract validation: each
     contract is checked against `--contract-schema` (default: the bundled
-    AI Video Production OS schema) and every problem becomes a Finding.
+    AI Video Production OS schema) and every problem becomes a Finding;
+    every `provides` entry of a contract that validates becomes a
+    Capability. `--ownership-map` (and a target's own `.si/ownership.json`)
+    adds the ownership audit: jobs owned by two components, a job owned by
+    one while another's contract provides a capability bound to it, and
+    jobs with no active owner (ADR-012).
     """
     result = _discover_and_analyze(
-        target, contract_file, contract_command, contract_timeout, contract_schema
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
     )
     snapshot = result.snapshot
 
@@ -352,16 +377,22 @@ def report(
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
     contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
     """Generate the static HTML intelligence report for a local target.
 
     Runs discovery and analysis, then writes a self-contained
     `report.html` (no CDN dependencies, viewable offline) plus the
     canonical JSON snapshot into `--out` (default: './si-report').
-    Contract options: as for `si diagnose`.
+    Contract and ownership options: as for `si diagnose`.
     """
     result = _discover_and_analyze(
-        target, contract_file, contract_command, contract_timeout, contract_schema
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
     )
     snapshot = result.snapshot.model_copy(
         update={"recommendations": generate_recommendations(result.snapshot.findings)}
@@ -469,6 +500,7 @@ def watch(
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
     contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
     """Detect drift since the last 'si watch' run for this target.
 
@@ -486,10 +518,15 @@ def watch(
     under `--state-dir` is ever deleted by this command. Repeating "on an
     interval" means invoking `si watch` again later (by hand, cron, or a
     CI schedule); this command never sleeps, polls, or backgrounds itself.
-    Contract options: as for `si diagnose`.
+    Contract and ownership options: as for `si diagnose`.
     """
     result = _discover_and_analyze(
-        target, contract_file, contract_command, contract_timeout, contract_schema
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
     )
     snapshot = result.snapshot
 
@@ -565,6 +602,7 @@ def dashboard(
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
     contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
     """Generate the interactive System Intelligence Console for a local target.
 
@@ -587,11 +625,16 @@ def dashboard(
     for a known-vulnerability lookup (OSV.dev). With `--check-updates`, each
     actionable verdict's Recommendation
     (`recommendations.generate_update_recommendations`) is merged into the
-    Recommendations screen alongside the Finding-based ones. Contract
-    options: as for `si diagnose`.
+    Recommendations screen alongside the Finding-based ones. Contract and
+    ownership options: as for `si diagnose`.
     """
     result = _discover_and_analyze(
-        target, contract_file, contract_command, contract_timeout, contract_schema
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
     )
     snapshot = result.snapshot.model_copy(
         update={"recommendations": generate_recommendations(result.snapshot.findings)}

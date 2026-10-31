@@ -94,6 +94,20 @@ against `--contract-schema` (default: the bundled AI Video Production OS
 capability contract schema) and every problem is a `capability_contract_*`
 finding naming the JSON Pointer of the offending value (ADR-011). With no
 such source there are zero contract findings.
+Every `provides` entry of a contract that validates becomes a Capability,
+so a contract can satisfy `.si/requirements.json`.
+
+The same four commands also audit an ownership map, the document that
+gives each job to one component (the AI Video Production OS
+`ecosystem.json`: `{"components": [{"repo": "publish-skill", "owns":
+["配信先アップロード"]}]}`): `--ownership-map FILE`, or the target's own
+`.si/ownership.json` (an ownership document itself, plus `"maps": [{"path":
+"ecosystem.json"}]` inside the target). Files only, never commands. A job
+owned by two components is an `ownership_overlap`; a job owned by one
+component while another's contract provides a capability bound to it
+(`"job_capabilities": {"配信プラットフォーム仕様": ["ffmpeg-skill.export"]}`)
+is an `ownership_provider_overlap`; a job only `planned` components own,
+or a bound job nobody owns, is an `ownership_unowned_job` (ADR-012).
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":

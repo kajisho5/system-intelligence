@@ -16,7 +16,11 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 4), orchestrated by
   such file contributes zero gap findings, never an inferred one
 - Capability Contract validation (`contracts.py`, with the dependency-free
   `json_schema.py`) — opt-in: only contracts `discovery.contracts`
-  collected are checked, against a schema the caller passes (ADR-011)
+  collected are checked, against a schema the caller passes (ADR-011);
+  every `provides` entry of a contract that validates becomes a Capability
+- ownership-map audit (`ownership.py`) — opt-in: jobs owned by two
+  components, a job owned by one while another's contract provides a
+  capability bound to it, and jobs with no active owner (ADR-012)
 
 Not yet implemented: semantic architecture heuristics beyond import
 cycles, and documentation *content* quality (only presence/absence is

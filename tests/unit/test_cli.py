@@ -2519,3 +2519,89 @@ def test_watch_contract_findings_do_not_drift_between_identical_runs(tmp_path: P
 
     assert second.exit_code == 0
     assert "No drift detected" in second.stdout
+
+
+_OWNERSHIP_FIXTURES = Path(__file__).parent.parent / "fixtures" / "ownership"
+
+
+def _ownership_target(root: Path, ecosystem: str) -> None:
+    """A target shaped like the OS checkout: its ecosystem.json plus an ffmpeg-skill contract."""
+    (root / ".si").mkdir(parents=True)
+    (root / "ecosystem.json").write_text(
+        (_OWNERSHIP_FIXTURES / ecosystem).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (root / "ffmpeg.contract.json").write_text(
+        (_OWNERSHIP_FIXTURES / "ffmpeg-skill-2.22.1.provides.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (root / ".si" / "contracts.json").write_text(
+        '{"contracts": [{"path": "ffmpeg.contract.json"}]}', encoding="utf-8"
+    )
+    (root / ".si" / "ownership.json").write_text(
+        json.dumps(
+            {
+                "maps": [{"path": "ecosystem.json"}],
+                "job_capabilities": {"配信プラットフォーム仕様": ["ffmpeg-skill.export"]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_diagnose_without_ownership_sources_reports_no_ownership_findings(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    (tmp_path / "t").mkdir()
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path / "t"), "--out", str(out)])
+
+    assert result.exit_code == 0
+    [snapshot_dir] = out.iterdir()
+    findings = json.loads((snapshot_dir / "findings.json").read_text(encoding="utf-8"))
+    assert not [f for f in findings if f["category"].startswith("ownership_")]
+
+
+def test_diagnose_finds_the_publish_ffmpeg_platform_table_overlap(tmp_path: Path) -> None:
+    """ECOSYSTEM_ROADMAP.md step 2's 'done when'."""
+    target = tmp_path / "os"
+    _ownership_target(target, "ecosystem-6e17ae9.json")
+    out = tmp_path / "out"
+
+    result = runner.invoke(app, ["diagnose", str(target), "--out", str(out)])
+
+    assert result.exit_code == 0, result.stdout
+    assert (
+        "'配信プラットフォーム仕様' is owned by publish-skill (ecosystem.json), but the "
+        "capability contract from ffmpeg.contract.json (ffmpeg-skill) provides "
+        "'ffmpeg-skill.export'" in result.stdout
+    )
+    [snapshot_dir] = out.iterdir()
+    capabilities = json.loads((snapshot_dir / "capabilities.json").read_text(encoding="utf-8"))
+    assert {c["name"] for c in capabilities} >= {"ffmpeg-skill.export", "ffmpeg-skill.check"}
+
+
+def test_diagnose_ownership_map_option_reads_the_current_map(tmp_path: Path) -> None:
+    target = tmp_path / "skill"
+    target.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["diagnose", str(target)]
+        + ["--ownership-map", str(_OWNERSHIP_FIXTURES / "ecosystem-ae8304e.json")],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "'NLE連携(タイムライン受け渡し)' has no active owner" in result.stdout
+    assert "is owned by 2 components" not in result.stdout
+
+
+def test_watch_ownership_findings_do_not_drift_between_identical_runs(tmp_path: Path) -> None:
+    target = tmp_path / "os"
+    _ownership_target(target, "ecosystem-6e17ae9.json")
+    args = ["watch", str(target), "--state-dir", str(tmp_path / "state")]
+
+    assert runner.invoke(app, args).exit_code == 0
+    second = runner.invoke(app, args)
+
+    assert second.exit_code == 0
+    assert "No drift detected" in second.stdout

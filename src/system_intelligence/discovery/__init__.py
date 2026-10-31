@@ -7,8 +7,10 @@ clone, then treated as any other local path), git metadata, standard
 `SKILL.md` detection, CI workflow detection, ADR detection, and
 root-document detection, and Capability Contract collection
 (`discovery.contracts`: a target's static `.si/contracts.json`, plus
-operator-supplied contract files/commands, ADR-011), orchestrated by
-`discover_local_repository`.
+operator-supplied contract files/commands, ADR-011), and ownership-map
+collection (`discovery.ownership`: a target's static `.si/ownership.json`
+and the maps it lists, plus operator-supplied maps; files only, ADR-012),
+orchestrated by `discover_local_repository`.
 
 Not yet implemented: agent detection beyond the Skill format (no
 verified, generic file convention for it has been found).

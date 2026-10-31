@@ -259,3 +259,53 @@ def test_analyze_local_repository_flags_unreferenced_agent(tmp_path: Path) -> No
     unused_findings = [f for f in result.snapshot.findings if f.category == "unused_candidate"]
     assert len(unused_findings) == 1
     assert "orphan-agent" in unused_findings[0].statement
+
+
+def _write_contract_target(root: Path, provides: str) -> None:
+    (root / ".si").mkdir()
+    (root / ".si" / "contracts.json").write_text(
+        '{"contracts": [{"path": "contract.json"}]}', encoding="utf-8"
+    )
+    (root / "contract.json").write_text(
+        f'{{"skill_id": "x", "provides": [{provides}]}}', encoding="utf-8"
+    )
+
+
+def test_analyze_local_repository_reads_contract_provides_into_capabilities(
+    tmp_path: Path,
+) -> None:
+    entry = '{"id": "pdf export", "lifecycle": "STABLE", "tool_id": "x/pdf"}'
+    _write_contract_target(tmp_path, f"{entry}, {entry}")
+    (tmp_path / ".si" / "requirements.json").write_text(
+        '{"capabilities": [{"name": "pdf export"}]}', encoding="utf-8"
+    )
+
+    result = analyze_local_repository(discover_local_repository(str(tmp_path)))
+
+    repository = next(c for c in result.snapshot.components if isinstance(c, Repository))
+    [capability] = result.snapshot.capabilities
+    assert capability.name == "pdf export"
+    assert capability.provider_ids == [repository.id]
+    assert len(capability.evidence) == 2
+    categories = {f.category for f in result.snapshot.findings}
+    # The contract satisfies the requirement, and one contract naming a
+    # capability twice is not a duplicate across components.
+    assert "capability_gap" not in categories
+    assert "duplicated_capability" not in categories
+    provides = [r for r in result.snapshot.relationships if r.type == RelationshipType.PROVIDES]
+    assert [(r.source_id, r.target_id) for r in provides] == [(repository.id, capability.id)]
+
+
+def test_analyze_local_repository_runs_the_ownership_audit(tmp_path: Path) -> None:
+    (tmp_path / ".si").mkdir()
+    (tmp_path / ".si" / "ownership.json").write_text(
+        '{"components": [{"repo": "a", "status": "planned", "owns": ["job"]}]}',
+        encoding="utf-8",
+    )
+    discovery = discover_local_repository(str(tmp_path))
+
+    without = analyze_local_repository(discovery)
+    with_statuses = analyze_local_repository(discovery, inactive_owner_statuses=["planned"])
+
+    assert "ownership_unowned_job" not in {f.category for f in without.snapshot.findings}
+    assert "ownership_unowned_job" in {f.category for f in with_statuses.snapshot.findings}

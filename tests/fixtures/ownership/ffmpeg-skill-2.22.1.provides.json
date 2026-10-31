@@ -1,0 +1,9 @@
+{
+  "skill": {"id": "ffmpeg-skill", "version": "2.22.1"},
+  "provides": [
+    {"id": "ffmpeg-skill.check", "lifecycle": "EXPERIMENTAL", "tool_id": "ffmpeg-skill/check"},
+    {"id": "ffmpeg-skill.export", "lifecycle": "EXPERIMENTAL", "tool_id": "ffmpeg-skill/export"},
+    {"id": "ffmpeg-skill.probe", "lifecycle": "EXPERIMENTAL", "tool_id": "ffmpeg-skill/probe"},
+    {"id": "ffmpeg-skill.render", "lifecycle": "EXPERIMENTAL", "tool_id": "ffmpeg-skill/render"}
+  ]
+}
