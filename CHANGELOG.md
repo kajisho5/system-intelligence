@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.7 (2026-10-31)
+
+- Ownership-map analyzer: flag overlapping and unowned jobs, read contract provides into Capabilities (#122) (70f1d26)
+
 ## v0.2.6 (2026-10-31)
 
 - Capability-contract discovery: validate contracts against the OS schema (#121) (a53e3de)
