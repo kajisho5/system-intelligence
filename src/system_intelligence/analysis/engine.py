@@ -7,8 +7,10 @@ this module, not on each analyzer directly.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from system_intelligence.analysis.architecture import detect_circular_dependencies
 from system_intelligence.analysis.capabilities import (
@@ -17,6 +19,7 @@ from system_intelligence.analysis.capabilities import (
     extract_capabilities,
 )
 from system_intelligence.analysis.ci_quality import audit_ci_and_tests
+from system_intelligence.analysis.contracts import audit_capability_contracts
 from system_intelligence.analysis.dependencies import (
     attach_dependencies_by_component,
     extract_dependencies_by_manifest,
@@ -35,8 +38,18 @@ class AnalysisResult:
     snapshot: Snapshot
 
 
-def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
-    """Run every Phase 3 analyzer and populate findings, capabilities, and dependencies."""
+def analyze_local_repository(
+    discovery: DiscoveryResult,
+    contract_schema: Mapping[str, Any] | None = None,
+    contract_schema_label: str = "capability contract schema",
+) -> AnalysisResult:
+    """Run every Phase 3 analyzer and populate findings, capabilities, and dependencies.
+
+    `contract_schema` is the Capability Contract JSON Schema the collected
+    contracts (`discovery.contracts`) are validated against; this module
+    never picks one itself (ADR-011) -- the CLI passes the bundled schema
+    or `--contract-schema`. With `None`, contracts are not schema-checked.
+    """
     snapshot = discovery.snapshot
     root = Path(snapshot.target.locator)
 
@@ -55,6 +68,9 @@ def analyze_local_repository(discovery: DiscoveryResult) -> AnalysisResult:
         *audit_unused_skills([*skills, *agents], root),
         *detect_circular_dependencies(root, repository),
         *audit_capability_gaps(root, capabilities, repository),
+        *audit_capability_contracts(
+            discovery.contracts, repository, contract_schema, contract_schema_label
+        ),
     ]
 
     updated_components = attach_dependencies_by_component(

@@ -82,6 +82,19 @@ read-only into a temp directory first):
 accept `--record <snapshot-dir>` to attach their result to an existing
 canonical snapshot so a later `si dashboard` can show it.
 
+`si diagnose`/`si report`/`si dashboard`/`si watch` also validate Capability
+Contracts (a component's machine-readable `<tool> contract --json` output)
+when given one: `--contract-file FILE` (saved output, read only),
+`--contract-command 'ingest contract --json'` (run only because you named
+it: no shell, stdin closed, `--contract-timeout`, a minimal environment
+without your tokens, an empty temporary working directory), or the target's
+own `.si/contracts.json` (`{"contracts": [{"path": "contract.json"}]}`;
+paths inside the target only, never commands). Each contract is checked
+against `--contract-schema` (default: the bundled AI Video Production OS
+capability contract schema) and every problem is a `capability_contract_*`
+finding naming the JSON Pointer of the offending value (ADR-011). With no
+such source there are zero contract findings.
+
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":
 [{"name": "pdf export"}]}`) — opt-in only; a target with no such file gets

@@ -37,13 +37,14 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import typer
 from pydantic import BaseModel
 
 from system_intelligence import __version__
-from system_intelligence.analysis import analyze_local_repository
+from system_intelligence.analysis import AnalysisResult, analyze_local_repository
+from system_intelligence.analysis.json_schema import UnsupportedSchemaError, check_supported
 from system_intelligence.analysis.trust import infer_trust_levels
 from system_intelligence.analysis.update_intelligence import check_dependency_updates
 from system_intelligence.core.entities import Repository
@@ -53,6 +54,7 @@ from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
+from system_intelligence.discovery.contracts import DEFAULT_CONTRACT_TIMEOUT_SECONDS
 from system_intelligence.execution import (
     ChangePlan,
     GitHubPRError,
@@ -60,6 +62,10 @@ from system_intelligence.execution import (
     apply_plan,
     build_handoff_packet,
     open_draft_pr_for_plan,
+)
+from system_intelligence.integrations.ai_video_os import (
+    CAPABILITY_CONTRACT_SCHEMA_LABEL,
+    load_capability_contract_schema,
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
 from system_intelligence.policy import audit_log_entry
@@ -139,6 +145,84 @@ _OUT_OPTION = typer.Option(
 )
 
 
+_CONTRACT_FILE_OPTION = typer.Option(
+    [],
+    "--contract-file",
+    help="A Capability Contract JSON document to validate (e.g. saved '<tool> contract --json' "
+    "output; relative to the current directory). Repeatable. Read only, never executed.",
+)
+_CONTRACT_COMMAND_OPTION = typer.Option(
+    [],
+    "--contract-command",
+    help="A command that prints a Capability Contract on stdout, e.g. 'ingest contract --json'. "
+    "Repeatable. Split like a shell would but run with no shell, stdin closed, a timeout, "
+    "a minimal environment and an empty temporary working directory; the executable is "
+    "looked up on PATH. Only ever run when given here, never inferred from the target.",
+)
+_CONTRACT_TIMEOUT_OPTION = typer.Option(
+    DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+    "--contract-timeout",
+    min=0.1,
+    help="Seconds each --contract-command may run before it is stopped.",
+)
+_CONTRACT_SCHEMA_OPTION = typer.Option(
+    None,
+    "--contract-schema",
+    help="JSON Schema file to validate contracts against. Defaults to the bundled AI Video "
+    "Production OS capability contract schema.",
+)
+
+
+def _load_contract_schema(path: Path | None) -> tuple[dict[str, Any], str]:
+    """The contract schema and the label Findings cite it by; exits 1 if unusable."""
+    if path is None:
+        return load_capability_contract_schema(), CAPABILITY_CONTRACT_SCHEMA_LABEL
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(schema, dict):
+            raise UnsupportedSchemaError("the schema document must be a JSON object")
+        check_supported(schema)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, UnsupportedSchemaError) as exc:
+        typer.echo(f"error: --contract-schema {path}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    return schema, str(path)
+
+
+def _discover_and_analyze(
+    target: str,
+    contract_files: list[Path],
+    contract_commands: list[str],
+    contract_timeout: float,
+    contract_schema: Path | None,
+) -> AnalysisResult:
+    """Discovery + analysis shared by diagnose/report/watch/dashboard, with contracts."""
+    schema, schema_label = _load_contract_schema(contract_schema)
+    argvs: list[list[str]] = []
+    for command in contract_commands:
+        try:
+            argv = shlex.split(command)
+        except ValueError as exc:
+            typer.echo(f"error: --contract-command {command!r}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        if not argv:
+            typer.echo("error: --contract-command must not be empty", err=True)
+            raise typer.Exit(code=1)
+        argvs.append(argv)
+    try:
+        discovery = discover_local_repository(
+            target,
+            contract_files=contract_files,
+            contract_commands=argvs,
+            contract_timeout=contract_timeout,
+        )
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    return analyze_local_repository(
+        discovery, contract_schema=schema, contract_schema_label=schema_label
+    )
+
+
 def _format_named_list(label: str, items: list[str]) -> str:
     return f"{label}: {len(items)}" + (f" ({', '.join(items)})" if items else "")
 
@@ -206,21 +290,29 @@ _SEVERITY_ORDER = [
 
 
 @app.command()
-def diagnose(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> None:
+def diagnose(
+    target: str = _TARGET_ARGUMENT,
+    out: Path | None = _OUT_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+) -> None:
     """Structured health assessment: discovery plus deterministic analysis.
 
     Runs every Phase 3 analyzer (documentation/CI/test gaps, dependency
     extraction, capability duplication, unreferenced Skills, circular
     imports) and prints findings grouped by severity, each labeled with its
     confidence level. Nothing is written unless `--out` is given.
-    """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
 
-    result = analyze_local_repository(discovery)
+    `--contract-file`/`--contract-command` (and a target's own
+    `.si/contracts.json`) add Capability Contract validation: each
+    contract is checked against `--contract-schema` (default: the bundled
+    AI Video Production OS schema) and every problem becomes a Finding.
+    """
+    result = _discover_and_analyze(
+        target, contract_file, contract_command, contract_timeout, contract_schema
+    )
     snapshot = result.snapshot
 
     typer.echo(f"Target: {snapshot.target.locator}")
@@ -253,20 +345,24 @@ _REPORT_OUT_OPTION = typer.Option(
 
 
 @app.command()
-def report(target: str = _TARGET_ARGUMENT, out: Path = _REPORT_OUT_OPTION) -> None:
+def report(
+    target: str = _TARGET_ARGUMENT,
+    out: Path = _REPORT_OUT_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+) -> None:
     """Generate the static HTML intelligence report for a local target.
 
     Runs discovery and analysis, then writes a self-contained
     `report.html` (no CDN dependencies, viewable offline) plus the
     canonical JSON snapshot into `--out` (default: './si-report').
+    Contract options: as for `si diagnose`.
     """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    result = analyze_local_repository(discovery)
+    result = _discover_and_analyze(
+        target, contract_file, contract_command, contract_timeout, contract_schema
+    )
     snapshot = result.snapshot.model_copy(
         update={"recommendations": generate_recommendations(result.snapshot.findings)}
     )
@@ -369,6 +465,10 @@ def watch(
     target: str = _TARGET_ARGUMENT,
     state_dir: Path = _WATCH_STATE_DIR_OPTION,
     out: Path | None = _WATCH_OUT_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
 ) -> None:
     """Detect drift since the last 'si watch' run for this target.
 
@@ -386,14 +486,11 @@ def watch(
     under `--state-dir` is ever deleted by this command. Repeating "on an
     interval" means invoking `si watch` again later (by hand, cron, or a
     CI schedule); this command never sleeps, polls, or backgrounds itself.
+    Contract options: as for `si diagnose`.
     """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    result = analyze_local_repository(discovery)
+    result = _discover_and_analyze(
+        target, contract_file, contract_command, contract_timeout, contract_schema
+    )
     snapshot = result.snapshot
 
     latest_pointer = state_dir / "latest.txt"
@@ -464,6 +561,10 @@ def dashboard(
     compare_with: Path | None = _DASHBOARD_COMPARE_OPTION,
     check_updates: bool = _DASHBOARD_CHECK_UPDATES_OPTION,
     check_vulnerabilities: bool = _DASHBOARD_CHECK_VULNERABILITIES_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
 ) -> None:
     """Generate the interactive System Intelligence Console for a local target.
 
@@ -486,15 +587,12 @@ def dashboard(
     for a known-vulnerability lookup (OSV.dev). With `--check-updates`, each
     actionable verdict's Recommendation
     (`recommendations.generate_update_recommendations`) is merged into the
-    Recommendations screen alongside the Finding-based ones.
+    Recommendations screen alongside the Finding-based ones. Contract
+    options: as for `si diagnose`.
     """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    result = analyze_local_repository(discovery)
+    result = _discover_and_analyze(
+        target, contract_file, contract_command, contract_timeout, contract_schema
+    )
     snapshot = result.snapshot.model_copy(
         update={"recommendations": generate_recommendations(result.snapshot.findings)}
     )

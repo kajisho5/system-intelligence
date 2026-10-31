@@ -73,6 +73,7 @@ addopts = "--cov=system_intelligence --cov-report=term-missing"
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
-# B404 (import subprocess) is purely informational; the one call site
-# (cli/main.py) uses a fixed argv with no shell and is annotated inline.
+# B404 (import subprocess) is purely informational; every call site
+# (cli/main.py, discovery/contracts.py) uses an argv list with no shell and
+# is annotated inline.
 skips = ["B404"]

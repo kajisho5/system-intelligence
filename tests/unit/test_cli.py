@@ -1,5 +1,7 @@
 import json
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -2400,3 +2402,120 @@ def test_dashboard_command_check_vulnerabilities_without_check_updates_is_ignore
         .split("</script>", 1)[0]
     )
     assert dashboard_json["overview"]["has_update_check"] is False
+
+
+_CONTRACT_FIXTURES = Path(__file__).parent.parent / "fixtures" / "contracts"
+
+
+def test_diagnose_without_contract_sources_reports_no_contract_findings(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Capability contract" not in result.stdout
+
+
+def test_diagnose_contract_files_surface_artifacts_and_ingest_schema_problems(
+    tmp_path: Path,
+) -> None:
+    """ECOSYSTEM_ROADMAP.md step 1's 'done when'."""
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "diagnose",
+            str(tmp_path),
+            "--contract-file",
+            str(_CONTRACT_FIXTURES / "artifacts-skill-0.3.0.contract.json"),
+            "--contract-file",
+            str(_CONTRACT_FIXTURES / "ingest-skill-0.1.0.contract.json"),
+            "--contract-file",
+            str(_CONTRACT_FIXTURES / "ingest-skill-0.1.x.contract.json"),
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "artifacts-skill-0.3.0.contract.json does not match" in result.stdout
+    assert "matches none of the anyOf alternatives" in result.stdout
+    assert "at /skill: expected object, got string" in result.stdout
+    assert "ingest-skill-0.1.x.contract.json" not in result.stdout
+
+    [snapshot_dir] = out.iterdir()
+    findings = json.loads((snapshot_dir / "findings.json").read_text(encoding="utf-8"))
+    categories = [f["category"] for f in findings]
+    assert categories.count("capability_contract_violation") == 4
+
+
+def test_diagnose_contract_command_is_run_and_validated(tmp_path: Path) -> None:
+    command = shlex.join([sys.executable, "-c", 'print(\'{"id": "x", "skill": "x"}\')'])
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--contract-command", command])
+
+    assert result.exit_code == 0, result.stdout
+    assert "at /skill: expected object, got string" in result.stdout
+
+
+def test_diagnose_reads_the_targets_own_contract_declaration(tmp_path: Path) -> None:
+    (tmp_path / ".si").mkdir()
+    (tmp_path / ".si" / "contracts.json").write_text(
+        '{"contracts": [{"path": "contract.json"}]}', encoding="utf-8"
+    )
+    (tmp_path / "contract.json").write_text('{"skill_id": "x"}', encoding="utf-8")
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Capability contract from contract.json declares no capabilities" in result.stdout
+
+
+def test_diagnose_custom_contract_schema(tmp_path: Path) -> None:
+    schema = tmp_path / "schema.json"
+    schema.write_text('{"type": "object", "required": ["name"]}', encoding="utf-8")
+    contract = tmp_path / "c.json"
+    contract.write_text('{"provides": [1]}', encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["diagnose", str(tmp_path), "--contract-file", str(contract)]
+        + ["--contract-schema", str(schema)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert f"does not match {schema} at /: missing required property 'name'" in result.stdout
+
+
+def test_diagnose_unsupported_contract_schema_fails_clearly(tmp_path: Path) -> None:
+    schema = tmp_path / "schema.json"
+    schema.write_text('{"type": "string", "pattern": "^a"}', encoding="utf-8")
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--contract-schema", str(schema)])
+
+    assert result.exit_code == 1
+    assert "unsupported keyword 'pattern'" in result.stdout + (result.stderr or "")
+
+
+def test_diagnose_unbalanced_contract_command_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--contract-command", "tool 'open"])
+
+    assert result.exit_code == 1
+    assert "--contract-command" in result.stdout + (result.stderr or "")
+
+
+def test_watch_contract_findings_do_not_drift_between_identical_runs(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    args = [
+        "watch",
+        str(target),
+        "--state-dir",
+        str(tmp_path / "state"),
+        "--contract-file",
+        str(_CONTRACT_FIXTURES / "ingest-skill-0.1.0.contract.json"),
+    ]
+
+    assert runner.invoke(app, args).exit_code == 0
+    second = runner.invoke(app, args)
+
+    assert second.exit_code == 0
+    assert "No drift detected" in second.stdout

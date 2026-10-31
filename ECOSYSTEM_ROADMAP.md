@@ -21,7 +21,7 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
 
 ## Steps
 
-- [ ] **1. Capability-contract discovery** — run `<skill> contract --json` read-only, validate against the OS schema
+- [x] **1. Capability-contract discovery** — run `<skill> contract --json` read-only, validate against the OS schema ([#121](https://github.com/kajisho5/system-intelligence/pull/121), ADR-011)
   - Done when: artifacts-skill and ingest-skill schema problems appear as findings
 - [ ] **2. Ownership-map analyzer** — read ecosystem.json owns; flag overlaps and unowned jobs
   - Done when: finds the publish / ffmpeg-skill platform-table overlap
