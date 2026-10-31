@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8 (2026-10-31)
+
+- Read-only audit mode and macOS/Windows CI (#123) (b789260)
+
 ## v0.2.7 (2026-10-31)
 
 - Ownership-map analyzer: flag overlapping and unowned jobs, read contract provides into Capabilities (#122) (70f1d26)
