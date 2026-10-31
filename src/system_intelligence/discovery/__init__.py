@@ -5,7 +5,10 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 3): local repository scanning,
 a read-only GitHub-repository adapter (`discovery.github_target` — shallow
 clone, then treated as any other local path), git metadata, standard
 `SKILL.md` detection, CI workflow detection, ADR detection, and
-root-document detection, orchestrated by `discover_local_repository`.
+root-document detection, and Capability Contract collection
+(`discovery.contracts`: a target's static `.si/contracts.json`, plus
+operator-supplied contract files/commands, ADR-011), orchestrated by
+`discover_local_repository`.
 
 Not yet implemented: agent detection beyond the Skill format (no
 verified, generic file convention for it has been found).

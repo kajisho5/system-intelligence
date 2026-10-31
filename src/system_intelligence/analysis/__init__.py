@@ -14,6 +14,9 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 4), orchestrated by
 - capability *gap* detection (`gaps.py`) — opt-in: a project declares
   required capabilities in `.si/requirements.json`; a repository with no
   such file contributes zero gap findings, never an inferred one
+- Capability Contract validation (`contracts.py`, with the dependency-free
+  `json_schema.py`) — opt-in: only contracts `discovery.contracts`
+  collected are checked, against a schema the caller passes (ADR-011)
 
 Not yet implemented: semantic architecture heuristics beyond import
 cycles, and documentation *content* quality (only presence/absence is

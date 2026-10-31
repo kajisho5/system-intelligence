@@ -21,7 +21,8 @@ further analysis-phase transformation before being worth persisting.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from system_intelligence.core.entities import CIJob, Component, Repository
@@ -34,6 +35,11 @@ from system_intelligence.discovery.ci_docs import (
     detect_license,
     detect_root_documents,
 )
+from system_intelligence.discovery.contracts import (
+    DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+    ContractObservation,
+    collect_contracts,
+)
 from system_intelligence.discovery.git_metadata import collect_git_metadata
 from system_intelligence.discovery.skills import detect_skills
 from system_intelligence.discovery.structure import PackageManifest, scan_structure
@@ -45,9 +51,15 @@ class DiscoveryResult:
     snapshot: Snapshot
     ci_jobs: list[CIJob]
     package_manifests: list[PackageManifest]
+    contracts: list[ContractObservation] = field(default_factory=list)
 
 
-def discover_local_repository(locator: str) -> DiscoveryResult:
+def discover_local_repository(
+    locator: str,
+    contract_files: Sequence[Path] = (),
+    contract_commands: Sequence[Sequence[str]] = (),
+    contract_timeout: float = DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+) -> DiscoveryResult:
     """Run every Phase 2 discovery detector against a local path or a
     GitHub repository (`discovery.target.resolve_target`).
 
@@ -55,6 +67,12 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     any detected Skills, and a Document per detected root doc) and `adrs`
     populated, plus the detected `CIJob` list. `findings`/`recommendations`/
     etc. stay empty — those belong to later phases.
+
+    `contracts` holds every Capability Contract source collected by
+    `discovery.contracts.collect_contracts`: the target's own static
+    `.si/contracts.json` always, plus `contract_files`/`contract_commands`
+    only when the caller passes them (a command is never inferred from the
+    target).
     """
     target = resolve_target(locator)
     root = Path(target.locator)
@@ -67,6 +85,7 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
     skills = detect_skills(root)
     agents = detect_agents(root)
     adrs = detect_adrs(root)
+    contracts = collect_contracts(root, contract_files, contract_commands, contract_timeout)
 
     repository = Repository(
         id=stable_id("repository", "root"),
@@ -89,5 +108,8 @@ def discover_local_repository(locator: str) -> DiscoveryResult:
 
     snapshot = Snapshot(target=target, components=components, adrs=adrs)
     return DiscoveryResult(
-        snapshot=snapshot, ci_jobs=ci_jobs, package_manifests=structure.package_manifests
+        snapshot=snapshot,
+        ci_jobs=ci_jobs,
+        package_manifests=structure.package_manifests,
+        contracts=contracts,
     )
