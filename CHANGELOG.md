@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.6 (2026-10-31)
+
+- Capability-contract discovery: validate contracts against the OS schema (#121) (a53e3de)
+
 ## v0.2.5 (2026-10-30)
 
 - ci: pin third-party actions by commit SHA (#120) (5d708ea)
