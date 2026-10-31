@@ -25,9 +25,9 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
   - Done when: artifacts-skill and ingest-skill schema problems appear as findings
 - [x] **2. Ownership-map analyzer** — read ecosystem.json owns; flag overlaps and unowned jobs ([#122](https://github.com/kajisho5/system-intelligence/pull/122), ADR-012)
   - Done when: finds the publish / ffmpeg-skill platform-table overlap
-- [ ] **3. `--read-only` flag** — refuses execute/improve; used by the OS audit
+- [x] **3. `--read-only` flag** — refuses execute/improve; used by the OS audit ([#123](https://github.com/kajisho5/system-intelligence/pull/123), ADR-013)
   - Done when: test
-- [ ] **4. macOS / Windows CI**
+- [x] **4. macOS / Windows CI** ([#123](https://github.com/kajisho5/system-intelligence/pull/123), ADR-014)
   - Done when: CI green
 
 ---
