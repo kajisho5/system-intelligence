@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -118,12 +119,16 @@ def test_oversized_contract_file_is_not_read(
 
 
 def test_command_stdout_is_parsed() -> None:
-    observation = run_contract_command(_python('print(\'{"skill_id": "x"}\')'))
+    argv = _python('print(\'{"skill_id": "x"}\')')
+    observation = run_contract_command(argv)
 
     assert observation.kind == "command"
     assert observation.document == {"skill_id": "x"}
     assert observation.evidence.kind == EvidenceKind.RUNTIME_TELEMETRY
-    assert observation.label.startswith(sys.executable)
+    # The label is the command line in --contract-command's own (POSIX shell)
+    # syntax, so it splits back into the argv on every OS. A Windows path
+    # such as C:\...\python.exe is quoted in it, not left bare.
+    assert shlex.split(observation.label) == argv
 
 
 def test_command_gets_a_minimal_environment(monkeypatch: pytest.MonkeyPatch) -> None:
