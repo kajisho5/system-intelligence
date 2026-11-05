@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.13 (2026-11-05)
+
+- docs(roadmap): field review steps 5-6 (2026-11-05) (#124) (9d048f5)
+
 ## v0.2.12 (2026-11-05)
 
 - Bump github/codeql-action from 3 to 4 (#116) (37e4382)
