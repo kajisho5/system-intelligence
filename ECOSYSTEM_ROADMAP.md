@@ -29,6 +29,12 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
   - Done when: test
 - [x] **4. macOS / Windows CI** ([#123](https://github.com/kajisho5/system-intelligence/pull/123), ADR-014)
   - Done when: CI green
+- [ ] **5. Field-readiness audit** — per skill, from contracts and CI: resume after a stop, progress events, error classes, long-file tests, hardware encoder use, alpha and loudness outputs; written as a table for the Control Room. Field review 2026-11-05 (Velisa ROADMAP, third round)
+  - なぜ要るか：現場で使えるスキルとまだ危ないスキルが、一覧で分かる
+  - Done when: `si diagnose --field` lists every skill in `ecosystem.json` with each column filled or `unknown`
+- [ ] **6. Roadmap drift check** — `ECOSYSTEM_ROADMAP.md` steps against merged pull requests: a ticked step without a PR link, an unticked step whose PR merged, and a step that names another repository's step that does not exist
+  - なぜ要るか：多数のリポジトリの進捗表が実態とずれていくのを止められる
+  - Done when: a fixture roadmap with each kind of drift gives three findings
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
