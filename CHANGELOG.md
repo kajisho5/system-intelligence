@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.16 (2026-11-05)
+
+- Update typer requirement from <1,>=0.12 to >=0.27.2,<1 (#109) (32bfd08)
+
 ## v0.2.15 (2026-11-05)
 
 - Update pytest-cov requirement from >=5.0 to >=7.1.0 (#111) (9e6c9cf)
