@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.12 (2026-11-05)
+
+- Bump github/codeql-action from 3 to 4 (#116) (37e4382)
+
 ## v0.2.11 (2026-11-05)
 
 - Update pydantic requirement from <3,>=2.6 to >=2.13.5,<3 (#110) (e252ce3)
