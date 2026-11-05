@@ -46,7 +46,12 @@ def test_apply_plan_without_approval_is_denied_and_touches_nothing(tmp_path: Pat
     assert result.applied is False
     assert "no matching approval" in result.decision.reason
     branches = subprocess.run(
-        ["git", "branch"], cwd=tmp_path, capture_output=True, text=True, check=True
+        ["git", "branch"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout
     assert "si/add-license" not in branches
     assert not (tmp_path / "LICENSE").exists()
@@ -69,6 +74,7 @@ def test_apply_plan_with_approval_creates_branch_and_commits(tmp_path: Path) -> 
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
     ).stdout.strip()
     assert current_branch == "si/add-license"
@@ -78,6 +84,7 @@ def test_apply_plan_with_approval_creates_branch_and_commits(tmp_path: Path) -> 
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
     ).stdout.strip()
     assert log == "Add LICENSE"
@@ -93,7 +100,12 @@ def test_apply_plan_never_pushes_or_touches_remote(tmp_path: Path) -> None:
 
     assert result.applied is True
     remotes = subprocess.run(
-        ["git", "remote"], cwd=tmp_path, capture_output=True, text=True, check=True
+        ["git", "remote"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout
     assert remotes.strip() == ""
 
@@ -108,7 +120,12 @@ def test_apply_plan_rejects_path_traversal(tmp_path: Path) -> None:
 
     # No branch should have been created — validation happens before checkout.
     branches = subprocess.run(
-        ["git", "branch"], cwd=tmp_path, capture_output=True, text=True, check=True
+        ["git", "branch"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout
     assert "si/add-license" not in branches
 
@@ -168,3 +185,15 @@ def test_preview_lines_includes_description_when_present() -> None:
 
     assert lines[0] == "Add the missing LICENSE file."
     assert len(lines) == 4
+
+
+def test_apply_plan_writes_file_content_byte_for_byte(tmp_path: Path) -> None:
+    """No newline translation: on Windows text mode would turn every LF into CRLF."""
+    _init_repo(tmp_path)
+    content = '[project]\nname = "x"\n# 梶山\n'
+
+    apply_plan(
+        _plan(files={"pyproject.toml": content}), tmp_path, approvals=[_approval_for(tmp_path)]
+    )
+
+    assert (tmp_path / "pyproject.toml").read_bytes() == content.encode("utf-8")

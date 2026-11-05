@@ -55,7 +55,7 @@ def detect_adrs(root: Path) -> list[ADR]:
         evidence = [
             Evidence(
                 kind=EvidenceKind.FILE,
-                source=str(rel_path),
+                source=rel_path.as_posix(),
                 observation="ADR file found",
                 confidence=Confidence.VERIFIED,
             )
@@ -64,7 +64,7 @@ def detect_adrs(root: Path) -> list[ADR]:
             evidence.append(
                 Evidence(
                     kind=EvidenceKind.FILE,
-                    source=str(rel_path),
+                    source=rel_path.as_posix(),
                     locator="Status",
                     observation=f"Status line found: {status_match.group(1).strip()!r}",
                     confidence=Confidence.VERIFIED,
@@ -73,11 +73,11 @@ def detect_adrs(root: Path) -> list[ADR]:
 
         adrs.append(
             ADR(
-                id=stable_id("adr", str(rel_path)),
+                id=stable_id("adr", rel_path.as_posix()),
                 name=heading_match.group(1).strip() if heading_match else path.stem,
                 number=int(match.group(1)),
                 status=status_match.group(1).strip() if status_match else None,
-                path=str(rel_path),
+                path=rel_path.as_posix(),
                 evidence=evidence,
             )
         )

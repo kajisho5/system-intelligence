@@ -65,7 +65,7 @@ def test_push_branch_success_against_a_local_bare_remote(tmp_path: Path) -> None
     push_branch(repo, "si/add-license")
 
     branches = subprocess.run(
-        ["git", "branch"], cwd=remote, capture_output=True, text=True, check=True
+        ["git", "branch"], cwd=remote, capture_output=True, text=True, encoding="utf-8", check=True
     ).stdout
     assert "si/add-license" in branches
 
@@ -285,7 +285,7 @@ def test_open_draft_pr_for_plan_denied_without_approval_never_pushes(tmp_path: P
     assert "no matching approval" in result.decision.reason
     assert result.pull_request is None
     branches = subprocess.run(
-        ["git", "branch"], cwd=remote, capture_output=True, text=True, check=True
+        ["git", "branch"], cwd=remote, capture_output=True, text=True, encoding="utf-8", check=True
     ).stdout
     assert branches.strip() == ""
 
@@ -331,6 +331,6 @@ def test_open_draft_pr_for_plan_with_approval_pushes_and_opens_pr(tmp_path: Path
         "draft": True,
     }
     branches = subprocess.run(
-        ["git", "branch"], cwd=remote, capture_output=True, text=True, check=True
+        ["git", "branch"], cwd=remote, capture_output=True, text=True, encoding="utf-8", check=True
     ).stdout
     assert "si/add-license" in branches

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/app-icon-dark.png">
+    <img src="brand/app-icon.png" width="128" alt="system-intelligence app icon">
+  </picture>
+</p>
+
 # System Intelligence
 
 A general-purpose AI system intelligence layer for discovering, understanding,
@@ -71,9 +78,43 @@ read-only into a temp directory first):
 | `si watch <target>` | Drift since the last `si watch` run for this target, via a self-managed `--state-dir` history (no daemon — repeat it yourself, or from cron/CI) |
 | `si doctor`, `si version` | Environment check, installed version |
 
+`si --read-only <command>` (or `SI_READ_ONLY=1`) is audit mode: discovery,
+analysis, research and reporting run as usual, while `si improve`, `si
+propose`, `si execute`, `si verify` and `si check-updates --propose`/`--plan-out`
+are refused before they start (exit 1, the reason on stderr). An automated
+audit sets it so nothing it runs can change, plan changes to, or run a
+command in the repositories it reads (ADR-013).
+
 `si execute`/`si verify`/`si research`/`si propose`/`si check-updates` all
 accept `--record <snapshot-dir>` to attach their result to an existing
 canonical snapshot so a later `si dashboard` can show it.
+
+`si diagnose`/`si report`/`si dashboard`/`si watch` also validate Capability
+Contracts (a component's machine-readable `<tool> contract --json` output)
+when given one: `--contract-file FILE` (saved output, read only),
+`--contract-command 'ingest contract --json'` (run only because you named
+it: no shell, stdin closed, `--contract-timeout`, a minimal environment
+without your tokens, an empty temporary working directory), or the target's
+own `.si/contracts.json` (`{"contracts": [{"path": "contract.json"}]}`;
+paths inside the target only, never commands). Each contract is checked
+against `--contract-schema` (default: the bundled AI Video Production OS
+capability contract schema) and every problem is a `capability_contract_*`
+finding naming the JSON Pointer of the offending value (ADR-011). With no
+such source there are zero contract findings.
+Every `provides` entry of a contract that validates becomes a Capability,
+so a contract can satisfy `.si/requirements.json`.
+
+The same four commands also audit an ownership map, the document that
+gives each job to one component (the AI Video Production OS
+`ecosystem.json`: `{"components": [{"repo": "publish-skill", "owns":
+["配信先アップロード"]}]}`): `--ownership-map FILE`, or the target's own
+`.si/ownership.json` (an ownership document itself, plus `"maps": [{"path":
+"ecosystem.json"}]` inside the target). Files only, never commands. A job
+owned by two components is an `ownership_overlap`; a job owned by one
+component while another's contract provides a capability bound to it
+(`"job_capabilities": {"配信プラットフォーム仕様": ["ffmpeg-skill.export"]}`)
+is an `ownership_provider_overlap`; a job only `planned` components own,
+or a bound job nobody owns, is an `ownership_unowned_job` (ADR-012).
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":
@@ -186,6 +227,10 @@ pip-audit
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the ground rules (evidence-first,
 read-only by default, deterministic-first, no video-production assumptions in
 core) before adding a new module.
+
+CI runs the tests on Linux, macOS and Windows with Python 3.11 and 3.12;
+text I/O always names its encoding, and snapshots are written with LF line
+endings and `/`-separated paths on every OS (ADR-014).
 
 ## Safety
 

@@ -1,0 +1,14 @@
+{
+  "schema": "artifact-contract/v1",
+  "tool_name": "artifacts-skill",
+  "tool_version": "0.3.0",
+  "description": "Local-first execution and verification engine for AI-generated artifacts: inspect -> plan -> execute -> render -> structural verify -> visual verify -> fix -> re-verify -> receipt.",
+  "capability_id_prefix": "artifacts-skill",
+  "tools": [
+    {"name": "inspect", "summary": "Inspect a document"},
+    {"name": "verify", "summary": "Structural verification"}
+  ],
+  "exit_codes": {"ok": 0, "fail": 1},
+  "network_policy": "off_by_default",
+  "input_mutation_policy": "never"
+}
