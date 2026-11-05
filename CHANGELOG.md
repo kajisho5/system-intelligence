@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10 (2026-11-05)
+
+- Update defusedxml requirement from <1,>=0.7 to >=0.7.1,<1 (#108) (5a6c724)
+
 ## v0.2.9 (2026-11-05)
 
 - Update mypy requirement from >=1.11 to >=2.3.1 (#107) (8602bbc)
