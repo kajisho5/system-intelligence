@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.11 (2026-11-05)
+
+- Update pydantic requirement from <3,>=2.6 to >=2.13.5,<3 (#110) (e252ce3)
+
 ## v0.2.10 (2026-11-05)
 
 - Update defusedxml requirement from <1,>=0.7 to >=0.7.1,<1 (#108) (5a6c724)
