@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9 (2026-11-05)
+
+- Update mypy requirement from >=1.11 to >=2.3.1 (#107) (8602bbc)
+
 ## v0.2.8 (2026-10-31)
 
 - Read-only audit mode and macOS/Windows CI (#123) (b789260)
