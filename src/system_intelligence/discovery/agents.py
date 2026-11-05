@@ -77,7 +77,7 @@ def detect_agents(root: Path) -> list[Agent]:
 
         found_evidence = Evidence(
             kind=EvidenceKind.FILE,
-            source=str(rel_path),
+            source=rel_path.as_posix(),
             observation=".claude/agents/*.md file found",
             confidence=Confidence.VERIFIED,
         )
@@ -102,7 +102,7 @@ def detect_agents(root: Path) -> list[Agent]:
             evidence.append(
                 Evidence(
                     kind=EvidenceKind.FILE,
-                    source=str(rel_path),
+                    source=rel_path.as_posix(),
                     locator="frontmatter",
                     observation=observation,
                     confidence=Confidence.VERIFIED,
@@ -111,9 +111,9 @@ def detect_agents(root: Path) -> list[Agent]:
 
         agents.append(
             Agent(
-                id=stable_id("agent", str(rel_path)),
+                id=stable_id("agent", rel_path.as_posix()),
                 name=name or agent_md.stem,
-                path=str(rel_path),
+                path=rel_path.as_posix(),
                 description=description,
                 is_standard_format=is_standard,
                 model_provider=model,

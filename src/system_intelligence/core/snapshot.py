@@ -149,13 +149,13 @@ class Snapshot(BaseModel):
         """
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "manifest.json").write_text(
-            self.manifest().model_dump_json(indent=2), encoding="utf-8"
+            self.manifest().model_dump_json(indent=2), encoding="utf-8", newline="\n"
         )
         for field_name, filename in _FILES.items():
             items = getattr(self, field_name)
             payload = [item.model_dump(mode="json") for item in items]
             (directory / filename).write_text(
-                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
             )
 
     @classmethod

@@ -1,5 +1,7 @@
 import json
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -1071,7 +1073,7 @@ def test_execute_command_push_opens_a_draft_pr_with_approval(
     assert result.exit_code == 0
     assert "Draft PR opened: https://github.com/o/r/pull/9" in result.stdout
     branches = subprocess.run(
-        ["git", "branch"], cwd=remote, capture_output=True, text=True, check=True
+        ["git", "branch"], cwd=remote, capture_output=True, text=True, encoding="utf-8", check=True
     ).stdout
     assert "si/add-license" in branches
 
@@ -2400,3 +2402,337 @@ def test_dashboard_command_check_vulnerabilities_without_check_updates_is_ignore
         .split("</script>", 1)[0]
     )
     assert dashboard_json["overview"]["has_update_check"] is False
+
+
+_CONTRACT_FIXTURES = Path(__file__).parent.parent / "fixtures" / "contracts"
+
+
+def test_diagnose_without_contract_sources_reports_no_contract_findings(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Capability contract" not in result.stdout
+
+
+def test_diagnose_contract_files_surface_artifacts_and_ingest_schema_problems(
+    tmp_path: Path,
+) -> None:
+    """ECOSYSTEM_ROADMAP.md step 1's 'done when'."""
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "diagnose",
+            str(tmp_path),
+            "--contract-file",
+            str(_CONTRACT_FIXTURES / "artifacts-skill-0.3.0.contract.json"),
+            "--contract-file",
+            str(_CONTRACT_FIXTURES / "ingest-skill-0.1.0.contract.json"),
+            "--contract-file",
+            str(_CONTRACT_FIXTURES / "ingest-skill-0.1.x.contract.json"),
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "artifacts-skill-0.3.0.contract.json does not match" in result.stdout
+    assert "matches none of the anyOf alternatives" in result.stdout
+    assert "at /skill: expected object, got string" in result.stdout
+    assert "ingest-skill-0.1.x.contract.json" not in result.stdout
+
+    [snapshot_dir] = out.iterdir()
+    findings = json.loads((snapshot_dir / "findings.json").read_text(encoding="utf-8"))
+    categories = [f["category"] for f in findings]
+    assert categories.count("capability_contract_violation") == 4
+
+
+def test_diagnose_contract_command_is_run_and_validated(tmp_path: Path) -> None:
+    command = shlex.join([sys.executable, "-c", 'print(\'{"id": "x", "skill": "x"}\')'])
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--contract-command", command])
+
+    assert result.exit_code == 0, result.stdout
+    assert "at /skill: expected object, got string" in result.stdout
+
+
+def test_diagnose_reads_the_targets_own_contract_declaration(tmp_path: Path) -> None:
+    (tmp_path / ".si").mkdir()
+    (tmp_path / ".si" / "contracts.json").write_text(
+        '{"contracts": [{"path": "contract.json"}]}', encoding="utf-8"
+    )
+    (tmp_path / "contract.json").write_text('{"skill_id": "x"}', encoding="utf-8")
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Capability contract from contract.json declares no capabilities" in result.stdout
+
+
+def test_diagnose_custom_contract_schema(tmp_path: Path) -> None:
+    schema = tmp_path / "schema.json"
+    schema.write_text('{"type": "object", "required": ["name"]}', encoding="utf-8")
+    contract = tmp_path / "c.json"
+    contract.write_text('{"provides": [1]}', encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["diagnose", str(tmp_path), "--contract-file", str(contract)]
+        + ["--contract-schema", str(schema)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert f"does not match {schema} at /: missing required property 'name'" in result.stdout
+
+
+def test_diagnose_unsupported_contract_schema_fails_clearly(tmp_path: Path) -> None:
+    schema = tmp_path / "schema.json"
+    schema.write_text('{"type": "string", "pattern": "^a"}', encoding="utf-8")
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--contract-schema", str(schema)])
+
+    assert result.exit_code == 1
+    assert "unsupported keyword 'pattern'" in result.stdout + (result.stderr or "")
+
+
+def test_diagnose_unbalanced_contract_command_fails_clearly(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--contract-command", "tool 'open"])
+
+    assert result.exit_code == 1
+    assert "--contract-command" in result.stdout + (result.stderr or "")
+
+
+def test_watch_contract_findings_do_not_drift_between_identical_runs(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    args = [
+        "watch",
+        str(target),
+        "--state-dir",
+        str(tmp_path / "state"),
+        "--contract-file",
+        str(_CONTRACT_FIXTURES / "ingest-skill-0.1.0.contract.json"),
+    ]
+
+    assert runner.invoke(app, args).exit_code == 0
+    second = runner.invoke(app, args)
+
+    assert second.exit_code == 0
+    assert "No drift detected" in second.stdout
+
+
+_OWNERSHIP_FIXTURES = Path(__file__).parent.parent / "fixtures" / "ownership"
+
+
+def _ownership_target(root: Path, ecosystem: str) -> None:
+    """A target shaped like the OS checkout: its ecosystem.json plus an ffmpeg-skill contract."""
+    (root / ".si").mkdir(parents=True)
+    (root / "ecosystem.json").write_text(
+        (_OWNERSHIP_FIXTURES / ecosystem).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (root / "ffmpeg.contract.json").write_text(
+        (_OWNERSHIP_FIXTURES / "ffmpeg-skill-2.22.1.provides.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (root / ".si" / "contracts.json").write_text(
+        '{"contracts": [{"path": "ffmpeg.contract.json"}]}', encoding="utf-8"
+    )
+    (root / ".si" / "ownership.json").write_text(
+        json.dumps(
+            {
+                "maps": [{"path": "ecosystem.json"}],
+                "job_capabilities": {"配信プラットフォーム仕様": ["ffmpeg-skill.export"]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_diagnose_without_ownership_sources_reports_no_ownership_findings(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    (tmp_path / "t").mkdir()
+
+    result = runner.invoke(app, ["diagnose", str(tmp_path / "t"), "--out", str(out)])
+
+    assert result.exit_code == 0
+    [snapshot_dir] = out.iterdir()
+    findings = json.loads((snapshot_dir / "findings.json").read_text(encoding="utf-8"))
+    assert not [f for f in findings if f["category"].startswith("ownership_")]
+
+
+def test_diagnose_finds_the_publish_ffmpeg_platform_table_overlap(tmp_path: Path) -> None:
+    """ECOSYSTEM_ROADMAP.md step 2's 'done when'."""
+    target = tmp_path / "os"
+    _ownership_target(target, "ecosystem-6e17ae9.json")
+    out = tmp_path / "out"
+
+    result = runner.invoke(app, ["diagnose", str(target), "--out", str(out)])
+
+    assert result.exit_code == 0, result.stdout
+    assert (
+        "'配信プラットフォーム仕様' is owned by publish-skill (ecosystem.json), but the "
+        "capability contract from ffmpeg.contract.json (ffmpeg-skill) provides "
+        "'ffmpeg-skill.export'" in result.stdout
+    )
+    [snapshot_dir] = out.iterdir()
+    capabilities = json.loads((snapshot_dir / "capabilities.json").read_text(encoding="utf-8"))
+    assert {c["name"] for c in capabilities} >= {"ffmpeg-skill.export", "ffmpeg-skill.check"}
+
+
+def test_diagnose_ownership_map_option_reads_the_current_map(tmp_path: Path) -> None:
+    target = tmp_path / "skill"
+    target.mkdir()
+
+    result = runner.invoke(
+        app,
+        ["diagnose", str(target)]
+        + ["--ownership-map", str(_OWNERSHIP_FIXTURES / "ecosystem-ae8304e.json")],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "'NLE連携(タイムライン受け渡し)' has no active owner" in result.stdout
+    assert "is owned by 2 components" not in result.stdout
+
+
+def test_watch_ownership_findings_do_not_drift_between_identical_runs(tmp_path: Path) -> None:
+    target = tmp_path / "os"
+    _ownership_target(target, "ecosystem-6e17ae9.json")
+    args = ["watch", str(target), "--state-dir", str(tmp_path / "state")]
+
+    assert runner.invoke(app, args).exit_code == 0
+    second = runner.invoke(app, args)
+
+    assert second.exit_code == 0
+    assert "No drift detected" in second.stdout
+
+
+# --- --read-only (ADR-013) ---------------------------------------------------
+
+
+def _output(result: object) -> str:
+    return result.stdout + (result.stderr or "")  # type: ignore[attr-defined]
+
+
+def _git_branches(path: Path) -> str:
+    return subprocess.run(
+        ["git", "branch"],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        (["improve", "."], "improvement plan"),
+        (["propose", "need a cache"], "proposals"),
+        (["execute", "plan.json"], "branches and commits"),
+        (["verify", "pytest"], "inside the target checkout"),
+    ],
+)
+def test_read_only_refuses_improvement_and_execution_commands(args: list[str], reason: str) -> None:
+    result = runner.invoke(app, ["--read-only", *args])
+
+    assert result.exit_code == 1
+    assert f"--read-only refuses 'si {args[0]}'" in _output(result)
+    assert reason in _output(result)
+
+
+def test_read_only_execute_with_approval_changes_nothing(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    plan_file = _write_plan_file(tmp_path)
+    approval_file = tmp_path / "approval.json"
+    approval_file.write_text(
+        json.dumps(
+            {
+                "actor": "human:test",
+                "scope": "repository",
+                "action": "create_local_branch_and_commit",
+                "target": str(tmp_path),
+                "permission_level": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = _git_branches(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["--read-only", "execute", str(plan_file), str(tmp_path)]
+        + ["--approve", "--approval-file", str(approval_file)],
+    )
+
+    assert result.exit_code == 1
+    assert "Plan preview" not in result.stdout
+    assert not (tmp_path / "LICENSE").exists()
+    assert _git_branches(tmp_path) == before
+
+
+def test_read_only_is_also_set_by_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SI_READ_ONLY", "1")
+
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "--read-only refuses 'si improve'" in _output(result)
+
+
+def test_read_only_environment_can_be_switched_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SI_READ_ONLY", "0")
+
+    result = runner.invoke(app, ["improve", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "recommendation(s)" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("option", "reason"),
+    [(["--propose"], "update proposals"), (["--plan-out"], "ChangePlans")],
+)
+def test_read_only_refuses_check_updates_improvement_options(
+    tmp_path: Path, option: list[str], reason: str
+) -> None:
+    args = [*option, str(tmp_path / "plans")] if option == ["--plan-out"] else option
+    result = runner.invoke(app, ["--read-only", "check-updates", str(tmp_path), *args])
+
+    assert result.exit_code == 1
+    assert f"--read-only refuses 'si check-updates {option[0]}'" in _output(result)
+    assert reason in _output(result)
+    assert not (tmp_path / "plans").exists()
+
+
+def test_read_only_check_updates_assessment_still_runs(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["--read-only", "check-updates", str(tmp_path)])
+
+    assert result.exit_code == 0, _output(result)
+    assert "--read-only refuses" not in _output(result)
+
+
+def test_read_only_audit_commands_still_run(tmp_path: Path) -> None:
+    """The OS audit's own commands: diagnose --out and watch --state-dir."""
+    target = tmp_path / "target"
+    target.mkdir()
+
+    diagnose = runner.invoke(
+        app, ["--read-only", "diagnose", str(target), "--out", str(tmp_path / "out")]
+    )
+    watch = runner.invoke(
+        app, ["--read-only", "watch", str(target), "--state-dir", str(tmp_path / "state")]
+    )
+    plan = runner.invoke(app, ["--read-only", "plan", "--list"])
+
+    assert diagnose.exit_code == 0, _output(diagnose)
+    assert len(list((tmp_path / "out").iterdir())) == 1
+    assert watch.exit_code == 0, _output(watch)
+    assert "recording this scan as the baseline" in watch.stdout
+    assert plan.exit_code == 0
+    assert list(target.iterdir()) == []

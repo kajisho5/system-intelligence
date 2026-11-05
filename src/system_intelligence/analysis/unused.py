@@ -45,7 +45,7 @@ def _read_searchable_files(root: Path) -> dict[str, str]:
         if path.suffix not in _SEARCHABLE_EXTENSIONS:
             continue
         try:
-            contents[str(path.relative_to(root))] = path.read_text(
+            contents[path.relative_to(root).as_posix()] = path.read_text(
                 encoding="utf-8", errors="ignore"
             )
         except OSError:

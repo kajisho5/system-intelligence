@@ -46,7 +46,13 @@ def _run_git(repo_root: Path, *args: str) -> str:
     # Fixed subcommands defined in this module only; repo_root is used as
     # `cwd`, never interpolated into the argv itself.
     result = subprocess.run(  # nosec B603
-        [git_path, *args], cwd=repo_root, capture_output=True, text=True, check=False
+        [git_path, *args],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     if result.returncode != 0:
         raise LocalGitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
@@ -105,7 +111,7 @@ def apply_plan(
     for relative_path, content in plan.files.items():
         absolute_path = resolved_paths[relative_path]
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        absolute_path.write_text(content, encoding="utf-8")
+        absolute_path.write_text(content, encoding="utf-8", newline="\n")
         written.append(relative_path)
 
     _run_git(repo_root, "add", *written)
