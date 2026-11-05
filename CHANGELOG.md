@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.15 (2026-11-05)
+
+- Update pytest-cov requirement from >=5.0 to >=7.1.0 (#111) (9e6c9cf)
+
 ## v0.2.14 (2026-11-05)
 
 - Bump actions/setup-python from 5 to 7 (#117) (5094084)
