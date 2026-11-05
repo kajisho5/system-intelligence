@@ -34,7 +34,7 @@ si = "system_intelligence.cli.main:app"
 [project.optional-dependencies]
 dev = [
   "pytest>=9.0.3",
-  "pytest-cov>=5.0",
+  "pytest-cov>=7.1.0",
   "ruff>=0.6",
   "mypy>=2.3.1",
   "bandit[toml]>=1.7",
