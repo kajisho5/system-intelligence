@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.17 (2026-11-11)
+
+- Update pytest requirement from >=9.0.3 to >=9.2.0 (#125) (9b3e02f)
+
 ## v0.2.16 (2026-11-05)
 
 - Update typer requirement from <1,>=0.12 to >=0.27.2,<1 (#109) (32bfd08)
