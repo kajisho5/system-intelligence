@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.18 (2026-11-11)
+
+- Update mypy requirement from >=2.3.1 to >=2.4.1 (#127) (3997b6b)
+
 ## v0.2.17 (2026-11-11)
 
 - Update pytest requirement from >=9.0.3 to >=9.2.0 (#125) (9b3e02f)
