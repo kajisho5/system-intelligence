@@ -33,7 +33,7 @@ si = "system_intelligence.cli.main:app"
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=9.0.3",
+  "pytest>=9.2.0",
   "pytest-cov>=7.1.0",
   "ruff>=0.6",
   "mypy>=2.3.1",
