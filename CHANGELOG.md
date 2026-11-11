@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.21 (2026-11-11)
+
+- fix(release): Dependabot labels cannot raise the release level (#128) (d986373)
+
 ## v0.2.20 (2026-11-11)
 
 - Bump actions/checkout from 4 to 7 (#106) (a146647)
