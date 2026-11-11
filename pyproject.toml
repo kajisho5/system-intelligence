@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "system-intelligence"
-version = "0.2.17"
+version = "0.2.18"
 description = "A general-purpose AI system intelligence layer for discovering, understanding, auditing, researching, designing, improving, and verifying software systems."
 readme = "README.md"
 license = "MIT"
@@ -36,7 +36,7 @@ dev = [
   "pytest>=9.2.0",
   "pytest-cov>=7.1.0",
   "ruff>=0.6",
-  "mypy>=2.3.1",
+  "mypy>=2.4.1",
   "bandit[toml]>=1.7",
   "pip-audit>=2.7",
   "types-defusedxml>=0.7",
