@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.19 (2026-11-11)
+
+- Update typer requirement from <1,>=0.27.2 to >=0.27.3,<1 (#126) (0fe32e5)
+
 ## v0.2.18 (2026-11-11)
 
 - Update mypy requirement from >=2.3.1 to >=2.4.1 (#127) (3997b6b)
