@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "system-intelligence"
-version = "0.2.0"
+version = "0.2.17"
 description = "A general-purpose AI system intelligence layer for discovering, understanding, auditing, researching, designing, improving, and verifying software systems."
 readme = "README.md"
 license = "MIT"
@@ -19,9 +19,9 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "pydantic>=2.6,<3",
-  "typer>=0.12,<1",
-  "defusedxml>=0.7,<1",
+  "pydantic>=2.13.5,<3",
+  "typer>=0.27.2,<1",
+  "defusedxml>=0.7.1,<1",
 ]
 
 [project.urls]
@@ -33,10 +33,10 @@ si = "system_intelligence.cli.main:app"
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.0",
-  "pytest-cov>=5.0",
+  "pytest>=9.2.0",
+  "pytest-cov>=7.1.0",
   "ruff>=0.6",
-  "mypy>=1.11",
+  "mypy>=2.3.1",
   "bandit[toml]>=1.7",
   "pip-audit>=2.7",
   "types-defusedxml>=0.7",
@@ -70,9 +70,13 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=system_intelligence --cov-report=term-missing"
+# Only raised when PYTHONWARNDEFAULTENCODING=1 (as CI sets): text I/O that
+# falls back to the locale encoding (cp1252 on Windows) fails the run (ADR-014).
+filterwarnings = ["error::EncodingWarning"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
-# B404 (import subprocess) is purely informational; the one call site
-# (cli/main.py) uses a fixed argv with no shell and is annotated inline.
+# B404 (import subprocess) is purely informational; every call site
+# (cli/main.py, discovery/contracts.py) uses an argv list with no shell and
+# is annotated inline.
 skips = ["B404"]

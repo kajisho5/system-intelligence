@@ -17,10 +17,18 @@ tag-template: 'v$RESOLVED_VERSION'
 # Conventional-Commits-style `type(scope): description` / `type: description`
 # (e.g. "fix(reporting): ...", "chore: ...") and a plain-imperative fallback
 # ("Fix ...", "Add ...") from before that convention was adopted.
+#
+# Deliberately no 'breaking'/'major' rule here, even a narrow, well-defined
+# one (e.g. matching Conventional Commits' own `type!:` marker) -- a
+# text-pattern match on a PR's own title/body is written by the PR author
+# themselves and can trigger unintentionally (a real incident on another
+# repo: a PR whose body merely *mentioned* the words "BREAKING CHANGE" as
+# prose, describing a bug, got auto-labeled 'major' and would have shipped
+# an unintended major version bump had it merged before a human caught it).
+# A major-version bump (`version-resolver.major` below) must only ever be
+# triggered by a human deliberately applying the 'breaking'/'major' label
+# by hand, never by text a PR's own author wrote themselves.
 autolabeler:
-  - label: 'breaking'
-    title:
-      - '/^\w+(\([^)]*\))?!:/'
   - label: 'fix'
     title:
       - '/^fix(\([^)]*\))?:/i'

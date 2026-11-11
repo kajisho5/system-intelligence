@@ -1,0 +1,16 @@
+{
+  "skill_id": "ingest",
+  "id": "ingest",
+  "skill": {"id": "ingest", "package": "ingest-skill", "version": "0.1.0"},
+  "version": "0.1.0",
+  "contract_version": "1.0",
+  "provides": [
+    {"id": "ingest.offload", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/offload"},
+    {"id": "ingest.verify", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/verify"},
+    {"id": "ingest.inventory", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/inventory"},
+    {"id": "ingest.fetch", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/fetch"}
+  ],
+  "dependencies": [],
+  "capabilities": {"optional": [{"id": "ffprobe", "kind": "binary", "used_by": ["ingest/inventory"]}]},
+  "not_provided": ["editing or transcoding (video-editing-skill / ffmpeg-skill)", "cloud upload (publish-skill)"]
+}

@@ -1,0 +1,15 @@
+{
+  "skill_id": "ingest",
+  "id": "ingest",
+  "skill": "ingest-skill",
+  "version": "0.1.0",
+  "contract_version": "1.0",
+  "provides": [
+    {"id": "ingest.offload", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/offload"},
+    {"id": "ingest.verify", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/verify"},
+    {"id": "ingest.inventory", "lifecycle": "EXPERIMENTAL", "tool_id": "ingest/inventory"}
+  ],
+  "dependencies": [{"id": "ffprobe", "kind": "binary", "required": false, "used_by": ["ingest/inventory"]}],
+  "not_provided": ["editing or transcoding (video-editing-skill / ffmpeg-skill)", "network access of any kind"],
+  "execution": {"canonical_invocation": ["ingest", "<command>", "...", "--json"], "network": false, "shell": false}
+}

@@ -90,7 +90,13 @@ def push_branch(
     # Fixed subcommands defined in this module only; repo_root is used as
     # `cwd`, never interpolated into the argv itself. No `--force`/`-f`.
     result = subprocess.run(  # nosec B603
-        argv, cwd=repo_root, capture_output=True, text=True, check=False
+        argv,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     if result.returncode != 0:
         raise GitHubPRError(f"git push failed: {result.stderr.strip()}")

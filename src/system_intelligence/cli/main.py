@@ -37,13 +37,14 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import typer
 from pydantic import BaseModel
 
 from system_intelligence import __version__
-from system_intelligence.analysis import analyze_local_repository
+from system_intelligence.analysis import AnalysisResult, analyze_local_repository
+from system_intelligence.analysis.json_schema import UnsupportedSchemaError, check_supported
 from system_intelligence.analysis.trust import infer_trust_levels
 from system_intelligence.analysis.update_intelligence import check_dependency_updates
 from system_intelligence.core.entities import Repository
@@ -53,6 +54,7 @@ from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
+from system_intelligence.discovery.contracts import DEFAULT_CONTRACT_TIMEOUT_SECONDS
 from system_intelligence.execution import (
     ChangePlan,
     GitHubPRError,
@@ -60,6 +62,11 @@ from system_intelligence.execution import (
     apply_plan,
     build_handoff_packet,
     open_draft_pr_for_plan,
+)
+from system_intelligence.integrations.ai_video_os import (
+    CAPABILITY_CONTRACT_SCHEMA_LABEL,
+    INACTIVE_COMPONENT_STATUSES,
+    load_capability_contract_schema,
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
 from system_intelligence.policy import audit_log_entry
@@ -126,6 +133,44 @@ for _name, _summary in _PLANNED_COMMANDS.items():
     _register_placeholder(_name, _summary)
 
 
+# `--read-only` stops System Intelligence at findings (ADR-013): discovery,
+# analysis, research and reporting run; the improvement and execution stages
+# are refused before they start. Each entry says why, in the refusal itself.
+_READ_ONLY_REFUSED_COMMANDS = {
+    "improve": "it turns findings into an improvement plan",
+    "propose": "it writes proposals and implementer handoff packets",
+    "execute": "it creates branches and commits and can push",
+    "verify": "it runs a command inside the target checkout",
+}
+_READ_ONLY_OPTION = typer.Option(
+    False,
+    "--read-only",
+    envvar="SI_READ_ONLY",
+    help=(
+        "Audit mode: refuse every command or option that improves, changes or runs "
+        "anything in the target (improve, propose, execute, verify, and check-updates "
+        "--propose/--plan-out). Also set by SI_READ_ONLY=1."
+    ),
+)
+
+
+def _refuse_read_only(what: str, reason: str) -> None:
+    typer.echo(f"error: --read-only refuses {what}: {reason}.", err=True)
+    raise typer.Exit(code=1)
+
+
+def _is_read_only(ctx: typer.Context) -> bool:
+    return bool(ctx.find_root().params.get("read_only", False))
+
+
+@app.callback()
+def main(ctx: typer.Context, read_only: bool = _READ_ONLY_OPTION) -> None:
+    """System Intelligence: discover, understand, audit, research, and improve software systems."""
+    reason = _READ_ONLY_REFUSED_COMMANDS.get(ctx.invoked_subcommand or "")
+    if read_only and reason is not None:
+        _refuse_read_only(f"'si {ctx.invoked_subcommand}'", reason)
+
+
 _TARGET_ARGUMENT = typer.Argument(
     ".",
     help=(
@@ -137,6 +182,97 @@ _TARGET_ARGUMENT = typer.Argument(
 _OUT_OPTION = typer.Option(
     None, "--out", help="Directory to write the canonical JSON snapshot to. Skipped if omitted."
 )
+
+
+_CONTRACT_FILE_OPTION = typer.Option(
+    [],
+    "--contract-file",
+    help="A Capability Contract JSON document to validate (e.g. saved '<tool> contract --json' "
+    "output; relative to the current directory). Repeatable. Read only, never executed.",
+)
+_CONTRACT_COMMAND_OPTION = typer.Option(
+    [],
+    "--contract-command",
+    help="A command that prints a Capability Contract on stdout, e.g. 'ingest contract --json'. "
+    "Repeatable. Split like a shell would but run with no shell, stdin closed, a timeout, "
+    "a minimal environment and an empty temporary working directory; the executable is "
+    "looked up on PATH. Only ever run when given here, never inferred from the target.",
+)
+_CONTRACT_TIMEOUT_OPTION = typer.Option(
+    DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+    "--contract-timeout",
+    min=0.1,
+    help="Seconds each --contract-command may run before it is stopped.",
+)
+_CONTRACT_SCHEMA_OPTION = typer.Option(
+    None,
+    "--contract-schema",
+    help="JSON Schema file to validate contracts against. Defaults to the bundled AI Video "
+    "Production OS capability contract schema.",
+)
+_OWNERSHIP_MAP_OPTION = typer.Option(
+    [],
+    "--ownership-map",
+    help="An ownership map to audit for overlapping and unowned jobs, e.g. the AI Video "
+    "Production OS ecosystem.json ({'components': [{'repo': ..., 'owns': [...]}]}). "
+    "Repeatable. Read only.",
+)
+
+
+def _load_contract_schema(path: Path | None) -> tuple[dict[str, Any], str]:
+    """The contract schema and the label Findings cite it by; exits 1 if unusable."""
+    if path is None:
+        return load_capability_contract_schema(), CAPABILITY_CONTRACT_SCHEMA_LABEL
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(schema, dict):
+            raise UnsupportedSchemaError("the schema document must be a JSON object")
+        check_supported(schema)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, UnsupportedSchemaError) as exc:
+        typer.echo(f"error: --contract-schema {path}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    return schema, str(path)
+
+
+def _discover_and_analyze(
+    target: str,
+    contract_files: list[Path],
+    contract_commands: list[str],
+    contract_timeout: float,
+    contract_schema: Path | None,
+    ownership_maps: list[Path],
+) -> AnalysisResult:
+    """Discovery + analysis shared by diagnose/report/watch/dashboard, with contracts
+    and ownership maps."""
+    schema, schema_label = _load_contract_schema(contract_schema)
+    argvs: list[list[str]] = []
+    for command in contract_commands:
+        try:
+            argv = shlex.split(command)
+        except ValueError as exc:
+            typer.echo(f"error: --contract-command {command!r}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        if not argv:
+            typer.echo("error: --contract-command must not be empty", err=True)
+            raise typer.Exit(code=1)
+        argvs.append(argv)
+    try:
+        discovery = discover_local_repository(
+            target,
+            contract_files=contract_files,
+            contract_commands=argvs,
+            contract_timeout=contract_timeout,
+            ownership_maps=ownership_maps,
+        )
+    except TargetResolutionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    return analyze_local_repository(
+        discovery,
+        contract_schema=schema,
+        contract_schema_label=schema_label,
+        inactive_owner_statuses=INACTIVE_COMPONENT_STATUSES,
+    )
 
 
 def _format_named_list(label: str, items: list[str]) -> str:
@@ -206,21 +342,40 @@ _SEVERITY_ORDER = [
 
 
 @app.command()
-def diagnose(target: str = _TARGET_ARGUMENT, out: Path | None = _OUT_OPTION) -> None:
+def diagnose(
+    target: str = _TARGET_ARGUMENT,
+    out: Path | None = _OUT_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
+) -> None:
     """Structured health assessment: discovery plus deterministic analysis.
 
     Runs every Phase 3 analyzer (documentation/CI/test gaps, dependency
     extraction, capability duplication, unreferenced Skills, circular
     imports) and prints findings grouped by severity, each labeled with its
     confidence level. Nothing is written unless `--out` is given.
-    """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
 
-    result = analyze_local_repository(discovery)
+    `--contract-file`/`--contract-command` (and a target's own
+    `.si/contracts.json`) add Capability Contract validation: each
+    contract is checked against `--contract-schema` (default: the bundled
+    AI Video Production OS schema) and every problem becomes a Finding;
+    every `provides` entry of a contract that validates becomes a
+    Capability. `--ownership-map` (and a target's own `.si/ownership.json`)
+    adds the ownership audit: jobs owned by two components, a job owned by
+    one while another's contract provides a capability bound to it, and
+    jobs with no active owner (ADR-012).
+    """
+    result = _discover_and_analyze(
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
+    )
     snapshot = result.snapshot
 
     typer.echo(f"Target: {snapshot.target.locator}")
@@ -253,27 +408,37 @@ _REPORT_OUT_OPTION = typer.Option(
 
 
 @app.command()
-def report(target: str = _TARGET_ARGUMENT, out: Path = _REPORT_OUT_OPTION) -> None:
+def report(
+    target: str = _TARGET_ARGUMENT,
+    out: Path = _REPORT_OUT_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
+) -> None:
     """Generate the static HTML intelligence report for a local target.
 
     Runs discovery and analysis, then writes a self-contained
     `report.html` (no CDN dependencies, viewable offline) plus the
     canonical JSON snapshot into `--out` (default: './si-report').
+    Contract and ownership options: as for `si diagnose`.
     """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    result = analyze_local_repository(discovery)
+    result = _discover_and_analyze(
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
+    )
     snapshot = result.snapshot.model_copy(
         update={"recommendations": generate_recommendations(result.snapshot.findings)}
     )
 
     out.mkdir(parents=True, exist_ok=True)
     report_path = out / "report.html"
-    report_path.write_text(generate_html_report(snapshot), encoding="utf-8")
+    report_path.write_text(generate_html_report(snapshot), encoding="utf-8", newline="\n")
     snapshot_dir = out / snapshot.id
     snapshot.write_to_directory(snapshot_dir)
 
@@ -369,6 +534,11 @@ def watch(
     target: str = _TARGET_ARGUMENT,
     state_dir: Path = _WATCH_STATE_DIR_OPTION,
     out: Path | None = _WATCH_OUT_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
     """Detect drift since the last 'si watch' run for this target.
 
@@ -386,14 +556,16 @@ def watch(
     under `--state-dir` is ever deleted by this command. Repeating "on an
     interval" means invoking `si watch` again later (by hand, cron, or a
     CI schedule); this command never sleeps, polls, or backgrounds itself.
+    Contract and ownership options: as for `si diagnose`.
     """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    result = analyze_local_repository(discovery)
+    result = _discover_and_analyze(
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
+    )
     snapshot = result.snapshot
 
     latest_pointer = state_dir / "latest.txt"
@@ -421,7 +593,7 @@ def watch(
     snapshot_dir = state_dir / snapshot.id
     snapshot.write_to_directory(snapshot_dir)
     latest_pointer.parent.mkdir(parents=True, exist_ok=True)
-    latest_pointer.write_text(snapshot.id, encoding="utf-8")
+    latest_pointer.write_text(snapshot.id, encoding="utf-8", newline="\n")
 
     if out is not None:
         out_snapshot_dir = out / snapshot.id
@@ -464,6 +636,11 @@ def dashboard(
     compare_with: Path | None = _DASHBOARD_COMPARE_OPTION,
     check_updates: bool = _DASHBOARD_CHECK_UPDATES_OPTION,
     check_vulnerabilities: bool = _DASHBOARD_CHECK_VULNERABILITIES_OPTION,
+    contract_file: list[Path] = _CONTRACT_FILE_OPTION,
+    contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
+    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
+    ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
     """Generate the interactive System Intelligence Console for a local target.
 
@@ -486,15 +663,17 @@ def dashboard(
     for a known-vulnerability lookup (OSV.dev). With `--check-updates`, each
     actionable verdict's Recommendation
     (`recommendations.generate_update_recommendations`) is merged into the
-    Recommendations screen alongside the Finding-based ones.
+    Recommendations screen alongside the Finding-based ones. Contract and
+    ownership options: as for `si diagnose`.
     """
-    try:
-        discovery = discover_local_repository(target)
-    except TargetResolutionError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    result = analyze_local_repository(discovery)
+    result = _discover_and_analyze(
+        target,
+        contract_file,
+        contract_command,
+        contract_timeout,
+        contract_schema,
+        ownership_map,
+    )
     snapshot = result.snapshot.model_copy(
         update={"recommendations": generate_recommendations(result.snapshot.findings)}
     )
@@ -552,7 +731,7 @@ def dashboard(
 
     out.mkdir(parents=True, exist_ok=True)
     dashboard_path = out / "dashboard.html"
-    dashboard_path.write_text(generate_dashboard_html(data), encoding="utf-8")
+    dashboard_path.write_text(generate_dashboard_html(data), encoding="utf-8", newline="\n")
     snapshot_dir = out / snapshot.id
     snapshot.write_to_directory(snapshot_dir)
 
@@ -728,6 +907,7 @@ _CHECK_UPDATES_VULNERABILITIES_OPTION = typer.Option(
 
 @app.command(name="check-updates")
 def check_updates(
+    ctx: typer.Context,
     target: str = _TARGET_ARGUMENT,
     propose: bool = _CHECK_UPDATES_PROPOSE_OPTION,
     record: Path | None = _CHECK_UPDATES_RECORD_OPTION,
@@ -769,7 +949,17 @@ def check_updates(
     advisories`) — a separate, informational fact from the update verdict
     itself: a known-vulnerable current version never by itself unlocks
     `UPDATE_RECOMMENDED` (see `analysis.update_intelligence.assess_impact`).
+
+    Under `si --read-only`, `--propose` and `--plan-out` are refused
+    (ADR-013); the assessment itself still runs.
     """
+    if _is_read_only(ctx):
+        if propose:
+            _refuse_read_only("'si check-updates --propose'", "it writes update proposals")
+        if plan_out is not None:
+            _refuse_read_only(
+                "'si check-updates --plan-out'", "it writes ChangePlans for 'si execute'"
+            )
     try:
         discovery = discover_local_repository(target)
     except TargetResolutionError as exc:
@@ -873,6 +1063,7 @@ def check_updates(
             plan_path.write_text(
                 json.dumps(change_plan.to_plan_file_dict(), indent=2, ensure_ascii=False),
                 encoding="utf-8",
+                newline="\n",
             )
             typer.echo(f"ChangePlan written to {plan_path}")
             written += 1
@@ -1058,7 +1249,7 @@ def propose(
     typer.echo(f"Required permission level: {proposal.required_permission_level.name}")
 
     if out is not None:
-        out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8")
+        out.write_text(proposal.model_dump_json(indent=2), encoding="utf-8", newline="\n")
         typer.echo(f"\nProposal written to {out}")
 
     if record is not None:
@@ -1066,7 +1257,9 @@ def propose(
 
     if handoff_out is not None and target is not None:
         packet = build_handoff_packet(proposal, target)
-        handoff_out.write_text(json.dumps(packet, indent=2, ensure_ascii=False), encoding="utf-8")
+        handoff_out.write_text(
+            json.dumps(packet, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+        )
         typer.echo(f"\nHandoff packet written to {handoff_out}")
 
 
@@ -1143,7 +1336,9 @@ def _append_json_record(directory: Path, filename: str, record: BaseModel) -> No
     path = directory / filename
     existing: list[object] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
     existing.append(record.model_dump(mode="json"))
-    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    path.write_text(
+        json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+    )
 
 
 _PLAN_FILE_ARGUMENT = typer.Argument(
@@ -1512,6 +1707,8 @@ def doctor() -> None:
             [git_path, "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         in_git_repo = result.returncode == 0 and result.stdout.strip() == "true"

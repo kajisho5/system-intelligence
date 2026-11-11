@@ -86,3 +86,16 @@ def test_collect_git_metadata_dirty(tmp_path: Path) -> None:
     (tmp_path / "untracked.txt").write_text("x", encoding="utf-8")
     metadata = collect_git_metadata(tmp_path)
     assert metadata.is_dirty is True
+
+
+def test_collect_git_metadata_reads_non_ascii_author_as_utf8(tmp_path: Path) -> None:
+    """git prints UTF-8; decoding with the locale (cp1252 on Windows) would garble it."""
+    _init_repo(tmp_path)
+    subprocess.run(["git", "config", "user.name", "梶山 Zoë"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "--allow-empty", "-m", "second"], cwd=tmp_path, check=True
+    )
+
+    metadata = collect_git_metadata(tmp_path)
+
+    assert metadata.last_commit_author == "梶山 Zoë"

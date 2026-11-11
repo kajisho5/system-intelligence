@@ -1,0 +1,40 @@
+# Roadmap — system-intelligence
+
+Part of the [AI Video Production OS](https://github.com/kajisho5/AI-video-production-OS/blob/main/docs/ecosystem/ROADMAP.md) ecosystem: department **統制 (Governance)**, status `active`.
+Written from a read-only audit of this repository on 2026-10-30. Each step below is meant to be one pull request; tick it off by linking the PR.
+
+## Where it stands
+
+v0.2.2, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates, propose, execute, ... 60 test modules, CI on Ubuntu, macOS and Windows.
+
+## What this repository owns
+
+`ecosystem.json` gives each job to exactly one repository. Work outside this list belongs to its owner and is handed over, not re-implemented.
+
+| Owned job | Status | Note |
+|---|---|---|
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013) |
+
+## Wiring
+
+Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
+
+## Steps
+
+- [x] **1. Capability-contract discovery** — run `<skill> contract --json` read-only, validate against the OS schema ([#121](https://github.com/kajisho5/system-intelligence/pull/121), ADR-011)
+  - Done when: artifacts-skill and ingest-skill schema problems appear as findings
+- [x] **2. Ownership-map analyzer** — read ecosystem.json owns; flag overlaps and unowned jobs ([#122](https://github.com/kajisho5/system-intelligence/pull/122), ADR-012)
+  - Done when: finds the publish / ffmpeg-skill platform-table overlap
+- [x] **3. `--read-only` flag** — refuses execute/improve; used by the OS audit ([#123](https://github.com/kajisho5/system-intelligence/pull/123), ADR-013)
+  - Done when: test
+- [x] **4. macOS / Windows CI** ([#123](https://github.com/kajisho5/system-intelligence/pull/123), ADR-014)
+  - Done when: CI green
+- [ ] **5. Field-readiness audit** — per skill, from contracts and CI: resume after a stop, progress events, error classes, long-file tests, hardware encoder use, alpha and loudness outputs; written as a table for the Control Room. Field review 2026-11-05 (Velisa ROADMAP, third round)
+  - なぜ要るか：現場で使えるスキルとまだ危ないスキルが、一覧で分かる
+  - Done when: `si diagnose --field` lists every skill in `ecosystem.json` with each column filled or `unknown`
+- [ ] **6. Roadmap drift check** — `ECOSYSTEM_ROADMAP.md` steps against merged pull requests: a ticked step without a PR link, an unticked step whose PR merged, and a step that names another repository's step that does not exist
+  - なぜ要るか：多数のリポジトリの進捗表が実態とずれていくのを止められる
+  - Done when: a fixture roadmap with each kind of drift gives three findings
+
+---
+Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
