@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.20 (2026-11-11)
+
+- Bump actions/checkout from 4 to 7 (#106) (a146647)
+
 ## v0.2.19 (2026-11-11)
 
 - Update typer requirement from <1,>=0.27.2 to >=0.27.3,<1 (#126) (0fe32e5)
