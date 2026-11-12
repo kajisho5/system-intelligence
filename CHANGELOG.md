@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0 (2026-11-12)
+
+- feat(roadmap): roadmap drift check across the ecosystem (roadmap step 6) (#129) (ac53783)
+
 ## v0.2.21 (2026-11-11)
 
 - fix(release): Dependabot labels cannot raise the release level (#128) (d986373)
