@@ -321,3 +321,59 @@ def test_github_source_pull_request_errors_are_unavailable() -> None:
 def test_github_source_refuses_a_bad_owner() -> None:
     with pytest.raises(ValueError, match="owner"):
         GitHubRoadmapSource("acme/../x")
+
+
+def test_an_indented_fence_keeps_its_step_open() -> None:
+    text = (
+        "- [x] **1. With an example**\n"
+        "  ```json\n"
+        "  - [ ] **2. Not a step, and https://github.com/acme/alpha/pull/99 is not a link**\n"
+        "  ```\n"
+        "  - Done ([#4](https://github.com/acme/alpha/pull/4))\n"
+        "- [ ] **3. Next**\n"
+    )
+
+    first, third = parse_roadmap(text)
+
+    assert (first.number, third.number) == (1, 3)
+    assert [number for number, _ in first.lines] == [1, 5]
+    assert [link.number for link in first.pull_links()] == [4]
+
+
+def test_a_fence_closes_only_with_the_same_character_and_length() -> None:
+    text = (
+        "````markdown\n"
+        "```\n"
+        "- [ ] **1. Inside the four-backtick block**\n"
+        "~~~~\n"
+        "- [ ] **2. Still inside**\n"
+        "```` trailing text is not a closing fence\n"
+        "- [ ] **3. Still inside**\n"
+        "`````\n"
+        "- [ ] **4. After the block**\n"
+    )
+
+    assert [step.number for step in parse_roadmap(text)] == [4]
+
+
+def test_inline_backticks_are_not_a_fence() -> None:
+    text = "- [x] **1. A**\n```code``` in prose ends the step\n- [ ] **2. B**\n"
+
+    assert [step.number for step in parse_roadmap(text)] == [1, 2]
+
+
+def test_saved_pull_request_list_symlinked_out_of_its_directory_is_refused(
+    tmp_path: Path, make_symlink: Callable[[Path, Path], None]
+) -> None:
+    outside = tmp_path / "outside.json"
+    outside.write_text(json.dumps([_pull(1)]), encoding="utf-8")
+    pulls = tmp_path / "pulls"
+    pulls.mkdir()
+    make_symlink(pulls / "alpha.json", outside)
+
+    listed = LocalRoadmapSource(tmp_path, pulls).pull_requests("alpha")
+
+    assert (listed.status, listed.error) == (
+        "unavailable",
+        "outside the pull-request lists directory",
+    )

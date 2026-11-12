@@ -786,7 +786,10 @@ _DRIFT_JSON_OPTION = typer.Option(
     False, "--json", help="Print the machine-readable report instead of the table."
 )
 _DRIFT_OUT_OPTION = typer.Option(
-    None, "--out", help="Also write the JSON report to this file (the audit's own output)."
+    None,
+    "--out",
+    help="Also write the JSON report to this file (the audit's own output; an existing file "
+    "there is replaced). Refused inside --checkouts, so no checkout is ever written to.",
 )
 
 
@@ -810,8 +813,8 @@ def roadmap_drift(
     carries the repository, the step and the evidence (file and line, PR
     number and URL, the text matched). Sources: local checkouts
     (`--checkouts`, with `--pulls` for saved pull-request lists; no
-    network) or `--github`. Read-only: nothing is written to any
-    repository, only `--out` (ADR-015).
+    network) or `--github`. Read-only: the one file written is the
+    `--out` report, which may not be inside `--checkouts` (ADR-015).
     """
     if github == (checkouts is not None):
         typer.echo("error: give exactly one of --checkouts DIR or --github", err=True)
@@ -838,6 +841,13 @@ def roadmap_drift(
             raise typer.Exit(code=1)
         if pulls is not None and not pulls.is_dir():
             typer.echo(f"error: --pulls {pulls} is not a directory", err=True)
+            raise typer.Exit(code=1)
+        if out is not None and checkouts.resolve() in out.resolve().parents:
+            typer.echo(
+                f"error: --out {out} is inside --checkouts {checkouts}; the audit never writes "
+                "to a checkout",
+                err=True,
+            )
             raise typer.Exit(code=1)
         source = LocalRoadmapSource(checkouts, pulls, owner=owner)
     else:

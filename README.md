@@ -137,7 +137,9 @@ si roadmap-drift ecosystem.json --github --json --out drift.json    # network, G
 `--pulls` holds one saved pull-request list per repository (`gh api
 'repos/OWNER/REPO/pulls?state=closed&per_page=100' --paginate > pulls/REPO.json`);
 without it a local run skips the merged-pull-request checks and says so.
-Nothing is written to any repository (ADR-015).
+The only file written is the `--out` report (an existing file at that path
+is replaced, `--read-only` or not); a path inside `--checkouts` is refused,
+so no checkout is ever written to (ADR-015).
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":

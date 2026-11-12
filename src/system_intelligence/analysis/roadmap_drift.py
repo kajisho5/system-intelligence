@@ -408,6 +408,13 @@ class _Check:
             pull = next((p for p in listed.pulls if p.number == link.number), None)
             if pull is None or not pull.merged:
                 continue
+            if pull.url.rstrip("/").casefold() != link.url.casefold():
+                # Same number, another pull request: never use it as this link's evidence.
+                repo.notes.append(
+                    f"step {step.number} links {link.url}, but the saved #{link.number} of "
+                    f"{target.entry.name} is {pull.url}; not used"
+                )
+                continue
             evidence.append(
                 DriftEvidence(
                     relation="linked_pull_request",

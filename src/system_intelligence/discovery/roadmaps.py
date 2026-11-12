@@ -11,7 +11,9 @@ repository as `ECOSYSTEM_ROADMAP.md`; the file name is the caller's):
 ```
 
 A step's block is its own line plus the indented lines under it. Lines
-inside fenced code blocks are never steps. This module only *reads*:
+inside fenced code blocks are never steps and never part of a block; an
+indented fence inside a step leaves the step open, a fence at the start
+of a line ends it. This module only *reads*:
 `parse_roadmap` turns the text into `RoadmapStep`s, `parse_pull_requests`
 reads a saved pull-request list, and the two sources below fetch both
 for one repository at a time. `analysis/roadmap_drift.py` compares them.
@@ -59,7 +61,8 @@ _USER_AGENT = "system-intelligence-roadmap-drift/1"
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 #: A step line: `- [x] **12. Title**` (the bold title is the match).
 STEP_LINE_RE = re.compile(r"^[-*+] \[(?P<mark>[ xX])\] \*\*(?P<number>\d+)\.\s*(?P<title>.*?)\*\*")
-_FENCE_RE = re.compile(r"^ {0,3}(```|~~~)")
+#: A fenced code block's opening or closing line: three or more backticks or tildes.
+_FENCE_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<rest>.*)$")
 #: A link to one pull request: https://github.com/<owner>/<repo>/pull/<number>
 PULL_URL_RE = re.compile(
     r"https://github\.com/(?P<owner>[A-Za-z0-9-]+)/(?P<repo>[A-Za-z0-9._-]+)/pull/(?P<number>\d+)"
@@ -124,7 +127,9 @@ def parse_roadmap(text: str) -> list[RoadmapStep]:
     steps: list[RoadmapStep] = []
     current: list[tuple[int, str]] | None = None
     header: tuple[int, bool, str] | None = None
-    in_fence = False
+    #: The open fence's character and length (CommonMark: a closing fence uses
+    #: the same character, at least as many of them, and nothing else).
+    fence: tuple[str, int] | None = None
 
     def close() -> None:
         if current is None or header is None:
@@ -135,12 +140,23 @@ def parse_roadmap(text: str) -> list[RoadmapStep]:
         steps.append(RoadmapStep(number, ticked, title, current[0][0], tuple(current)))
 
     for line_number, line in enumerate(text.splitlines(), start=1):
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-            close()
-            current, header = None, None
+        fence_line = _FENCE_RE.match(line)
+        if fence is not None:
+            if (
+                fence_line
+                and fence_line.group("fence")[0] == fence[0]
+                and len(fence_line.group("fence")) >= fence[1]
+                and not fence_line.group("rest").strip()
+            ):
+                fence = None
             continue
-        if in_fence:
+        if fence_line and not (
+            fence_line.group("fence")[0] == "`" and "`" in fence_line.group("rest")
+        ):
+            fence = (fence_line.group("fence")[0], len(fence_line.group("fence")))
+            if not fence_line.group("indent"):
+                close()
+                current, header = None, None
             continue
         match = STEP_LINE_RE.match(line)
         if match:
@@ -347,7 +363,11 @@ class LocalRoadmapSource:
             return PullRequestList("unavailable", label, error="no pull-request lists given")
         if not is_repository_name(repo):
             return PullRequestList("unavailable", label, error="not a repository name")
-        path = self._pulls_dir / label
+        path = confined_path(self._pulls_dir, label)
+        if path is None:
+            return PullRequestList(
+                "unavailable", label, error="outside the pull-request lists directory"
+            )
         if not path.is_file():
             return PullRequestList("unavailable", label, error=f"no saved list {label}")
         read = _read_text_file(path, label)

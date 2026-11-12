@@ -471,3 +471,22 @@ def test_a_pull_request_linked_twice_is_one_piece_of_evidence(tmp_path: Path) ->
     [finding] = _run(tmp_path, ["alpha"]).findings
 
     assert [e.relation for e in finding.evidence] == ["roadmap_line", "linked_pull_request"]
+
+
+def test_a_linked_number_whose_saved_pull_request_is_another_is_not_used(
+    tmp_path: Path,
+) -> None:
+    _repo(tmp_path, "alpha", "- [ ] **1. A** — ([#7](https://github.com/other/alpha/pull/7))\n")
+    _pulls(tmp_path, "alpha", [(7, "Something else", MERGED)])
+
+    report = check_roadmap_drift(
+        [EcosystemRepository("alpha", None)],
+        LocalRoadmapSource(tmp_path / "checkouts", tmp_path / "pulls"),
+        roadmap_file=ROADMAP,
+    )
+
+    assert report.findings == []
+    assert report.repositories[0].notes == [
+        "step 1 links https://github.com/other/alpha/pull/7, but the saved #7 of alpha is "
+        "https://github.com/acme/alpha/pull/7; not used"
+    ]

@@ -1,5 +1,6 @@
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -2845,3 +2846,20 @@ def test_roadmap_drift_github_needs_an_owner(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "--github needs --owner" in _output(result)
+
+
+def test_roadmap_drift_never_writes_into_a_checkout(tmp_path: Path) -> None:
+    checkouts = tmp_path / "checkouts"
+    shutil.copytree(_DRIFT_FIXTURE / "checkouts", checkouts)
+    roadmap = checkouts / "alpha-skill" / "ECOSYSTEM_ROADMAP.md"
+    before = roadmap.read_bytes()
+
+    result = runner.invoke(
+        app,
+        ["roadmap-drift", str(_DRIFT_FIXTURE / "ecosystem.json"), "--checkouts", str(checkouts)]
+        + ["--out", str(roadmap)],
+    )
+
+    assert result.exit_code == 1
+    assert "the audit never writes to a checkout" in _output(result)
+    assert roadmap.read_bytes() == before
