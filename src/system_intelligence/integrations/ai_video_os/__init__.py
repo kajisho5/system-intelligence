@@ -86,8 +86,9 @@ FIELD_READINESS_COLUMNS: tuple[ReadinessColumn, ...] = (
         label="Progress events",
         description="Machine-readable progress while a run works (step, percent, ETA).",
         contract_keys=("progress", "progress_events"),
-        # `--no-progress` and `cancel-in-progress` turn output or runs off; they test nothing.
-        ci_pattern=rf"(?<!no-)(?<!in-)(?:{_ci_words('progress')})",
+        # `--no-progress`, `NO_PROGRESS`, "no progress" and `cancel-in-progress` turn
+        # output or runs off; they test nothing.
+        ci_pattern=rf"(?<!no-)(?<!no_)(?<!no )(?<!in-)(?:{_ci_words('progress')})",
     ),
     ReadinessColumn(
         id="error_classes",

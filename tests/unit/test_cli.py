@@ -2926,6 +2926,7 @@ def test_diagnose_field_runs_under_read_only() -> None:
     [
         (["--contract-file", "c.json"], "--contract-file cannot be used with it"),
         (["--contract-schema", "s.json"], "--contract-schema cannot be used with it"),
+        (["--contract-timeout", "5"], "--contract-timeout cannot be used with it"),
         (["--github"], "exactly one of --checkouts DIR or --github"),
         (["--ownership-map", "second.json"], "exactly one --ownership-map"),
     ],

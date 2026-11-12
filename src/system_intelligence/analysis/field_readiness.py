@@ -209,50 +209,70 @@ class CILine:
 
 
 _JOBS_RE = re.compile(r"^jobs:\s*(#.*)?$")
-_JOB_ID_RE = re.compile(r"^(?P<indent>\s+)(?P<id>[A-Za-z0-9_.-]+):\s*(#.*)?$")
-_NAME_RE = re.compile(r"^\s*(?:-\s+)?name:\s*(?P<value>.+?)\s*$")
-_RUN_RE = re.compile(r"^(?P<indent>\s*)(?:-\s+)?run:\s*(?P<value>.*?)\s*$")
+_KEY_RE = re.compile(
+    r"^(?P<indent>\s*)(?P<dash>-\s+)?(?P<key>[A-Za-z0-9_.-]+):(?:\s+(?P<value>.*?))?\s*$"
+)
+_BLOCK_SCALARS = frozenset({"|", ">", "|-", ">-", "|+", ">+"})
 
 
 def ci_lines(source: str, text: str) -> list[CILine]:
-    """The job ids, `name:` values and `run` commands of a GitHub Actions workflow.
+    """The job ids, job and step `name:` values and step `run` commands of a workflow.
 
     A line-based reader for the few keys the audit reads, not a YAML
-    parser: `run: |` / `run: >` blocks are followed by indentation.
+    parser. Only what is under `jobs:` counts. A `name:` counts as a job's
+    own key or a step's (`- name:`, or a key of the current list item), never
+    as an action input (`with: name: ...`) or an `env` value; `run` counts
+    only as a step key, with `run: |` / `run: >` blocks followed by
+    indentation and their shell comments skipped.
     """
     lines: list[CILine] = []
     in_jobs = False
     job_indent: int | None = None
+    job_key_indent: int | None = None
+    item_key_indent: int | None = None
     run_indent: int | None = None
     for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
         if run_indent is not None:
-            if stripped and indent > run_indent:
-                lines.append(CILine(source, number, "run", stripped))
+            if not stripped:
                 continue
-            if stripped:
-                run_indent = None
+            if indent > run_indent:
+                if not stripped.startswith("#"):
+                    lines.append(CILine(source, number, "run", stripped))
+                continue
+            run_indent = None
         if not stripped or stripped.startswith("#"):
             continue
         if indent == 0:
             in_jobs = bool(_JOBS_RE.match(line))
-            job_indent = None
+            job_indent = job_key_indent = item_key_indent = None
             continue
-        job = _JOB_ID_RE.match(line)
-        if in_jobs and job and (job_indent is None or indent == job_indent):
-            job_indent = indent
-            lines.append(CILine(source, number, f"jobs.{job.group('id')}", job.group("id")))
+        key = _KEY_RE.match(line)
+        if not in_jobs or key is None:
             continue
-        name = _NAME_RE.match(line)
-        if name:
-            lines.append(CILine(source, number, "name", name.group("value").strip("'\"")))
+        name = key.group("key")
+        value = key.group("value") or ""
+        if value.startswith("#"):
+            value = ""
+        dash = key.group("dash")
+        key_indent = indent + len(dash) if dash else indent
+        if not dash and (job_indent is None or indent == job_indent):
+            job_indent, job_key_indent, item_key_indent = indent, None, None
+            lines.append(CILine(source, number, f"jobs.{name}", name))
             continue
-        run = _RUN_RE.match(line)
-        if run:
-            value = run.group("value")
-            if value in {"|", ">", "|-", ">-", "|+", ">+"}:
-                run_indent = len(run.group("indent"))
+        if job_key_indent is None:
+            job_key_indent = key_indent
+        if dash:
+            item_key_indent = key_indent
+        elif item_key_indent is not None and key_indent < item_key_indent:
+            item_key_indent = None
+        in_item = item_key_indent is not None and key_indent == item_key_indent
+        if name == "name" and value and (in_item or key_indent == job_key_indent):
+            lines.append(CILine(source, number, "name", value.strip("'\"")))
+        elif name == "run" and in_item:
+            if value in _BLOCK_SCALARS:
+                run_indent = key_indent
             elif value:
                 lines.append(CILine(source, number, "run", value))
     return lines

@@ -223,10 +223,11 @@ _CONTRACT_COMMAND_OPTION = typer.Option(
     "looked up on PATH. Only ever run when given here, never inferred from the target.",
 )
 _CONTRACT_TIMEOUT_OPTION = typer.Option(
-    DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+    None,
     "--contract-timeout",
     min=0.1,
-    help="Seconds each --contract-command may run before it is stopped.",
+    help="Seconds each --contract-command may run before it is stopped "
+    f"(default: {DEFAULT_CONTRACT_TIMEOUT_SECONDS:g}).",
 )
 _CONTRACT_SCHEMA_OPTION = typer.Option(
     None,
@@ -295,7 +296,7 @@ def _discover_and_analyze(
     target: str,
     contract_files: list[Path],
     contract_commands: list[str],
-    contract_timeout: float,
+    contract_timeout: float | None,
     contract_schema: Path | None,
     ownership_maps: list[Path],
 ) -> AnalysisResult:
@@ -318,7 +319,9 @@ def _discover_and_analyze(
             target,
             contract_files=contract_files,
             contract_commands=argvs,
-            contract_timeout=contract_timeout,
+            contract_timeout=(
+                DEFAULT_CONTRACT_TIMEOUT_SECONDS if contract_timeout is None else contract_timeout
+            ),
             ownership_maps=ownership_maps,
         )
     except TargetResolutionError as exc:
@@ -547,7 +550,7 @@ def diagnose(
     out: Path | None = _OUT_OPTION,
     contract_file: list[Path] = _CONTRACT_FILE_OPTION,
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
-    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_timeout: float | None = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
     ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
     field: bool = _FIELD_OPTION,
@@ -599,6 +602,7 @@ def diagnose(
                 for option, given in (
                     ("--contract-file", bool(contract_file)),
                     ("--contract-command", bool(contract_command)),
+                    ("--contract-timeout", contract_timeout is not None),
                     ("--contract-schema", contract_schema is not None),
                 )
                 if given
@@ -664,7 +668,7 @@ def report(
     out: Path = _REPORT_OUT_OPTION,
     contract_file: list[Path] = _CONTRACT_FILE_OPTION,
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
-    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_timeout: float | None = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
     ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
@@ -787,7 +791,7 @@ def watch(
     out: Path | None = _WATCH_OUT_OPTION,
     contract_file: list[Path] = _CONTRACT_FILE_OPTION,
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
-    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_timeout: float | None = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
     ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:
@@ -889,7 +893,7 @@ def dashboard(
     check_vulnerabilities: bool = _DASHBOARD_CHECK_VULNERABILITIES_OPTION,
     contract_file: list[Path] = _CONTRACT_FILE_OPTION,
     contract_command: list[str] = _CONTRACT_COMMAND_OPTION,
-    contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
+    contract_timeout: float | None = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
     ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
 ) -> None:

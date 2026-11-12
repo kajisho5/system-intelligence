@@ -306,6 +306,9 @@ def test_exact_paths_and_top_level_keys_only() -> None:
         ("resume", "python -m unittest tests.ResumeTests", True),
         ("resume", "presumed fine", False),
         ("progress_events", "choco install ffmpeg -y --no-progress", False),
+        ("progress_events", "NO_PROGRESS=1 python -m pytest", False),
+        ("progress_events", "build with no progress bar", False),
+        ("progress_events", "cancel-in-progress", False),
         ("progress_events", "ingest offload --progress", True),
         ("long_file_tests", "SegmentCacheLongFormTests", True),
         ("long_file_tests", "a 2-hour fixture", True),
@@ -324,3 +327,54 @@ def test_os_ci_patterns(column_id: str, text: str, matches: bool) -> None:
     assert column.ci_pattern is not None
 
     assert bool(re.search(column.ci_pattern, text, re.IGNORECASE)) is matches
+
+
+CONTEXT_WORKFLOW = """name: context
+on: push
+env:
+  NAME: top-level env is not read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      name: an env value is not a step name
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha
+      - name: Unit tests
+        run: |
+          # TODO: add resume tests
+          python -m pytest  # a trailing comment stays part of the command
+      - uses: some/action@v1
+        with:
+          run: alpha resume
+"""
+
+
+def test_ci_lines_reads_step_keys_not_action_inputs_env_or_comments() -> None:
+    lines = ci_lines("wf.yml", CONTEXT_WORKFLOW)
+
+    assert [(line.line, line.key, line.text) for line in lines] == [
+        (6, "jobs.build", "build"),
+        (17, "name", "Unit tests"),
+        (20, "run", "python -m pytest  # a trailing comment stays part of the command"),
+    ]
+
+
+def test_action_inputs_and_shell_comments_state_nothing(tmp_path: Path) -> None:
+    workflows = tmp_path / "alpha" / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text(CONTEXT_WORKFLOW, encoding="utf-8")
+
+    report = audit_field_readiness(
+        [EcosystemRepository("alpha", None)],
+        LocalRoadmapSource(tmp_path),
+        FIELD_READINESS_COLUMNS,
+        {},
+    )
+
+    assert set(_values(report, "alpha").values()) == {"unknown"}
