@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.0 (2026-11-12)
+
+- feat(field): field-readiness audit per skill (roadmap step 5) (#130) (28587f9)
+
 ## v0.3.0 (2026-11-12)
 
 - feat(roadmap): roadmap drift check across the ecosystem (roadmap step 6) (#129) (ac53783)
