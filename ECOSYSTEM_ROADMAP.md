@@ -13,7 +13,7 @@ v0.2.2, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates
 
 | Owned job | Status | Note |
 |---|---|---|
-| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013) |
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015) |
 
 ## Wiring
 
@@ -32,9 +32,10 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
 - [ ] **5. Field-readiness audit** — per skill, from contracts and CI: resume after a stop, progress events, error classes, long-file tests, hardware encoder use, alpha and loudness outputs; written as a table for the Control Room. Field review 2026-11-05 (Velisa ROADMAP, third round)
   - なぜ要るか：現場で使えるスキルとまだ危ないスキルが、一覧で分かる
   - Done when: `si diagnose --field` lists every skill in `ecosystem.json` with each column filled or `unknown`
-- [ ] **6. Roadmap drift check** — `ECOSYSTEM_ROADMAP.md` steps against merged pull requests: a ticked step without a PR link, an unticked step whose PR merged, and a step that names another repository's step that does not exist
+- [x] **6. Roadmap drift check** — `ECOSYSTEM_ROADMAP.md` steps against merged pull requests: a ticked step without a PR link, an unticked step whose PR merged, and a step that names another repository's step that does not exist ([#129](https://github.com/kajisho5/system-intelligence/pull/129), ADR-015)
   - なぜ要るか：多数のリポジトリの進捗表が実態とずれていくのを止められる
   - Done when: a fixture roadmap with each kind of drift gives three findings
+  - Done (ADR-015): `si roadmap-drift <ecosystem.json>` from local checkouts (`--checkouts`, `--pulls`: no network) or `--github`; a Markdown table, or a deterministic JSON report (`--json`, `--out`) where each finding has its repository, step and evidence (file and line, PR number and URL, matched text). An unticked step that SKILL.md / CHANGELOG already describe as shipped is a candidate only; a step that says it is still open (`Partly done`, `Status: partial`, ...) is a note, not drift. `tests/fixtures/roadmap_drift` gives exactly three findings (a: alpha-skill step 2, b: step 3, c: beta-skill step 9)
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).

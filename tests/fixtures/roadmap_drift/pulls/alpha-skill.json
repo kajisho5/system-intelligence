@@ -1,0 +1,7 @@
+[
+  {"number": 5, "title": "Resume after a stop (roadmap step 4)", "html_url": "https://github.com/example/alpha-skill/pull/5", "state": "closed", "merged_at": null},
+  {"number": 4, "title": "docs(roadmap): step 4 (resume after a stop) and review", "html_url": "https://github.com/example/alpha-skill/pull/4", "state": "closed", "merged_at": "2026-10-04T09:00:00Z"},
+  {"number": 3, "title": "Progress events (roadmap step 3)", "html_url": "https://github.com/example/alpha-skill/pull/3", "state": "closed", "merged_at": "2026-10-03T09:00:00Z"},
+  {"number": 2, "title": "Batch mode (roadmap step 2)", "html_url": "https://github.com/example/alpha-skill/pull/2", "state": "closed", "merged_at": "2026-10-02T09:00:00Z"},
+  {"number": 1, "title": "Contract in the OS schema (roadmap step 1)", "html_url": "https://github.com/example/alpha-skill/pull/1", "state": "closed", "merged_at": "2026-10-01T09:00:00Z"}
+]

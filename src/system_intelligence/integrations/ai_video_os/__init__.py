@@ -1,6 +1,6 @@
 """AI Video Production OS reference integration.
 
-Two pieces so far:
+Three pieces so far:
 
 - the OS's Capability Contract JSON Schema
   (`capability_contract.schema.json`), bundled verbatim so `si diagnose
@@ -11,6 +11,9 @@ Two pieces so far:
 - `INACTIVE_COMPONENT_STATUSES`: the `ecosystem.json` component statuses
   that mean the repository does not exist yet, so a job only such a
   component owns is reported as unowned (ADR-012).
+- the roadmap conventions `si roadmap-drift` reads (ADR-015): each
+  repository's `ECOSYSTEM_ROADMAP.md`, and the documents that say what has
+  shipped (`SKILL.md` at the root or under `skills/<repo>/`, `CHANGELOG.md`).
 
 Provenance: kajisho5/AI-video-production-OS
 `registry/capability_contract.schema.json` at commit
@@ -35,6 +38,13 @@ CAPABILITY_CONTRACT_SCHEMA_LABEL = "the AI Video Production OS capability contra
 #: `ecosystem.json`'s own `$comment`: a `"status": "planned"` component is not
 #: installed at all -- its repository does not exist yet.
 INACTIVE_COMPONENT_STATUSES: tuple[str, ...] = ("planned",)
+
+
+#: Each ecosystem repository's roadmap: numbered checkbox steps, one pull request
+#: each, ticked by linking it.
+ROADMAP_FILENAME = "ECOSYSTEM_ROADMAP.md"
+#: Where a repository says what has shipped; `{repo}` is the repository name.
+SHIPPED_FEATURE_DOCUMENTS: tuple[str, ...] = ("SKILL.md", "skills/{repo}/SKILL.md", "CHANGELOG.md")
 
 
 def load_capability_contract_schema() -> dict[str, Any]:

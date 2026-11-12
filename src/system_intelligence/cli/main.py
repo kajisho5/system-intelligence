@@ -23,7 +23,9 @@ polling loop or daemon (ADR-004, read-only by default; this project has
 no background-process machinery anywhere, and `watch` does not introduce
 any) — "on an interval" means invoking the command repeatedly from an
 external scheduler (cron, a CI schedule), not anything this process does
-on its own. The remaining command from docs/13 (`design`) is registered
+on its own. `si roadmap-drift` audits an ecosystem's roadmaps against its
+merged pull requests (ADR-015); it is not in docs/13's original list either.
+The remaining command from docs/13 (`design`) is registered
 as an explicit placeholder so `si --help` documents the intended surface
 without claiming functionality that does not exist yet.
 """
@@ -45,6 +47,7 @@ from pydantic import BaseModel
 from system_intelligence import __version__
 from system_intelligence.analysis import AnalysisResult, analyze_local_repository
 from system_intelligence.analysis.json_schema import UnsupportedSchemaError, check_supported
+from system_intelligence.analysis.roadmap_drift import check_roadmap_drift, format_drift_table
 from system_intelligence.analysis.trust import infer_trust_levels
 from system_intelligence.analysis.update_intelligence import check_dependency_updates
 from system_intelligence.core.entities import Repository
@@ -55,6 +58,13 @@ from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
 from system_intelligence.discovery.contracts import DEFAULT_CONTRACT_TIMEOUT_SECONDS
+from system_intelligence.discovery.ownership import read_ownership_map
+from system_intelligence.discovery.roadmaps import (
+    GitHubRoadmapSource,
+    LocalRoadmapSource,
+    RoadmapSource,
+    ecosystem_repositories,
+)
 from system_intelligence.execution import (
     ChangePlan,
     GitHubPRError,
@@ -66,6 +76,8 @@ from system_intelligence.execution import (
 from system_intelligence.integrations.ai_video_os import (
     CAPABILITY_CONTRACT_SCHEMA_LABEL,
     INACTIVE_COMPONENT_STATUSES,
+    ROADMAP_FILENAME,
+    SHIPPED_FEATURE_DOCUMENTS,
     load_capability_contract_schema,
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
@@ -737,6 +749,121 @@ def dashboard(
 
     typer.echo(f"Dashboard written to {dashboard_path}")
     typer.echo(f"Snapshot written to {snapshot_dir}")
+
+
+_ECOSYSTEM_ARGUMENT = typer.Argument(
+    ...,
+    help="The ecosystem's ownership map, e.g. the AI Video Production OS ecosystem.json: "
+    "every components[].repo is checked. Read only.",
+)
+_CHECKOUTS_OPTION = typer.Option(
+    None,
+    "--checkouts",
+    help="Directory holding one checkout per repository (<dir>/<repo>/ECOSYSTEM_ROADMAP.md). "
+    "Read only; nothing is run in a checkout.",
+)
+_PULLS_OPTION = typer.Option(
+    None,
+    "--pulls",
+    help="Directory of saved pull-request lists, <dir>/<repo>.json in the GitHub REST shape "
+    "(e.g. gh api 'repos/OWNER/REPO/pulls?state=closed&per_page=100' --paginate). "
+    "Without it, a --checkouts run skips the merged-pull-request checks.",
+)
+_GITHUB_OPTION = typer.Option(
+    False,
+    "--github",
+    help="Read the roadmaps, SKILL.md/CHANGELOG.md and closed pull requests from each "
+    "repository's default branch through the GitHub API instead (network, GET only; "
+    "GITHUB_TOKEN when set).",
+)
+_OWNER_OPTION = typer.Option(
+    None, "--owner", help="GitHub owner of the repositories. Default: the ecosystem file's 'org'."
+)
+_ROADMAP_FILE_OPTION = typer.Option(
+    ROADMAP_FILENAME, "--roadmap-file", help="The roadmap's path inside each repository."
+)
+_DRIFT_JSON_OPTION = typer.Option(
+    False, "--json", help="Print the machine-readable report instead of the table."
+)
+_DRIFT_OUT_OPTION = typer.Option(
+    None, "--out", help="Also write the JSON report to this file (the audit's own output)."
+)
+
+
+@app.command(name="roadmap-drift")
+def roadmap_drift(
+    ecosystem: Path = _ECOSYSTEM_ARGUMENT,
+    checkouts: Path | None = _CHECKOUTS_OPTION,
+    pulls: Path | None = _PULLS_OPTION,
+    github: bool = _GITHUB_OPTION,
+    owner: str | None = _OWNER_OPTION,
+    roadmap_file: str = _ROADMAP_FILE_OPTION,
+    as_json: bool = _DRIFT_JSON_OPTION,
+    out: Path | None = _DRIFT_OUT_OPTION,
+) -> None:
+    """Roadmap drift: every repository's roadmap steps against its merged pull requests.
+
+    Reports (a) a ticked step that links no pull request, (b) an unticked
+    step whose pull request merged -- plus, as a candidate only, one its
+    SKILL.md/CHANGELOG already describes as shipped -- and (c) a step
+    naming another repository's step that does not exist. Each finding
+    carries the repository, the step and the evidence (file and line, PR
+    number and URL, the text matched). Sources: local checkouts
+    (`--checkouts`, with `--pulls` for saved pull-request lists; no
+    network) or `--github`. Read-only: nothing is written to any
+    repository, only `--out` (ADR-015).
+    """
+    if github == (checkouts is not None):
+        typer.echo("error: give exactly one of --checkouts DIR or --github", err=True)
+        raise typer.Exit(code=1)
+    if github and pulls is not None:
+        typer.echo("error: --pulls is for --checkouts runs; --github reads them itself", err=True)
+        raise typer.Exit(code=1)
+    observation = read_ownership_map(ecosystem)
+    if observation.error is not None:
+        typer.echo(f"error: {ecosystem}: {observation.error}", err=True)
+        raise typer.Exit(code=1)
+    repositories, problems = ecosystem_repositories(observation.document)
+    if not repositories:
+        typer.echo(f"error: {ecosystem} lists no repositories: {'; '.join(problems)}", err=True)
+        raise typer.Exit(code=1)
+    document = observation.document
+    org = document.get("org") if isinstance(document, dict) else None
+    owner = owner or (org if isinstance(org, str) else None)
+
+    source: RoadmapSource
+    if checkouts is not None:
+        if not checkouts.is_dir():
+            typer.echo(f"error: --checkouts {checkouts} is not a directory", err=True)
+            raise typer.Exit(code=1)
+        if pulls is not None and not pulls.is_dir():
+            typer.echo(f"error: --pulls {pulls} is not a directory", err=True)
+            raise typer.Exit(code=1)
+        source = LocalRoadmapSource(checkouts, pulls, owner=owner)
+    else:
+        if owner is None:
+            typer.echo("error: --github needs --owner (the ecosystem file has no 'org')", err=True)
+            raise typer.Exit(code=1)
+        try:
+            source = GitHubRoadmapSource(owner, token=os.environ.get("GITHUB_TOKEN"))
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+    report = check_roadmap_drift(
+        repositories,
+        source,
+        roadmap_file=roadmap_file,
+        shipped_documents=SHIPPED_FEATURE_DOCUMENTS,
+        inactive_statuses=INACTIVE_COMPONENT_STATUSES,
+        problems=problems,
+    )
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report.to_json(), encoding="utf-8", newline="\n")
+    typer.echo(report.to_json() if as_json else format_drift_table(report), nl=False)
+    if out is not None and not as_json:
+        typer.echo(f"\nReport written to {out}")
 
 
 _QUERY_ARGUMENT = typer.Argument(..., help="Search query, e.g. 'python markdown parser'.")

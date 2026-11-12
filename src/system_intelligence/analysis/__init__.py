@@ -22,6 +22,9 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 4), orchestrated by
   components, a job owned by one while another's contract provides a
   capability bound to it, and jobs with no active owner (ADR-012)
 
+Outside that per-target run: `roadmap_drift.py` compares an ecosystem's
+checkbox roadmaps with its merged pull requests (ADR-015).
+
 Not yet implemented: semantic architecture heuristics beyond import
 cycles, and documentation *content* quality (only presence/absence is
 checked).

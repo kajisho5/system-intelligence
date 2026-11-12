@@ -10,7 +10,9 @@ root-document detection, and Capability Contract collection
 operator-supplied contract files/commands, ADR-011), and ownership-map
 collection (`discovery.ownership`: a target's static `.si/ownership.json`
 and the maps it lists, plus operator-supplied maps; files only, ADR-012),
-orchestrated by `discover_local_repository`.
+orchestrated by `discover_local_repository`. `discovery.roadmaps` reads an
+ecosystem's checkbox roadmaps and pull-request lists, from local checkouts
+or the GitHub API, for `analysis.roadmap_drift` (ADR-015).
 
 Not yet implemented: agent detection beyond the Skill format (no
 verified, generic file convention for it has been found).
