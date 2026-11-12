@@ -1,0 +1,13 @@
+name: tests
+on: [push]
+concurrency:
+  cancel-in-progress: true
+jobs:
+  unit:
+    runs-on: macos-latest
+    env:
+      ALPHA_CHANNEL: "1"
+    steps:
+      - run: brew install ffmpeg --no-progress
+      - name: Long titles are cut
+        run: python -m unittest -v tests.test_titles

@@ -23,7 +23,9 @@ docs/design/IMPLEMENTATION_BACKLOG.md, Epic 4), orchestrated by
   capability bound to it, and jobs with no active owner (ADR-012)
 
 Outside that per-target run: `roadmap_drift.py` compares an ecosystem's
-checkbox roadmaps with its merged pull requests (ADR-015).
+checkbox roadmaps with its merged pull requests (ADR-015), and
+`field_readiness.py` fills one yes/no/unknown row per skill from its
+contract and CI config (ADR-016).
 
 Not yet implemented: semantic architecture heuristics beyond import
 cycles, and documentation *content* quality (only presence/absence is

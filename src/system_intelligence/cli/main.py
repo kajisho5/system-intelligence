@@ -46,6 +46,12 @@ from pydantic import BaseModel
 
 from system_intelligence import __version__
 from system_intelligence.analysis import AnalysisResult, analyze_local_repository
+from system_intelligence.analysis.field_readiness import (
+    FIELD_READINESS_REPORT_FILENAME,
+    ContractDocument,
+    audit_field_readiness,
+    format_readiness_table,
+)
 from system_intelligence.analysis.json_schema import UnsupportedSchemaError, check_supported
 from system_intelligence.analysis.roadmap_drift import check_roadmap_drift, format_drift_table
 from system_intelligence.analysis.trust import infer_trust_levels
@@ -57,9 +63,14 @@ from system_intelligence.core.findings import Finding
 from system_intelligence.core.governance import Approval
 from system_intelligence.core.snapshot import Snapshot
 from system_intelligence.discovery import TargetResolutionError, discover_local_repository
-from system_intelligence.discovery.contracts import DEFAULT_CONTRACT_TIMEOUT_SECONDS
+from system_intelligence.discovery.contracts import (
+    DEFAULT_CONTRACT_TIMEOUT_SECONDS,
+    confined_path,
+    read_contract_file,
+)
 from system_intelligence.discovery.ownership import read_ownership_map
 from system_intelligence.discovery.roadmaps import (
+    EcosystemRepository,
     GitHubRoadmapSource,
     LocalRoadmapSource,
     RoadmapSource,
@@ -75,6 +86,7 @@ from system_intelligence.execution import (
 )
 from system_intelligence.integrations.ai_video_os import (
     CAPABILITY_CONTRACT_SCHEMA_LABEL,
+    FIELD_READINESS_COLUMNS,
     INACTIVE_COMPONENT_STATUSES,
     ROADMAP_FILENAME,
     SHIPPED_FEATURE_DOCUMENTS,
@@ -231,6 +243,39 @@ _OWNERSHIP_MAP_OPTION = typer.Option(
 )
 
 
+_CHECKOUTS_OPTION = typer.Option(
+    None,
+    "--checkouts",
+    help="Directory holding one checkout per repository of the ecosystem (<dir>/<repo>/...). "
+    "Read only; nothing is run in a checkout.",
+)
+_GITHUB_OPTION = typer.Option(
+    False,
+    "--github",
+    help="Read each repository's default branch (and, for roadmap-drift, its closed pull "
+    "requests) through the GitHub API instead (network, GET only; GITHUB_TOKEN when set).",
+)
+_OWNER_OPTION = typer.Option(
+    None, "--owner", help="GitHub owner of the repositories. Default: the ecosystem file's 'org'."
+)
+_JSON_REPORT_OPTION = typer.Option(
+    False, "--json", help="Print the machine-readable report instead of the table."
+)
+_FIELD_OPTION = typer.Option(
+    False,
+    "--field",
+    help="Field-readiness audit instead of a target scan: every repository of the one "
+    "--ownership-map (e.g. ecosystem.json), read from --checkouts or --github, one row "
+    "per skill with yes / no / unknown and the evidence (ADR-016).",
+)
+_CONTRACTS_DIR_OPTION = typer.Option(
+    None,
+    "--contracts",
+    help="With --field: directory of saved Capability Contracts, <dir>/<repo>.json (a skill's "
+    "'<tool> contract --json' output). Read only, never run.",
+)
+
+
 def _load_contract_schema(path: Path | None) -> tuple[dict[str, Any], str]:
     """The contract schema and the label Findings cite it by; exits 1 if unusable."""
     if path is None:
@@ -285,6 +330,149 @@ def _discover_and_analyze(
         contract_schema_label=schema_label,
         inactive_owner_statuses=INACTIVE_COMPONENT_STATUSES,
     )
+
+
+def _read_ecosystem(path: Path) -> tuple[list[EcosystemRepository], list[str], str | None]:
+    """The repositories an ownership map lists, its problems, and its 'org'; exits 1 if none."""
+    observation = read_ownership_map(path)
+    if observation.error is not None:
+        typer.echo(f"error: {path}: {observation.error}", err=True)
+        raise typer.Exit(code=1)
+    repositories, problems = ecosystem_repositories(observation.document)
+    if not repositories:
+        typer.echo(f"error: {path} lists no repositories: {'; '.join(problems)}", err=True)
+        raise typer.Exit(code=1)
+    document = observation.document
+    org = document.get("org") if isinstance(document, dict) else None
+    return repositories, problems, org if isinstance(org, str) else None
+
+
+def _require_one_source(checkouts: Path | None, pulls: Path | None, github: bool) -> None:
+    """Exactly one of `--checkouts`/`--github`, and `--pulls` only with checkouts; exits 1."""
+    if github == (checkouts is not None):
+        typer.echo("error: give exactly one of --checkouts DIR or --github", err=True)
+        raise typer.Exit(code=1)
+    if github and pulls is not None:
+        typer.echo("error: --pulls is for --checkouts runs; --github reads them itself", err=True)
+        raise typer.Exit(code=1)
+
+
+def _repository_source(
+    checkouts: Path | None,
+    pulls: Path | None,
+    github: bool,
+    owner: str | None,
+    out: Path | None,
+) -> RoadmapSource:
+    """Local checkouts or the GitHub API, checked; exits 1 on a bad combination.
+
+    `out` is where the command will write its report: refused inside
+    `checkouts`, so an audit never writes to a checkout.
+    """
+    _require_one_source(checkouts, pulls, github)
+    if checkouts is not None:
+        if not checkouts.is_dir():
+            typer.echo(f"error: --checkouts {checkouts} is not a directory", err=True)
+            raise typer.Exit(code=1)
+        if pulls is not None and not pulls.is_dir():
+            typer.echo(f"error: --pulls {pulls} is not a directory", err=True)
+            raise typer.Exit(code=1)
+        resolved = checkouts.resolve()
+        if out is not None and (out.resolve() == resolved or resolved in out.resolve().parents):
+            typer.echo(
+                f"error: --out {out} is inside --checkouts {checkouts}; the audit never writes "
+                "to a checkout",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        return LocalRoadmapSource(checkouts, pulls, owner=owner)
+    if owner is None:
+        typer.echo("error: --github needs --owner (the ecosystem file has no 'org')", err=True)
+        raise typer.Exit(code=1)
+    try:
+        return GitHubRoadmapSource(owner, token=os.environ.get("GITHUB_TOKEN"))
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _saved_contracts(
+    directory: Path | None, repositories: list[EcosystemRepository]
+) -> dict[str, ContractDocument]:
+    """`<directory>/<repo>.json` for every repository that has one (ADR-016); read only."""
+    if directory is None:
+        return {}
+    if not directory.is_dir():
+        typer.echo(f"error: --contracts {directory} is not a directory", err=True)
+        raise typer.Exit(code=1)
+    contracts: dict[str, ContractDocument] = {}
+    for entry in repositories:
+        label = f"{entry.name}.json"
+        path = confined_path(directory, label)
+        if path is None:
+            contracts[entry.name] = ContractDocument(
+                "unavailable", label, error="outside the --contracts directory"
+            )
+            continue
+        if not path.is_file():
+            continue
+        observation = read_contract_file(path)
+        if observation.error is not None:
+            contracts[entry.name] = ContractDocument("unavailable", label, error=observation.error)
+        else:
+            contracts[entry.name] = ContractDocument("read", label, document=observation.document)
+    return contracts
+
+
+def _field_readiness(
+    target: str,
+    out: Path | None,
+    ownership_maps: list[Path],
+    checkouts: Path | None,
+    github: bool,
+    owner: str | None,
+    contracts_dir: Path | None,
+    as_json: bool,
+    target_options: list[str],
+) -> None:
+    """`si diagnose --field`: the field-readiness table for an ecosystem (ADR-016)."""
+    if target_options:
+        typer.echo(
+            f"error: --field audits the ecosystem, not one target; {', '.join(target_options)} "
+            "cannot be used with it",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if target != ".":
+        typer.echo(
+            "error: --field reads the repositories from --checkouts or --github, not a target "
+            f"({target!r})",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if len(ownership_maps) != 1:
+        typer.echo(
+            "error: --field needs exactly one --ownership-map (e.g. ecosystem.json)", err=True
+        )
+        raise typer.Exit(code=1)
+    _require_one_source(checkouts, None, github)
+    repositories, problems, org = _read_ecosystem(ownership_maps[0])
+    report_path = out / FIELD_READINESS_REPORT_FILENAME if out is not None else None
+    source = _repository_source(checkouts, None, github, owner or org, report_path)
+    report = audit_field_readiness(
+        repositories,
+        source,
+        FIELD_READINESS_COLUMNS,
+        _saved_contracts(contracts_dir, repositories),
+        inactive_statuses=INACTIVE_COMPONENT_STATUSES,
+        problems=problems,
+    )
+    if report_path is not None:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(report.to_json(), encoding="utf-8", newline="\n")
+    typer.echo(report.to_json() if as_json else format_readiness_table(report), nl=False)
+    if report_path is not None and not as_json:
+        typer.echo(f"\nReport written to {report_path}")
 
 
 def _format_named_list(label: str, items: list[str]) -> str:
@@ -362,6 +550,12 @@ def diagnose(
     contract_timeout: float = _CONTRACT_TIMEOUT_OPTION,
     contract_schema: Path | None = _CONTRACT_SCHEMA_OPTION,
     ownership_map: list[Path] = _OWNERSHIP_MAP_OPTION,
+    field: bool = _FIELD_OPTION,
+    checkouts: Path | None = _CHECKOUTS_OPTION,
+    github: bool = _GITHUB_OPTION,
+    owner: str | None = _OWNER_OPTION,
+    contracts: Path | None = _CONTRACTS_DIR_OPTION,
+    as_json: bool = _JSON_REPORT_OPTION,
 ) -> None:
     """Structured health assessment: discovery plus deterministic analysis.
 
@@ -379,7 +573,52 @@ def diagnose(
     adds the ownership audit: jobs owned by two components, a job owned by
     one while another's contract provides a capability bound to it, and
     jobs with no active owner (ADR-012).
+
+    `--field` runs the field-readiness audit instead: for every repository
+    of the one `--ownership-map` (e.g. the OS ecosystem.json), read from
+    `--checkouts` or `--github`, a row of yes / no / unknown cells (resume
+    after a stop, progress events, error classes, long-file tests,
+    hardware encoder use, alpha and loudness outputs), each from the
+    skill's saved contract (`--contracts DIR`, `<repo>.json`) and its CI
+    config, with the evidence; what neither states is unknown. `--json`
+    prints the report; `--out DIR` writes `DIR/field-readiness.json`
+    (ADR-016).
     """
+    if field:
+        _field_readiness(
+            target,
+            out,
+            ownership_map,
+            checkouts,
+            github,
+            owner,
+            contracts,
+            as_json,
+            [
+                option
+                for option, given in (
+                    ("--contract-file", bool(contract_file)),
+                    ("--contract-command", bool(contract_command)),
+                    ("--contract-schema", contract_schema is not None),
+                )
+                if given
+            ],
+        )
+        return
+    field_only = [
+        option
+        for option, given in (
+            ("--checkouts", checkouts is not None),
+            ("--github", github),
+            ("--owner", owner is not None),
+            ("--contracts", contracts is not None),
+            ("--json", as_json),
+        )
+        if given
+    ]
+    if field_only:
+        typer.echo(f"error: {', '.join(field_only)} only work with --field", err=True)
+        raise typer.Exit(code=1)
     result = _discover_and_analyze(
         target,
         contract_file,
@@ -756,12 +995,6 @@ _ECOSYSTEM_ARGUMENT = typer.Argument(
     help="The ecosystem's ownership map, e.g. the AI Video Production OS ecosystem.json: "
     "every components[].repo is checked. Read only.",
 )
-_CHECKOUTS_OPTION = typer.Option(
-    None,
-    "--checkouts",
-    help="Directory holding one checkout per repository (<dir>/<repo>/ECOSYSTEM_ROADMAP.md). "
-    "Read only; nothing is run in a checkout.",
-)
 _PULLS_OPTION = typer.Option(
     None,
     "--pulls",
@@ -769,21 +1002,8 @@ _PULLS_OPTION = typer.Option(
     "(e.g. gh api 'repos/OWNER/REPO/pulls?state=closed&per_page=100' --paginate). "
     "Without it, a --checkouts run skips the merged-pull-request checks.",
 )
-_GITHUB_OPTION = typer.Option(
-    False,
-    "--github",
-    help="Read the roadmaps, SKILL.md/CHANGELOG.md and closed pull requests from each "
-    "repository's default branch through the GitHub API instead (network, GET only; "
-    "GITHUB_TOKEN when set).",
-)
-_OWNER_OPTION = typer.Option(
-    None, "--owner", help="GitHub owner of the repositories. Default: the ecosystem file's 'org'."
-)
 _ROADMAP_FILE_OPTION = typer.Option(
     ROADMAP_FILENAME, "--roadmap-file", help="The roadmap's path inside each repository."
-)
-_DRIFT_JSON_OPTION = typer.Option(
-    False, "--json", help="Print the machine-readable report instead of the table."
 )
 _DRIFT_OUT_OPTION = typer.Option(
     None,
@@ -801,7 +1021,7 @@ def roadmap_drift(
     github: bool = _GITHUB_OPTION,
     owner: str | None = _OWNER_OPTION,
     roadmap_file: str = _ROADMAP_FILE_OPTION,
-    as_json: bool = _DRIFT_JSON_OPTION,
+    as_json: bool = _JSON_REPORT_OPTION,
     out: Path | None = _DRIFT_OUT_OPTION,
 ) -> None:
     """Roadmap drift: every repository's roadmap steps against its merged pull requests.
@@ -816,49 +1036,9 @@ def roadmap_drift(
     network) or `--github`. Read-only: the one file written is the
     `--out` report, which may not be inside `--checkouts` (ADR-015).
     """
-    if github == (checkouts is not None):
-        typer.echo("error: give exactly one of --checkouts DIR or --github", err=True)
-        raise typer.Exit(code=1)
-    if github and pulls is not None:
-        typer.echo("error: --pulls is for --checkouts runs; --github reads them itself", err=True)
-        raise typer.Exit(code=1)
-    observation = read_ownership_map(ecosystem)
-    if observation.error is not None:
-        typer.echo(f"error: {ecosystem}: {observation.error}", err=True)
-        raise typer.Exit(code=1)
-    repositories, problems = ecosystem_repositories(observation.document)
-    if not repositories:
-        typer.echo(f"error: {ecosystem} lists no repositories: {'; '.join(problems)}", err=True)
-        raise typer.Exit(code=1)
-    document = observation.document
-    org = document.get("org") if isinstance(document, dict) else None
-    owner = owner or (org if isinstance(org, str) else None)
-
-    source: RoadmapSource
-    if checkouts is not None:
-        if not checkouts.is_dir():
-            typer.echo(f"error: --checkouts {checkouts} is not a directory", err=True)
-            raise typer.Exit(code=1)
-        if pulls is not None and not pulls.is_dir():
-            typer.echo(f"error: --pulls {pulls} is not a directory", err=True)
-            raise typer.Exit(code=1)
-        if out is not None and checkouts.resolve() in out.resolve().parents:
-            typer.echo(
-                f"error: --out {out} is inside --checkouts {checkouts}; the audit never writes "
-                "to a checkout",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-        source = LocalRoadmapSource(checkouts, pulls, owner=owner)
-    else:
-        if owner is None:
-            typer.echo("error: --github needs --owner (the ecosystem file has no 'org')", err=True)
-            raise typer.Exit(code=1)
-        try:
-            source = GitHubRoadmapSource(owner, token=os.environ.get("GITHUB_TOKEN"))
-        except ValueError as exc:
-            typer.echo(f"error: {exc}", err=True)
-            raise typer.Exit(code=1) from exc
+    _require_one_source(checkouts, pulls, github)
+    repositories, problems, org = _read_ecosystem(ecosystem)
+    source = _repository_source(checkouts, pulls, github, owner or org, out)
 
     report = check_roadmap_drift(
         repositories,

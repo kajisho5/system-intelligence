@@ -377,3 +377,53 @@ def test_saved_pull_request_list_symlinked_out_of_its_directory_is_refused(
         "unavailable",
         "outside the pull-request lists directory",
     )
+
+
+def test_local_source_lists_the_files_of_a_directory(tmp_path: Path) -> None:
+    workflows = tmp_path / "alpha" / ".github" / "workflows"
+    (workflows / "nested").mkdir(parents=True)
+    (workflows / "b.yml").write_text("on: push\n", encoding="utf-8")
+    (workflows / "a.yaml").write_text("on: push\n", encoding="utf-8")
+    source = LocalRoadmapSource(tmp_path)
+
+    listed = source.list_directory("alpha", ".github/workflows")
+    missing = source.list_directory("alpha", "docs")
+    escaping = source.list_directory("alpha", "../..")
+    bad_name = source.list_directory("..", ".github")
+
+    assert (listed.status, listed.label, listed.names) == (
+        "read",
+        "alpha/.github/workflows",
+        ("a.yaml", "b.yml"),
+    )
+    assert missing.status == "missing"
+    assert (escaping.status, escaping.error) == ("unavailable", "outside the checkouts directory")
+    assert bad_name.error == "not a repository name"
+
+
+def test_github_source_lists_a_directory_through_the_contents_api() -> None:
+    listing = [
+        {"name": "ci.yml", "type": "file"},
+        {"name": "nested", "type": "dir"},
+        {"name": "a.yml", "type": "file"},
+        "junk",
+    ]
+    fake = FakeGitHub(
+        {
+            f"{API}/alpha/contents/.github/workflows": (200, json.dumps(listing).encode()),
+            f"{API}/beta/contents/.github/workflows": (200, b'{"type": "file"}'),
+            f"{API}/gamma/contents/.github/workflows": (500, b""),
+            f"{API}/delta/contents/.github/workflows": (200, b"not json"),
+        }
+    )
+    source = GitHubRoadmapSource("acme", http_get=fake)
+
+    listed = source.list_directory("alpha", ".github/workflows")
+
+    assert (listed.status, listed.names) == ("read", ("a.yml", "ci.yml"))
+    assert fake.requests[0][1]["Accept"] == "application/vnd.github+json"
+    assert source.list_directory("beta", ".github/workflows").error == "not a directory"
+    assert source.list_directory("gamma", ".github/workflows").status == "unavailable"
+    assert source.list_directory("delta", ".github/workflows").status == "unavailable"
+    assert source.list_directory("epsilon", ".github/workflows").status == "missing"
+    assert source.list_directory("..", ".github").error == "not a repository name"

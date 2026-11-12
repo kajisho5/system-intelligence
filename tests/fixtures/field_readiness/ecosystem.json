@@ -1,0 +1,11 @@
+{
+  "$comment": "Field-readiness fixture: alpha-skill has a contract and CI stating most columns; beta-skill a contract only (one explicit no); epsilon-skill CI only, with words that must not count; gamma-skill is planned; delta-skill has neither a checkout nor a contract.",
+  "org": "example",
+  "components": [
+    {"repo": "alpha-skill", "status": "active"},
+    {"repo": "beta-skill", "status": "active"},
+    {"repo": "gamma-skill", "status": "planned"},
+    {"repo": "delta-skill", "status": "active"},
+    {"repo": "epsilon-skill", "status": "active"}
+  ]
+}

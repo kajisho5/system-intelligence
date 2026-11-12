@@ -13,7 +13,7 @@ v0.2.2, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates
 
 | Owned job | Status | Note |
 |---|---|---|
-| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015) |
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016) |
 
 ## Wiring
 
@@ -29,9 +29,10 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
   - Done when: test
 - [x] **4. macOS / Windows CI** ([#123](https://github.com/kajisho5/system-intelligence/pull/123), ADR-014)
   - Done when: CI green
-- [ ] **5. Field-readiness audit** — per skill, from contracts and CI: resume after a stop, progress events, error classes, long-file tests, hardware encoder use, alpha and loudness outputs; written as a table for the Control Room. Field review 2026-11-05 (Velisa ROADMAP, third round)
+- [x] **5. Field-readiness audit** — per skill, from contracts and CI: resume after a stop, progress events, error classes, long-file tests, hardware encoder use, alpha and loudness outputs; written as a table for the Control Room. Field review 2026-11-05 (Velisa ROADMAP, third round) ([#130](https://github.com/kajisho5/system-intelligence/pull/130), ADR-016)
   - なぜ要るか：現場で使えるスキルとまだ危ないスキルが、一覧で分かる
   - Done when: `si diagnose --field` lists every skill in `ecosystem.json` with each column filled or `unknown`
+  - Done (ADR-016): `si diagnose --field --ownership-map ecosystem.json` from `--checkouts` or `--github`, with each skill's saved contract (`--contracts DIR`, `<repo>.json`); one row per component of `ecosystem.json`, seven columns, each cell `yes` / `no` / `unknown` with its evidence (contract file and JSON Pointer, or CI file, key and line, and the text matched). A contract key counts only at the top level or as one exact path; CI counts job ids, step names and `run` commands; what neither states, or states both ways, is `unknown`. A Markdown table, or a deterministic JSON report (`--json`, `--out DIR`). `tests/fixtures/field_readiness` covers yes, no, unknown and a contradiction
 - [x] **6. Roadmap drift check** — `ECOSYSTEM_ROADMAP.md` steps against merged pull requests: a ticked step without a PR link, an unticked step whose PR merged, and a step that names another repository's step that does not exist ([#129](https://github.com/kajisho5/system-intelligence/pull/129), ADR-015)
   - なぜ要るか：多数のリポジトリの進捗表が実態とずれていくのを止められる
   - Done when: a fixture roadmap with each kind of drift gives three findings
