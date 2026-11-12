@@ -1,0 +1,4 @@
+[
+  {"number": 2, "title": "Progress events (roadmap step 2)", "html_url": "https://github.com/example/beta-skill/pull/2", "state": "closed", "merged_at": "2026-10-02T10:00:00Z"},
+  {"number": 1, "title": "Encode (roadmap step 1)", "html_url": "https://github.com/example/beta-skill/pull/1", "state": "closed", "merged_at": "2026-10-01T10:00:00Z"}
+]

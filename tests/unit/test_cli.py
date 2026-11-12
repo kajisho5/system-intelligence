@@ -1,5 +1,6 @@
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -2736,3 +2737,129 @@ def test_read_only_audit_commands_still_run(tmp_path: Path) -> None:
     assert "recording this scan as the baseline" in watch.stdout
     assert plan.exit_code == 0
     assert list(target.iterdir()) == []
+
+
+_DRIFT_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "roadmap_drift"
+
+
+def _drift_args(*extra: str) -> list[str]:
+    return [
+        "roadmap-drift",
+        str(_DRIFT_FIXTURE / "ecosystem.json"),
+        "--checkouts",
+        str(_DRIFT_FIXTURE / "checkouts"),
+        "--pulls",
+        str(_DRIFT_FIXTURE / "pulls"),
+        *extra,
+    ]
+
+
+def test_roadmap_drift_prints_a_table_with_the_three_fixture_findings() -> None:
+    result = runner.invoke(app, _drift_args())
+
+    assert result.exit_code == 0, _output(result)
+    assert "3 findings (a: 1, b: 1, b candidates: 0, c: 1)" in result.stdout
+    assert "| a | alpha-skill | 2 | certain |" in result.stdout
+    assert "| b | alpha-skill | 3 | certain |" in result.stdout
+    assert "| c | alpha-skill | 3 | certain |" in result.stdout
+
+
+def test_roadmap_drift_json_and_out_are_the_same_deterministic_report(tmp_path: Path) -> None:
+    out = tmp_path / "reports" / "drift.json"
+
+    first = runner.invoke(app, _drift_args("--json", "--out", str(out)))
+    second = runner.invoke(app, _drift_args("--json"))
+
+    assert first.exit_code == 0, _output(first)
+    assert first.stdout == second.stdout
+    assert out.read_bytes() == first.stdout.encode("utf-8")
+    assert b"\r\n" not in out.read_bytes()
+    report = json.loads(first.stdout)
+    assert [(f["check"], f["repo"], f["step"]) for f in report["findings"]] == [
+        ("a", "alpha-skill", 2),
+        ("b", "alpha-skill", 3),
+        ("c", "alpha-skill", 3),
+    ]
+    assert report["findings"][1]["evidence"][1]["pr_url"] == (
+        "https://github.com/example/alpha-skill/pull/3"
+    )
+
+
+def test_roadmap_drift_runs_under_read_only(tmp_path: Path) -> None:
+    out = tmp_path / "drift.json"
+
+    result = runner.invoke(app, ["--read-only", *_drift_args("--out", str(out))])
+
+    assert result.exit_code == 0, _output(result)
+    assert "--read-only refuses" not in _output(result)
+    assert f"Report written to {out}" in result.stdout
+    assert out.is_file()
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["roadmap-drift", "ecosystem.json"], "exactly one of --checkouts DIR or --github"),
+        (
+            ["roadmap-drift", "ecosystem.json", "--github", "--checkouts", "."],
+            "exactly one of --checkouts DIR or --github",
+        ),
+        (
+            ["roadmap-drift", "ecosystem.json", "--github", "--pulls", "."],
+            "--pulls is for --checkouts runs",
+        ),
+    ],
+)
+def test_roadmap_drift_needs_one_source(args: list[str], message: str) -> None:
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 1
+    assert message in _output(result)
+
+
+def test_roadmap_drift_reports_an_unusable_ecosystem_file(tmp_path: Path) -> None:
+    broken = tmp_path / "ecosystem.json"
+    broken.write_text("{", encoding="utf-8")
+    empty = tmp_path / "empty.json"
+    empty.write_text('{"components": []}', encoding="utf-8")
+
+    unreadable = runner.invoke(app, ["roadmap-drift", str(broken), "--checkouts", str(tmp_path)])
+    no_repos = runner.invoke(app, ["roadmap-drift", str(empty), "--checkouts", str(tmp_path)])
+    missing_dir = runner.invoke(
+        app,
+        ["roadmap-drift", str(_DRIFT_FIXTURE / "ecosystem.json"), "--checkouts", "missing-dir"],
+    )
+
+    assert unreadable.exit_code == 1
+    assert "not valid JSON" in _output(unreadable)
+    assert no_repos.exit_code == 1
+    assert "lists no repositories" in _output(no_repos)
+    assert missing_dir.exit_code == 1
+    assert "is not a directory" in _output(missing_dir)
+
+
+def test_roadmap_drift_github_needs_an_owner(tmp_path: Path) -> None:
+    ecosystem = tmp_path / "ecosystem.json"
+    ecosystem.write_text('{"components": [{"repo": "alpha"}]}', encoding="utf-8")
+
+    result = runner.invoke(app, ["roadmap-drift", str(ecosystem), "--github"])
+
+    assert result.exit_code == 1
+    assert "--github needs --owner" in _output(result)
+
+
+def test_roadmap_drift_never_writes_into_a_checkout(tmp_path: Path) -> None:
+    checkouts = tmp_path / "checkouts"
+    shutil.copytree(_DRIFT_FIXTURE / "checkouts", checkouts)
+    roadmap = checkouts / "alpha-skill" / "ECOSYSTEM_ROADMAP.md"
+    before = roadmap.read_bytes()
+
+    result = runner.invoke(
+        app,
+        ["roadmap-drift", str(_DRIFT_FIXTURE / "ecosystem.json"), "--checkouts", str(checkouts)]
+        + ["--out", str(roadmap)],
+    )
+
+    assert result.exit_code == 1
+    assert "the audit never writes to a checkout" in _output(result)
+    assert roadmap.read_bytes() == before

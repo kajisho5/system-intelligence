@@ -76,6 +76,7 @@ read-only into a temp directory first):
 | `si execute <plan> <target>` | Apply a local `ChangePlan` (dry-run unless `--approve`); `--push --repo owner/repo` also pushes and opens a Draft PR, gated by its own separate Approval |
 | `si verify <command>` | Run a test command and record pass/fail |
 | `si watch <target>` | Drift since the last `si watch` run for this target, via a self-managed `--state-dir` history (no daemon — repeat it yourself, or from cron/CI) |
+| `si roadmap-drift <ecosystem.json>` | Every repository's `ECOSYSTEM_ROADMAP.md` steps against its merged pull requests, from local checkouts (`--checkouts`, `--pulls`) or `--github` (network); a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si doctor`, `si version` | Environment check, installed version |
 
 `si --read-only <command>` (or `SI_READ_ONLY=1`) is audit mode: discovery,
@@ -115,6 +116,30 @@ component while another's contract provides a capability bound to it
 (`"job_capabilities": {"配信プラットフォーム仕様": ["ffmpeg-skill.export"]}`)
 is an `ownership_provider_overlap`; a job only `planned` components own,
 or a bound job nobody owns, is an `ownership_unowned_job` (ADR-012).
+
+`si roadmap-drift` audits an ecosystem's roadmaps, not one target: for every
+`components[].repo` of an ownership map such as the OS `ecosystem.json`, it
+reads that repository's `ECOSYSTEM_ROADMAP.md` (numbered checkbox steps,
+one pull request each) and reports (a) a ticked step that links no pull
+request, (b) an unticked step whose pull request merged (one the step links,
+or one whose title names it, `docs:` pull requests aside; a step that says
+it is still open, e.g. `Partly done`, is a note, not drift) and, as a
+*candidate* only, one its SKILL.md/CHANGELOG already describes as shipped,
+and (c) a step naming another repository's step that does not exist
+(`qc-skill step 9`). Each finding names the repository, the step and the
+evidence: file and line, PR number and URL, and the text matched. Offline:
+
+```bash
+si roadmap-drift ecosystem.json --checkouts ~/src --pulls ./pulls   # <dir>/<repo>/..., <pulls>/<repo>.json
+si roadmap-drift ecosystem.json --github --json --out drift.json    # network, GITHUB_TOKEN when set
+```
+
+`--pulls` holds one saved pull-request list per repository (`gh api
+'repos/OWNER/REPO/pulls?state=closed&per_page=100' --paginate > pulls/REPO.json`);
+without it a local run skips the merged-pull-request checks and says so.
+The only file written is the `--out` report (an existing file at that path
+is replaced, `--read-only` or not); a path inside `--checkouts` is refused,
+so no checkout is ever written to (ADR-015).
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":
