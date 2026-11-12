@@ -1,0 +1,23 @@
+name: CI
+on: [push]
+concurrency:
+  group: ci
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg --no-progress
+      # A comment naming alpha output never counts.
+      - name: Unit tests
+        run: python -m pytest
+      - name: Resume after an interrupted run
+        run: |
+          python -m pytest tests/test_resume.py
+          python -m pytest -k LongFormTests
+  loudness:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python -m pytest tests/test_targets.py

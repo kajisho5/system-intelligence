@@ -63,7 +63,7 @@ read-only into a temp directory first):
 | Command | What it does |
 |---|---|
 | `si inspect <target>` | Repository/Skill/Agent (`.claude/agents/*.md`)/CI/doc inventory |
-| `si diagnose <target>` | Discovery + deterministic analysis → Findings |
+| `si diagnose <target>` | Discovery + deterministic analysis → Findings; `--field` instead audits every skill of an ecosystem for field readiness (below) |
 | `si report <target>` | Static, offline-viewable HTML report |
 | `si dashboard <target>` | Interactive "System Intelligence Console" (see below) |
 | `si schema` | Export JSON Schema files for the canonical snapshot format (no target) |
@@ -140,6 +140,24 @@ without it a local run skips the merged-pull-request checks and says so.
 The only file written is the `--out` report (an existing file at that path
 is replaced, `--read-only` or not); a path inside `--checkouts` is refused,
 so no checkout is ever written to (ADR-015).
+
+`si diagnose --field` is the field-readiness audit, one row per skill of
+an ownership map such as the OS `ecosystem.json`: resume after a stop,
+progress events, error classes, long-file tests, hardware encoder use,
+alpha output and loudness output. Each cell is `yes`, `no` or `unknown`
+with its evidence (the file, the contract key or CI line, the text
+matched), read from two places only: the skill's saved Capability
+Contract (`--contracts DIR`, `<repo>.json`: its `<tool> contract --json`
+output; never run) and its CI config (`.github/workflows`: job ids, step
+names, `run` commands). What neither states is `unknown`, never `no`, and
+so is anything they state both ways (ADR-016):
+
+```bash
+si diagnose --field --ownership-map ecosystem.json --checkouts ~/src --contracts ./contracts
+si diagnose --field --ownership-map ecosystem.json --github --contracts ./contracts --json
+```
+
+`--out DIR` writes `DIR/field-readiness.json` (refused inside `--checkouts`).
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":

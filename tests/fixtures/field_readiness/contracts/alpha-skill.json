@@ -1,0 +1,13 @@
+{
+  "skill_id": "alpha-skill",
+  "version": "1.2.0",
+  "progress": {"events": ["start", "progress", "done"], "stream": "stderr"},
+  "errors": {
+    "codes": ["INVALID_INPUT", "TOOL_ERROR"],
+    "classes": {"INVALID_INPUT": "input", "TOOL_ERROR": "transient"}
+  },
+  "hardware": false,
+  "alpha": null,
+  "colors": {"alpha": "accepted by a colour parameter"},
+  "operations": [{"name": "GRADE", "parameters": {"tint": {"alpha": true}}}]
+}

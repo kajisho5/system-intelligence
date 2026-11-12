@@ -4,7 +4,8 @@
 (docs/design/docs/17-reference-workflows.md): its bundled Capability
 Contract schema, the CLI's default for contract validation (ADR-011),
 the `ecosystem.json` statuses that mean a component does not exist yet
-(ADR-012), and the roadmap file names `si roadmap-drift` reads (ADR-015).
+(ADR-012), the roadmap file names `si roadmap-drift` reads (ADR-015), and
+the field-readiness columns of `si diagnose --field` (ADR-016).
 Still planned: a read-heavy GitHub adapter
 (docs/design/docs/11-github-integration.md). Nothing here may be imported
 by core, discovery, analysis, research, intelligence, recommendations,

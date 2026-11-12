@@ -15,8 +15,11 @@ inside fenced code blocks are never steps and never part of a block; an
 indented fence inside a step leaves the step open, a fence at the start
 of a line ends it. This module only *reads*:
 `parse_roadmap` turns the text into `RoadmapStep`s, `parse_pull_requests`
-reads a saved pull-request list, and the two sources below fetch both
-for one repository at a time. `analysis/roadmap_drift.py` compares them.
+reads a saved pull-request list, and the two sources below fetch files,
+directory listings and pull requests for one repository at a time.
+`analysis/roadmap_drift.py` compares roadmaps with pull requests (ADR-015);
+`analysis/field_readiness.py` reads each repository's CI config through the
+same sources (ADR-016).
 
 Two sources, both read-only (ADR-004, ADR-015):
 
@@ -266,8 +269,18 @@ class PullRequestList:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class DirectoryListing:
+    """The file names (not subdirectories) directly inside one directory of a repository."""
+
+    status: Literal["read", "missing", "unavailable"]
+    label: str
+    names: tuple[str, ...] = ()
+    error: str | None = None
+
+
 class RoadmapSource(Protocol):
-    """Where the drift check reads each repository's files and pull requests."""
+    """Where the drift check and the field-readiness audit read each repository."""
 
     @property
     def kind(self) -> str: ...
@@ -276,6 +289,8 @@ class RoadmapSource(Protocol):
     def owner(self) -> str | None: ...
 
     def read_file(self, repo: str, path: str) -> SourceFile: ...
+
+    def list_directory(self, repo: str, path: str) -> DirectoryListing: ...
 
     def pull_requests(self, repo: str) -> PullRequestList: ...
 
@@ -356,6 +371,21 @@ class LocalRoadmapSource:
         if not resolved.is_file():
             return SourceFile("missing", label)
         return _read_text_file(resolved, label)
+
+    def list_directory(self, repo: str, path: str) -> DirectoryListing:
+        label = _label(repo, path)
+        if not is_repository_name(repo):
+            return DirectoryListing("unavailable", label, error="not a repository name")
+        resolved = confined_path(self._checkouts, f"{repo}/{path}")
+        if resolved is None:
+            return DirectoryListing("unavailable", label, error="outside the checkouts directory")
+        if not resolved.is_dir():
+            return DirectoryListing("missing", label)
+        try:
+            names = sorted(entry.name for entry in resolved.iterdir() if entry.is_file())
+        except OSError as exc:
+            return DirectoryListing("unavailable", label, error=f"{exc.__class__.__name__}: {exc}")
+        return DirectoryListing("read", label, tuple(names))
 
     def pull_requests(self, repo: str) -> PullRequestList:
         label = f"{repo}.json"
@@ -451,6 +481,36 @@ class GitHubRoadmapSource:
             return SourceFile("read", label, text=body.decode("utf-8"))
         except UnicodeDecodeError as exc:
             return SourceFile("unavailable", label, error=f"not UTF-8: {exc}")
+
+    def list_directory(self, repo: str, path: str) -> DirectoryListing:
+        label = _label(repo, path)
+        if not is_repository_name(repo):
+            return DirectoryListing("unavailable", label, error="not a repository name")
+        quoted = urllib.parse.quote(path.strip("/"), safe="/")
+        url = f"{_API_BASE}/repos/{self._owner}/{repo}/contents/{quoted}"
+        try:
+            status, body = self._get(url, "application/vnd.github+json")
+        except OSError as exc:
+            return DirectoryListing("unavailable", label, error=f"GitHub API request failed: {exc}")
+        if status == 404:
+            return DirectoryListing("missing", label)
+        if status >= 400:
+            error = f"GitHub API returned HTTP {status}"
+            return DirectoryListing("unavailable", label, error=error)
+        try:
+            entries = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return DirectoryListing("unavailable", label, error=f"not a JSON listing: {exc}")
+        if not isinstance(entries, list):
+            return DirectoryListing("unavailable", label, error="not a directory")
+        names = sorted(
+            entry["name"]
+            for entry in entries
+            if isinstance(entry, Mapping)
+            and entry.get("type") == "file"
+            and isinstance(entry.get("name"), str)
+        )
+        return DirectoryListing("read", label, tuple(names))
 
     def pull_requests(self, repo: str) -> PullRequestList:
         label = f"{self._owner}/{repo} pull requests"

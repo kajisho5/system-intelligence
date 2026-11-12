@@ -1,0 +1,6 @@
+{
+  "skill_id": "beta-skill",
+  "resume": false,
+  "alpha": {"modes": ["straight", "premultiplied"]},
+  "long_inputs": {"resume": "a run with the same input continues at the first missing block"}
+}

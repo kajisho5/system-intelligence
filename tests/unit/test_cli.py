@@ -2863,3 +2863,116 @@ def test_roadmap_drift_never_writes_into_a_checkout(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "the audit never writes to a checkout" in _output(result)
     assert roadmap.read_bytes() == before
+
+
+_FIELD_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "field_readiness"
+
+
+def _field_args(*extra: str) -> list[str]:
+    return [
+        "diagnose",
+        "--field",
+        "--ownership-map",
+        str(_FIELD_FIXTURE / "ecosystem.json"),
+        "--checkouts",
+        str(_FIELD_FIXTURE / "checkouts"),
+        "--contracts",
+        str(_FIELD_FIXTURE / "contracts"),
+        *extra,
+    ]
+
+
+def test_diagnose_field_lists_every_skill_with_each_column_filled_or_unknown() -> None:
+    result = runner.invoke(app, _field_args())
+
+    assert result.exit_code == 0, _output(result)
+    rows = [line for line in result.stdout.splitlines() if line.startswith("| ")][1:]
+    assert [row.split(" | ")[0].lstrip("| ") for row in rows] == [
+        "alpha-skill",
+        "beta-skill",
+        "delta-skill",
+        "epsilon-skill",
+        "gamma-skill",
+    ]
+    for row in rows:
+        cells = [cell.strip() for cell in row.strip("|").split("|")][3:]
+        assert len(cells) == 7
+        assert set(cells) <= {"yes", "no", "unknown"}
+    assert "| alpha-skill | read | read | yes | yes | yes | yes | no | unknown | yes |" in rows
+
+
+def test_diagnose_field_json_and_out(tmp_path: Path) -> None:
+    out = tmp_path / "report"
+
+    printed = runner.invoke(app, _field_args("--json", "--out", str(out)))
+    table = runner.invoke(app, _field_args("--out", str(out)))
+
+    assert printed.exit_code == 0, _output(printed)
+    written = (out / "field-readiness.json").read_bytes()
+    assert written == printed.stdout.encode("utf-8")
+    assert b"\r\n" not in written
+    assert json.loads(printed.stdout)["skills"][0]["cells"]["hardware_encoder"]["value"] == "no"
+    assert f"Report written to {out / 'field-readiness.json'}" in table.stdout
+
+
+def test_diagnose_field_runs_under_read_only() -> None:
+    result = runner.invoke(app, ["--read-only", *_field_args()])
+
+    assert result.exit_code == 0, _output(result)
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--contract-file", "c.json"], "--contract-file cannot be used with it"),
+        (["--contract-schema", "s.json"], "--contract-schema cannot be used with it"),
+        (["--contract-timeout", "5"], "--contract-timeout cannot be used with it"),
+        (["--github"], "exactly one of --checkouts DIR or --github"),
+        (["--ownership-map", "second.json"], "exactly one --ownership-map"),
+    ],
+)
+def test_diagnose_field_refuses_target_options(extra: list[str], message: str) -> None:
+    result = runner.invoke(app, [*_field_args(), *extra])
+
+    assert result.exit_code == 1
+    assert message in _output(result)
+
+
+def test_diagnose_field_takes_no_target(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path), *_field_args()[1:]])
+
+    assert result.exit_code == 1
+    assert "not a target" in _output(result)
+
+
+def test_diagnose_field_never_writes_into_a_checkout(tmp_path: Path) -> None:
+    checkouts = tmp_path / "checkouts"
+    shutil.copytree(_FIELD_FIXTURE / "checkouts", checkouts)
+
+    result = runner.invoke(
+        app,
+        ["diagnose", "--field", "--ownership-map", str(_FIELD_FIXTURE / "ecosystem.json")]
+        + ["--checkouts", str(checkouts), "--out", str(checkouts / "alpha-skill")],
+    )
+
+    assert result.exit_code == 1
+    assert "the audit never writes to a checkout" in _output(result)
+    assert not (checkouts / "alpha-skill" / "field-readiness.json").exists()
+
+
+def test_field_only_options_need_field(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["diagnose", str(tmp_path), "--checkouts", str(tmp_path), "--json"])
+
+    assert result.exit_code == 1
+    assert "--checkouts, --json only work with --field" in _output(result)
+
+
+def test_diagnose_field_reports_an_unusable_contracts_directory(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["diagnose", "--field", "--ownership-map", str(_FIELD_FIXTURE / "ecosystem.json")]
+        + ["--checkouts", str(_FIELD_FIXTURE / "checkouts"), "--contracts", str(tmp_path / "x")],
+    )
+
+    assert result.exit_code == 1
+    assert "is not a directory" in _output(result)
