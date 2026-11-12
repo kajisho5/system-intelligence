@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-v0.2.2, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates, propose, execute, ... 60 test modules, CI on Ubuntu, macOS and Windows.
+v0.4.0, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates, propose, execute, ... 60 test modules, CI on Ubuntu, macOS and Windows.
 
 ## What this repository owns
 
@@ -37,6 +37,10 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
   - なぜ要るか：多数のリポジトリの進捗表が実態とずれていくのを止められる
   - Done when: a fixture roadmap with each kind of drift gives three findings
   - Done (ADR-015): `si roadmap-drift <ecosystem.json>` from local checkouts (`--checkouts`, `--pulls`: no network) or `--github`; a Markdown table, or a deterministic JSON report (`--json`, `--out`) where each finding has its repository, step and evidence (file and line, PR number and URL, matched text). An unticked step that SKILL.md / CHANGELOG already describe as shipped is a candidate only; a step that says it is still open (`Partly done`, `Status: partial`, ...) is a note, not drift. `tests/fixtures/roadmap_drift` gives exactly three findings (a: alpha-skill step 2, b: step 3, c: beta-skill step 9)
+- [ ] **7. The OS contract-shape check, called from Velisa CI** — checking every component's capability contract against the OS shape is this repository's role, and Velisa CI calls it ([Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/blob/main/docs/ecosystem/DECISION_LOG.md)). Contract checking exists (step 1, `--contract-schema`, default the bundled OS schema), but Velisa's workflows call only `si watch` (`scripts/ecosystem-audit.sh`) and `si diagnose .` (`dashboard.yml`). Read the schema from Velisa's `registry/` (the reference definition) instead of a bundled copy, or fail when the copy differs, and give Velisa one command to run over `ecosystem.json`. Side effects, signatures and isolation tests stay skillpact's; runtime version gates stay video-production-agent's
+  - Done when: a Velisa CI job runs the check over every component with a contract and fails on a contract that breaks the schema
+- [ ] **8. Implemented commands no workflow runs yet** — `si roadmap-drift` (step 6) and `si diagnose --field --ownership-map` (step 5) work, but no Velisa workflow calls them. Both are candidates for the Velisa workflow (the weekly ecosystem audit or the dashboard), read-only
+  - Done when: the Velisa workflow runs both, or a decision there says why not
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
