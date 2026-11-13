@@ -176,6 +176,52 @@ def read_contract_file(path: Path) -> ContractObservation:
     return _file_observation(path, str(path))
 
 
+#: A saved-contracts directory holds a few dozen files; refuse a tree far larger.
+MAX_SAVED_CONTRACT_FILES = 2000
+
+
+def read_saved_contract_directory(directory: Path) -> list[ContractObservation]:
+    """Every `*.json` file under `directory` (any depth), read only, in path order.
+
+    Each observation's `label` is the file's path relative to `directory`,
+    `/`-separated, so a report does not depend on where the directory is
+    or on the OS. Symlinked directories are not followed, and a file whose
+    real path leaves `directory` is not read (an observation with `error`).
+    Beyond `MAX_SAVED_CONTRACT_FILES` files, the rest are one observation
+    with `error`, labelled `.`.
+    """
+    labels: list[str] = []
+    for current, dirs, files in os.walk(directory, followlinks=False):
+        dirs.sort()
+        base = Path(current).relative_to(directory)
+        labels.extend((base / name).as_posix() for name in sorted(files) if name.endswith(".json"))
+    labels.sort()
+    observations: list[ContractObservation] = []
+    for label in labels[:MAX_SAVED_CONTRACT_FILES]:
+        path = confined_path(directory, label)
+        if path is None:
+            error = "its real path is outside the contracts directory; not read"
+            evidence = Evidence(
+                kind=EvidenceKind.FILE,
+                source=label,
+                observation=error,
+                confidence=Confidence.VERIFIED,
+            )
+            observations.append(ContractObservation("file", label, evidence, error=error))
+            continue
+        observations.append(_file_observation(path, label))
+    if len(labels) > MAX_SAVED_CONTRACT_FILES:
+        error = (
+            f"{len(labels)} JSON files, more than {MAX_SAVED_CONTRACT_FILES}; "
+            f"the last {len(labels) - MAX_SAVED_CONTRACT_FILES} were not read"
+        )
+        evidence = Evidence(
+            kind=EvidenceKind.FILE, source=".", observation=error, confidence=Confidence.VERIFIED
+        )
+        observations.append(ContractObservation("file", ".", evidence, error=error))
+    return observations
+
+
 def _minimal_env() -> dict[str, str]:
     env = {key: os.environ[key] for key in _INHERITED_ENV_KEYS if key in os.environ}
     env.update(

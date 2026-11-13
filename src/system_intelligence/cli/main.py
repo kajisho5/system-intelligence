@@ -39,13 +39,21 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 import typer
 from pydantic import BaseModel
 
 from system_intelligence import __version__
 from system_intelligence.analysis import AnalysisResult, analyze_local_repository
+from system_intelligence.analysis.contract_shape import (
+    BaselineError,
+    attribute_contracts,
+    check_contract_shape,
+    format_shape_table,
+    parse_baseline,
+    schema_digest,
+)
 from system_intelligence.analysis.field_readiness import (
     FIELD_READINESS_REPORT_FILENAME,
     ContractDocument,
@@ -67,6 +75,7 @@ from system_intelligence.discovery.contracts import (
     DEFAULT_CONTRACT_TIMEOUT_SECONDS,
     confined_path,
     read_contract_file,
+    read_saved_contract_directory,
 )
 from system_intelligence.discovery.ownership import read_ownership_map
 from system_intelligence.discovery.roadmaps import (
@@ -86,10 +95,12 @@ from system_intelligence.execution import (
 )
 from system_intelligence.integrations.ai_video_os import (
     CAPABILITY_CONTRACT_SCHEMA_LABEL,
+    COMPONENT_NAME_SUFFIXES,
     FIELD_READINESS_COLUMNS,
     INACTIVE_COMPONENT_STATUSES,
     ROADMAP_FILENAME,
     SHIPPED_FEATURE_DOCUMENTS,
+    capability_contract_schema_bytes,
     load_capability_contract_schema,
 )
 from system_intelligence.intelligence import CAPABILITIES, INTENTS, classify_intent, resolve_intent
@@ -402,12 +413,27 @@ def _repository_source(
 def _saved_contracts(
     directory: Path | None, repositories: list[EcosystemRepository]
 ) -> dict[str, ContractDocument]:
-    """`<directory>/<repo>.json` for every repository that has one (ADR-016); read only."""
+    """`<directory>/<repo>.json` for every repository that has one (ADR-016); read only.
+
+    A repository with no such file takes the one other `*.json` file under
+    `directory` whose identities name it (ADR-017), so a directory of
+    pinned contracts named by version works too; two such files are
+    `unavailable`, never a choice between them.
+    """
     if directory is None:
         return {}
     if not directory.is_dir():
         typer.echo(f"error: --contracts {directory} is not a directory", err=True)
         raise typer.Exit(code=1)
+    by_identity: dict[str, list[tuple[str, Any]]] = {}
+    attributed = attribute_contracts(
+        read_saved_contract_directory(directory), repositories, COMPONENT_NAME_SUFFIXES
+    )
+    for observation, attribution in attributed:
+        if attribution.by == "identity" and attribution.repo is not None:
+            by_identity.setdefault(attribution.repo, []).append(
+                (observation.label, observation.document)
+            )
     contracts: dict[str, ContractDocument] = {}
     for entry in repositories:
         label = f"{entry.name}.json"
@@ -418,6 +444,16 @@ def _saved_contracts(
             )
             continue
         if not path.is_file():
+            found = by_identity.get(entry.name, [])
+            if len(found) == 1:
+                contracts[entry.name] = ContractDocument("read", found[0][0], document=found[0][1])
+            elif found:
+                contracts[entry.name] = ContractDocument(
+                    "unavailable",
+                    label,
+                    error="no such file, and several contracts name this component: "
+                    + ", ".join(found_label for found_label, _ in found),
+                )
             continue
         observation = read_contract_file(path)
         if observation.error is not None:
@@ -1058,6 +1094,118 @@ def roadmap_drift(
     typer.echo(report.to_json() if as_json else format_drift_table(report), nl=False)
     if out is not None and not as_json:
         typer.echo(f"\nReport written to {out}")
+
+
+_SHAPE_CONTRACTS_OPTION = typer.Option(
+    ...,
+    "--contracts",
+    help="Directory of saved Capability Contracts: every *.json file at any depth (a skill's "
+    "'<tool> contract --json' output, or the copies an orchestrator pins). A file belongs to "
+    "the component it is named after (<repo>.json), else to the one its own identity names. "
+    "Read only, never run.",
+)
+_SHAPE_SCHEMA_OPTION = typer.Option(
+    None,
+    "--contract-schema",
+    help="The schema to check against, e.g. registry/capability_contract.schema.json in a "
+    "Velisa checkout (the reference definition). Default: the copy bundled with System "
+    "Intelligence. The report says whether the bundled copy matches it.",
+)
+_SHAPE_BASELINE_OPTION = typer.Option(
+    None,
+    "--baseline",
+    help="Known violations that do not fail the check: {'known_violations': [{'repo': ..., "
+    "'pointer': '/dependencies/0', 'reason': ...}]}. An entry that matches nothing is "
+    "reported as stale.",
+)
+_SHAPE_OUT_OPTION = typer.Option(
+    None,
+    "--out",
+    help="Also write the JSON report to this file (an existing file there is replaced). "
+    "Refused inside --contracts.",
+)
+
+
+def _read_json_file(option: str, path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        typer.echo(f"error: {option} {path}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command(name="contract-check")
+def contract_check(
+    ecosystem: Path = _ECOSYSTEM_ARGUMENT,
+    contracts: Path = _SHAPE_CONTRACTS_OPTION,
+    contract_schema: Path | None = _SHAPE_SCHEMA_OPTION,
+    baseline: Path | None = _SHAPE_BASELINE_OPTION,
+    as_json: bool = _JSON_REPORT_OPTION,
+    out: Path | None = _SHAPE_OUT_OPTION,
+) -> None:
+    """Contract shape: every component's saved contract against the OS schema; fails on a break.
+
+    Each `*.json` file under `--contracts` is attributed to a component of
+    the ownership map (its file name, else its own identity: `skill_id`,
+    `id`, `skill.id`, `skill.package`, exactly or with `-skill` added) and
+    validated against `--contract-schema` (default: the bundled copy). Exit
+    status 1 when a contract breaks the schema or cannot be read as JSON,
+    unless `--baseline` lists that violation for that component; 0
+    otherwise. A component with no saved contract is listed, not failed.
+    Read only: the one file written is the `--out` report (ADR-017).
+    """
+    if not contracts.is_dir():
+        typer.echo(f"error: --contracts {contracts} is not a directory", err=True)
+        raise typer.Exit(code=1)
+    resolved = contracts.resolve()
+    if out is not None and (out.resolve() == resolved or resolved in out.resolve().parents):
+        typer.echo(
+            f"error: --out {out} is inside --contracts {contracts}; the check never writes there",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    repositories, problems, _org = _read_ecosystem(ecosystem)
+    schema, schema_label = _load_contract_schema(contract_schema)
+    bundled = capability_contract_schema_bytes()
+    bundled_copy: Literal["this schema", "same", "differs"]
+    if contract_schema is None:
+        digest = schema_digest(bundled)
+        bundled_copy = "this schema"
+    else:
+        try:
+            digest = schema_digest(contract_schema.read_bytes())
+        except OSError as exc:  # pragma: no cover - read just succeeded above
+            typer.echo(f"error: --contract-schema {contract_schema}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        bundled_copy = "same" if json.loads(bundled.decode("utf-8")) == schema else "differs"
+    known = None
+    if baseline is not None:
+        try:
+            known = parse_baseline(_read_json_file("--baseline", baseline))
+        except BaselineError as exc:
+            typer.echo(f"error: --baseline {baseline}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+    report = check_contract_shape(
+        repositories,
+        read_saved_contract_directory(contracts),
+        schema,
+        schema_source=schema_label,
+        schema_sha256=digest,
+        bundled_copy=bundled_copy,
+        suffixes=COMPONENT_NAME_SUFFIXES,
+        baseline=known,
+        inactive_statuses=INACTIVE_COMPONENT_STATUSES,
+        problems=problems,
+    )
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report.to_json(), encoding="utf-8", newline="\n")
+    typer.echo(report.to_json() if as_json else format_shape_table(report), nl=False)
+    if out is not None and not as_json:
+        typer.echo(f"\nReport written to {out}")
+    if not report.passed:
+        raise typer.Exit(code=1)
 
 
 _QUERY_ARGUMENT = typer.Argument(..., help="Search query, e.g. 'python markdown parser'.")

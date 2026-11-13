@@ -1,0 +1,11 @@
+{
+  "$comment": "Contract-shape fixture: alpha-skill's contract is named after it and matches the schema; beta-skill's is a pinned copy (pins/beta/contract_1.0.0.json) that calls itself 'beta' and breaks the schema at /dependencies/0 and /skill; epsilon-skill's file is not JSON; delta-skill has no contract; gamma-skill is planned; stray/contract.json names no component.",
+  "org": "example",
+  "components": [
+    {"repo": "alpha-skill", "status": "active"},
+    {"repo": "beta-skill", "status": "active"},
+    {"repo": "gamma-skill", "status": "planned"},
+    {"repo": "delta-skill", "status": "active"},
+    {"repo": "epsilon-skill", "status": "active"}
+  ]
+}

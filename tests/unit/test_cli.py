@@ -2976,3 +2976,187 @@ def test_diagnose_field_reports_an_unusable_contracts_directory(tmp_path: Path) 
 
     assert result.exit_code == 1
     assert "is not a directory" in _output(result)
+
+
+def test_diagnose_field_reads_a_pinned_contract_by_its_identity(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts" / "pins" / "beta"
+    contracts.mkdir(parents=True)
+    document = json.loads(
+        (_FIELD_FIXTURE / "contracts" / "beta-skill.json").read_text(encoding="utf-8")
+    )
+    document["skill_id"] = "beta"
+    (contracts / "contract_1.0.0.json").write_text(json.dumps(document), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["diagnose", "--field", "--ownership-map", str(_FIELD_FIXTURE / "ecosystem.json")]
+        + ["--checkouts", str(_FIELD_FIXTURE / "checkouts"), "--json"]
+        + ["--contracts", str(tmp_path / "contracts")],
+    )
+
+    assert result.exit_code == 0, _output(result)
+    beta = next(row for row in json.loads(result.stdout)["skills"] if row["repo"] == "beta-skill")
+    assert (beta["contract"], beta["contract_source"]) == ("read", "pins/beta/contract_1.0.0.json")
+    assert beta["cells"]["alpha_output"]["value"] == "yes"
+
+
+def test_diagnose_field_refuses_to_choose_between_two_pinned_contracts(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    for version in ("1.0.0", "1.1.0"):
+        (contracts / f"contract_{version}.json").write_text(
+            '{"skill_id": "beta"}', encoding="utf-8"
+        )
+
+    result = runner.invoke(
+        app,
+        ["diagnose", "--field", "--ownership-map", str(_FIELD_FIXTURE / "ecosystem.json")]
+        + ["--checkouts", str(_FIELD_FIXTURE / "checkouts"), "--json"]
+        + ["--contracts", str(contracts)],
+    )
+
+    beta = next(row for row in json.loads(result.stdout)["skills"] if row["repo"] == "beta-skill")
+    assert beta["contract"] == "unavailable"
+    assert "several contracts name this component" in beta["notes"][0]
+
+
+_SHAPE_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "contract_shape"
+
+
+def _shape_args(*extra: str) -> list[str]:
+    return [
+        "contract-check",
+        str(_SHAPE_FIXTURE / "ecosystem.json"),
+        "--contracts",
+        str(_SHAPE_FIXTURE / "contracts"),
+        *extra,
+    ]
+
+
+def test_contract_check_fails_on_a_contract_that_breaks_the_schema() -> None:
+    result = runner.invoke(app, _shape_args())
+
+    assert result.exit_code == 1
+    assert "Contract shape FAILED: 3 of 5 components have a saved contract" in result.stdout
+    assert "| beta-skill | breaks | pins/beta/contract_1.0.0.json |" in result.stdout
+    assert "/skill: expected object, got string" in result.stdout
+
+
+def test_contract_check_passes_when_every_contract_matches(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    shutil.copy(_SHAPE_FIXTURE / "contracts" / "alpha-skill.json", contracts)
+
+    result = runner.invoke(
+        app,
+        ["contract-check", str(_SHAPE_FIXTURE / "ecosystem.json"), "--contracts", str(contracts)],
+    )
+
+    assert result.exit_code == 0, _output(result)
+    assert "Contract shape passed: 1 of 5 components" in result.stdout
+
+
+def test_contract_check_reads_the_reference_schema_and_compares_the_bundled_copy(
+    tmp_path: Path,
+) -> None:
+    from system_intelligence.integrations.ai_video_os import capability_contract_schema_bytes
+
+    same = tmp_path / "same.schema.json"
+    same.write_bytes(capability_contract_schema_bytes())
+    changed = json.loads(capability_contract_schema_bytes())
+    changed["properties"]["dependencies"]["items"]["required"] = ["version_range"]
+    differs = tmp_path / "differs.schema.json"
+    differs.write_text(json.dumps(changed), encoding="utf-8")
+
+    with_same = runner.invoke(app, _shape_args("--contract-schema", str(same), "--json"))
+    with_other = runner.invoke(app, _shape_args("--contract-schema", str(differs), "--json"))
+    default = runner.invoke(app, _shape_args("--json"))
+
+    assert json.loads(with_same.stdout)["bundled_copy"] == "same"
+    assert json.loads(with_same.stdout)["schema_source"] == str(same)
+    other = json.loads(with_other.stdout)
+    assert other["bundled_copy"] == "differs"
+    # The reference schema is the one applied: it no longer requires skill_id.
+    beta = next(check for check in other["contracts"] if check["repo"] == "beta-skill")
+    assert [item["pointer"] for item in beta["violations"]] == ["/skill"]
+    assert json.loads(default.stdout)["bundled_copy"] == "this schema"
+    assert (
+        "differs from this one"
+        in runner.invoke(app, _shape_args("--contract-schema", str(differs))).stdout
+    )
+
+
+def test_contract_check_baseline_json_and_out(tmp_path: Path) -> None:
+    out = tmp_path / "report" / "contract-shape.json"
+    args = _shape_args("--baseline", str(_SHAPE_FIXTURE / "baseline.json"), "--out", str(out))
+
+    printed = runner.invoke(app, [*args, "--json"])
+    table = runner.invoke(app, args)
+
+    report = json.loads(printed.stdout)
+    assert {row["repo"]: row["result"] for row in report["components"]}["beta-skill"] == "known"
+    assert report["stale_baseline"][0]["pointer"] == "/provides"
+    # epsilon-skill's file is not JSON, which no baseline accepts.
+    assert printed.exit_code == 1
+    assert out.read_bytes() == printed.stdout.encode("utf-8")
+    assert f"Report written to {out}" in table.stdout
+
+
+def test_contract_check_runs_under_read_only() -> None:
+    result = runner.invoke(app, ["--read-only", *_shape_args()])
+
+    assert "Contract shape FAILED" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--baseline", "missing.json"], "--baseline missing.json"),
+        (["--contract-schema", "missing.json"], "--contract-schema missing.json"),
+    ],
+)
+def test_contract_check_reports_unusable_inputs(extra: list[str], message: str) -> None:
+    result = runner.invoke(app, _shape_args(*extra))
+
+    assert result.exit_code == 1
+    assert message in _output(result)
+
+
+def test_contract_check_refuses_a_bad_baseline(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text('{"known_violations": [{"repo": "a"}]}', encoding="utf-8")
+
+    result = runner.invoke(app, _shape_args("--baseline", str(baseline)))
+
+    assert result.exit_code == 1
+    assert "/known_violations/0/pointer: Field required" in _output(result)
+
+
+def test_contract_check_never_writes_into_the_contracts_directory(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    shutil.copytree(_SHAPE_FIXTURE / "contracts", contracts)
+
+    result = runner.invoke(
+        app,
+        ["contract-check", str(_SHAPE_FIXTURE / "ecosystem.json"), "--contracts", str(contracts)]
+        + ["--out", str(contracts / "report.json")],
+    )
+
+    assert result.exit_code == 1
+    assert "the check never writes there" in _output(result)
+    assert not (contracts / "report.json").exists()
+
+
+def test_contract_check_needs_a_contracts_directory(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "contract-check",
+            str(_SHAPE_FIXTURE / "ecosystem.json"),
+            "--contracts",
+            str(tmp_path / "x"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "is not a directory" in _output(result)

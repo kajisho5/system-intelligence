@@ -1,6 +1,6 @@
 """AI Video Production OS reference integration.
 
-Four pieces so far:
+Five pieces so far:
 
 - the OS's Capability Contract JSON Schema
   (`capability_contract.schema.json`), bundled verbatim so `si diagnose
@@ -18,11 +18,18 @@ Four pieces so far:
   from the 2026-11-05 field review (resume after a stop, progress events,
   error classes, long-file tests, hardware encoder use, alpha and loudness
   outputs), each with the contract keys and the CI pattern that state it.
+- `COMPONENT_NAME_SUFFIXES`: how `si contract-check` (ADR-017) and `si
+  diagnose --field` match a saved contract to its component when the file
+  is not named `<repo>.json`: a contract that calls itself `qc` belongs to
+  `qc-skill`.
 
-Provenance: kajisho5/AI-video-production-OS
+Provenance: kajisho5/Velisa (formerly kajisho5/AI-video-production-OS)
 `registry/capability_contract.schema.json` at commit
-da6167d402039cf363edb8a6580cacf49dc06922 (2026-10-30), copied byte for
-byte. When the OS changes the schema, copy it again and update this line.
+10785c7bfb1d84aca07962df6a2709c18a44b9bf (2026-10-31), copied byte for
+byte. That file is the reference definition: `si contract-check
+--contract-schema` reads it from a Velisa checkout and reports whether
+this copy still matches (ADR-017). When the OS changes the schema, copy it
+again and update this line.
 
 Nothing in core, discovery, analysis, ... imports this package (see
 `integrations/__init__.py`); only the CLI does, to pick the default.
@@ -40,6 +47,12 @@ from system_intelligence.analysis.field_readiness import ReadinessColumn
 SCHEMA_FILENAME = "capability_contract.schema.json"
 #: How Findings name this schema (stable across runs, unlike a file path).
 CAPABILITY_CONTRACT_SCHEMA_LABEL = "the AI Video Production OS capability contract schema"
+
+
+#: A component's contract often names it without the repository's `-skill`
+#: suffix (`"skill_id": "qc"` for qc-skill); tried only when no component has
+#: the identity's exact name.
+COMPONENT_NAME_SUFFIXES: tuple[str, ...] = ("-skill",)
 
 
 #: `ecosystem.json`'s own `$comment`: a `"status": "planned"` component is not
@@ -158,8 +171,12 @@ FIELD_READINESS_COLUMNS: tuple[ReadinessColumn, ...] = (
 )
 
 
+def capability_contract_schema_bytes() -> bytes:
+    """The bundled OS Capability Contract schema, byte for byte."""
+    return resources.files(__name__).joinpath(SCHEMA_FILENAME).read_bytes()
+
+
 def load_capability_contract_schema() -> dict[str, Any]:
     """The bundled OS Capability Contract schema, parsed."""
-    text = resources.files(__name__).joinpath(SCHEMA_FILENAME).read_text(encoding="utf-8")
-    schema: dict[str, Any] = json.loads(text)
+    schema: dict[str, Any] = json.loads(capability_contract_schema_bytes().decode("utf-8"))
     return schema
