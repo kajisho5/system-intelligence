@@ -1,4 +1,5 @@
 {
+  "$comment": "Known violations of the contract-shape fixture; the alpha-skill entry is stale on purpose.",
   "known_violations": [
     {"repo": "beta-skill", "pointer": "/dependencies", "reason": "dependencies name the skill under 'id'; fix tracked upstream"},
     {"repo": "beta-skill", "pointer": "/skill", "reason": "'skill' is a string; fix tracked upstream"},

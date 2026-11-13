@@ -65,8 +65,9 @@ class BaselineEntry(BaseModel):
 
 
 class Baseline(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
+    comment: str | None = Field(default=None, alias="$comment")
     known_violations: list[BaselineEntry] = Field(default_factory=list)
 
 
