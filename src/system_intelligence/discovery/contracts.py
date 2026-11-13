@@ -188,10 +188,26 @@ def read_saved_contract_directory(directory: Path) -> list[ContractObservation]:
     or on the OS. Symlinked directories are not followed, and a file whose
     real path leaves `directory` is not read (an observation with `error`).
     Beyond `MAX_SAVED_CONTRACT_FILES` files, the rest are one observation
-    with `error`, labelled `.`.
+    with `error`, labelled `.`. A directory that cannot be listed is an
+    observation with `error` too, so a partial scan is never taken for a
+    complete one.
     """
     labels: list[str] = []
-    for current, dirs, files in os.walk(directory, followlinks=False):
+    walk_errors: list[ContractObservation] = []
+
+    def walk_error(exc: OSError) -> None:
+        where = Path(exc.filename) if exc.filename else directory
+        try:
+            label = where.relative_to(directory).as_posix()
+        except ValueError:
+            label = "."
+        error = f"could not be listed: {exc.__class__.__name__}: {exc.strerror or exc}"
+        evidence = Evidence(
+            kind=EvidenceKind.FILE, source=label, observation=error, confidence=Confidence.VERIFIED
+        )
+        walk_errors.append(ContractObservation("file", label, evidence, error=error))
+
+    for current, dirs, files in os.walk(directory, onerror=walk_error, followlinks=False):
         dirs.sort()
         base = Path(current).relative_to(directory)
         labels.extend((base / name).as_posix() for name in sorted(files) if name.endswith(".json"))
@@ -219,7 +235,7 @@ def read_saved_contract_directory(directory: Path) -> list[ContractObservation]:
             kind=EvidenceKind.FILE, source=".", observation=error, confidence=Confidence.VERIFIED
         )
         observations.append(ContractObservation("file", ".", evidence, error=error))
-    return observations
+    return observations + sorted(walk_errors, key=lambda item: item.label)
 
 
 def _minimal_env() -> dict[str, str]:

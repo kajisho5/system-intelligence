@@ -227,3 +227,30 @@ def test_saved_directory_does_not_follow_links_out(
 def test_baseline_shape_is_checked(document: object) -> None:
     with pytest.raises(BaselineError):
         parse_baseline(document)
+
+
+def test_a_directory_that_cannot_be_listed_fails_the_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    contracts = tmp_path / "contracts"
+    (contracts / "locked").mkdir(parents=True)
+    real_walk = os.walk
+
+    def walk(top, onerror=None, followlinks=False):  # type: ignore[no-untyped-def]
+        for entry in real_walk(top, onerror=onerror, followlinks=followlinks):
+            if entry[0] == str(contracts):
+                entry[1].remove("locked")
+                assert onerror is not None
+                onerror(PermissionError(13, "Permission denied", str(contracts / "locked")))
+            yield entry
+
+    monkeypatch.setattr(os, "walk", walk)
+
+    report = _report(directory=contracts)
+
+    assert report.passed is False
+    [check] = report.contracts
+    assert (check.source, check.result) == ("locked", "unreadable")
+    assert check.error is not None and check.error.startswith("could not be listed")

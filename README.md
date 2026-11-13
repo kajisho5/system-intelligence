@@ -165,11 +165,11 @@ every `*.json` file under `--contracts` (a skill's saved `contract --json`
 output, or the copies the agent pins) is matched to a component of
 `ecosystem.json`, by its file name (`<repo>.json`) or by the identity it
 gives itself (`skill_id`, `id`, `skill.id`, `skill.package`, exactly or
-with `-skill` added), and validated against the schema. A break, or a
-file that is not JSON, exits 1 unless `--baseline` lists it for that
-component (`{"known_violations": [{"repo", "pointer", "reason"}]}`, a
-pointer covering everything below it); an entry that matches nothing is
-reported as stale. A component with no saved contract is listed, not
+with `-skill` added), and validated against the schema. A file that is
+not JSON always exits 1; a schema violation exits 1 unless `--baseline`
+lists it for that component (`{"known_violations": [{"repo": "qc-skill",
+"pointer": "/dependencies", "reason": "..."}]}`, a pointer covering
+everything below it); an entry that matches nothing is reported as stale. A component with no saved contract is listed, not
 failed. The report says whether the bundled schema copy still matches the
 one given (ADR-017). `si diagnose --field --contracts` reads the same kind
 of directory.

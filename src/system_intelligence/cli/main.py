@@ -1164,6 +1164,12 @@ def contract_check(
             err=True,
         )
         raise typer.Exit(code=1)
+    inputs = [path for path in (ecosystem, contract_schema, baseline) if path is not None]
+    if out is not None and any(out.resolve() == path.resolve() for path in inputs):
+        typer.echo(
+            f"error: --out {out} is one of the check's inputs; it is never written", err=True
+        )
+        raise typer.Exit(code=1)
     repositories, problems, _org = _read_ecosystem(ecosystem)
     schema, schema_label = _load_contract_schema(contract_schema)
     bundled = capability_contract_schema_bytes()

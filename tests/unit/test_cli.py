@@ -3160,3 +3160,34 @@ def test_contract_check_needs_a_contracts_directory(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "is not a directory" in _output(result)
+
+
+@pytest.mark.parametrize("which", ["ecosystem", "schema", "baseline"])
+def test_contract_check_never_overwrites_an_input(tmp_path: Path, which: str) -> None:
+    from system_intelligence.integrations.ai_video_os import capability_contract_schema_bytes
+
+    inputs = {
+        "ecosystem": tmp_path / "ecosystem.json",
+        "schema": tmp_path / "schema.json",
+        "baseline": tmp_path / "baseline.json",
+    }
+    shutil.copy(_SHAPE_FIXTURE / "ecosystem.json", inputs["ecosystem"])
+    inputs["schema"].write_bytes(capability_contract_schema_bytes())
+    shutil.copy(_SHAPE_FIXTURE / "baseline.json", inputs["baseline"])
+    before = inputs[which].read_bytes()
+
+    result = runner.invoke(
+        app,
+        [
+            "contract-check",
+            str(inputs["ecosystem"]),
+            "--contracts",
+            str(_SHAPE_FIXTURE / "contracts"),
+        ]
+        + ["--contract-schema", str(inputs["schema"]), "--baseline", str(inputs["baseline"])]
+        + ["--out", str(inputs[which])],
+    )
+
+    assert result.exit_code == 1
+    assert "is one of the check's inputs" in _output(result)
+    assert inputs[which].read_bytes() == before
