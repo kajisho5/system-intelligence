@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.1 (2026-11-13)
+
+- docs(roadmap): tick steps 7 and 8 (contract shape; Velisa runs drift and field) (#136) (36e7c61)
+
 ## v0.5.0 (2026-11-13)
 
 - feat(contracts): OS contract-shape check for Velisa CI (roadmap steps 7 and 8) (#135) (20dc204)
