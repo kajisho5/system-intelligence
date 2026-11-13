@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.0 (2026-11-13)
+
+- feat(contracts): OS contract-shape check for Velisa CI (roadmap steps 7 and 8) (#135) (20dc204)
+
 ## v0.4.1 (2026-11-12)
 
 - docs(roadmap): add the ownership decisions of 2026-11-12 (#131) (18c2058)

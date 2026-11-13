@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "system-intelligence"
-version = "0.4.1"
+version = "0.5.0"
 description = "A general-purpose AI system intelligence layer for discovering, understanding, auditing, researching, designing, improving, and verifying software systems."
 readme = "README.md"
 license = "MIT"
