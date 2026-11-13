@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-v0.4.0, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates, propose, execute, ... 60 test modules, CI on Ubuntu, macOS and Windows.
+v0.5.0, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates, propose, execute, ... 60 test modules, CI on Ubuntu, macOS and Windows.
 
 ## What this repository owns
 
@@ -13,11 +13,11 @@ v0.4.0, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates
 
 | Owned job | Status | Note |
 |---|---|---|
-| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016) |
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016); OS contract-shape check `si contract-check`, run by Velisa CI (#135, ADR-017) |
 
 ## Wiring
 
-Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
+Used by the OS workflows, not by the agent: ecosystem-audit (`si watch`, `si roadmap-drift`, `si diagnose --field`), contract-shape (`si contract-check`) and dashboard (`si diagnose .`).
 
 ## Steps
 
@@ -37,10 +37,12 @@ Used by the OS workflows (ecosystem-audit, dashboard), not by the agent.
   - なぜ要るか：多数のリポジトリの進捗表が実態とずれていくのを止められる
   - Done when: a fixture roadmap with each kind of drift gives three findings
   - Done (ADR-015): `si roadmap-drift <ecosystem.json>` from local checkouts (`--checkouts`, `--pulls`: no network) or `--github`; a Markdown table, or a deterministic JSON report (`--json`, `--out`) where each finding has its repository, step and evidence (file and line, PR number and URL, matched text). An unticked step that SKILL.md / CHANGELOG already describe as shipped is a candidate only; a step that says it is still open (`Partly done`, `Status: partial`, ...) is a note, not drift. `tests/fixtures/roadmap_drift` gives exactly three findings (a: alpha-skill step 2, b: step 3, c: beta-skill step 9)
-- [ ] **7. The OS contract-shape check, called from Velisa CI** — checking every component's capability contract against the OS shape is this repository's role, and Velisa CI calls it ([Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/blob/main/docs/ecosystem/DECISION_LOG.md)). Contract checking exists (step 1, `--contract-schema`, default the bundled OS schema), but Velisa's workflows call only `si watch` (`scripts/ecosystem-audit.sh`) and `si diagnose .` (`dashboard.yml`). Read the schema from Velisa's `registry/` (the reference definition) instead of a bundled copy, or fail when the copy differs, and give Velisa one command to run over `ecosystem.json`. Side effects, signatures and isolation tests stay skillpact's; runtime version gates stay video-production-agent's
+- [x] **7. The OS contract-shape check, called from Velisa CI** — checking every component's capability contract against the OS shape is this repository's role, and Velisa CI calls it ([Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/blob/main/docs/ecosystem/DECISION_LOG.md)). Contract checking exists (step 1, `--contract-schema`, default the bundled OS schema), but Velisa's workflows call only `si watch` (`scripts/ecosystem-audit.sh`) and `si diagnose .` (`dashboard.yml`). Read the schema from Velisa's `registry/` (the reference definition) instead of a bundled copy, or fail when the copy differs, and give Velisa one command to run over `ecosystem.json`. Side effects, signatures and isolation tests stay skillpact's; runtime version gates stay video-production-agent's ([#135](https://github.com/kajisho5/system-intelligence/pull/135), ADR-017; Velisa [#163](https://github.com/kajisho5/Velisa/pull/163), its ADR-018)
   - Done when: a Velisa CI job runs the check over every component with a contract and fails on a contract that breaks the schema
-- [ ] **8. Implemented commands no workflow runs yet** — `si roadmap-drift` (step 6) and `si diagnose --field --ownership-map` (step 5) work, but no Velisa workflow calls them. Both are candidates for the Velisa workflow (the weekly ecosystem audit or the dashboard), read-only
+  - Done (ADR-017): `si contract-check <ecosystem.json> --contracts DIR --contract-schema FILE [--baseline FILE]`. Every `*.json` under DIR is matched to a component by file name or by its own identity (exact, or with `-skill` added) and validated; exit 1 on a break or a file that is not JSON. Known violations are accepted only through the baseline, each with a reason; an entry that matches nothing is reported as stale. The report says whether the bundled schema copy matches the given one; the copy was refreshed to Velisa's `registry/` file. Velisa's `contract-shape.yml` runs it over the agent's 21 pinned contracts with `registry/`'s schema (pinned v0.5.0, `7d0d1d2b`): 15 ok, 6 known (detection, diarization, dubbing, slide-sync, sound-design, voice-enhance: `dependencies[].id` instead of `skill_id`, and `skill` given as a string). The 12 components with no pinned JSON contract (ffmpeg-skill among them) are listed as `no_contract`
+- [x] **8. Implemented commands no workflow runs yet** — `si roadmap-drift` (step 6) and `si diagnose --field --ownership-map` (step 5) work, but no Velisa workflow calls them. Both are candidates for the Velisa workflow (the weekly ecosystem audit or the dashboard), read-only ([#135](https://github.com/kajisho5/system-intelligence/pull/135); Velisa [#163](https://github.com/kajisho5/Velisa/pull/163))
   - Done when: the Velisa workflow runs both, or a decision there says why not
+  - Done: Velisa's weekly `ecosystem-audit.yml` runs `si roadmap-drift ecosystem.json --github` and `si diagnose --field --ownership-map ecosystem.json --checkouts .si-repos --contracts <agent pins>`, read-only, report-only (job summary and artifact). `--field --contracts` now also reads pinned files by their identity (#135). First run (dispatched on the PR branch): 32 of 33 roadmaps read, 69 drift findings; 33 field rows, 21 with a contract
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
