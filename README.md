@@ -77,6 +77,7 @@ read-only into a temp directory first):
 | `si verify <command>` | Run a test command and record pass/fail |
 | `si watch <target>` | Drift since the last `si watch` run for this target, via a self-managed `--state-dir` history (no daemon — repeat it yourself, or from cron/CI) |
 | `si roadmap-drift <ecosystem.json>` | Every repository's `ECOSYSTEM_ROADMAP.md` steps against its merged pull requests, from local checkouts (`--checkouts`, `--pulls`) or `--github` (network); a table, or a deterministic JSON report (`--json`, `--out`) |
+| `si contract-check <ecosystem.json>` | Every component's saved Capability Contract (`--contracts DIR`) against the OS contract schema (`--contract-schema`, e.g. Velisa's `registry/` copy); exit 1 when one breaks it, minus `--baseline` known violations; a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si doctor`, `si version` | Environment check, installed version |
 
 `si --read-only <command>` (or `SI_READ_ONLY=1`) is audit mode: discovery,
@@ -158,6 +159,25 @@ si diagnose --field --ownership-map ecosystem.json --github --contracts ./contra
 ```
 
 `--out DIR` writes `DIR/field-readiness.json` (refused inside `--checkouts`).
+
+`si contract-check` is the OS contract-shape check that Velisa CI runs:
+every `*.json` file under `--contracts` (a skill's saved `contract --json`
+output, or the copies the agent pins) is matched to a component of
+`ecosystem.json`, by its file name (`<repo>.json`) or by the identity it
+gives itself (`skill_id`, `id`, `skill.id`, `skill.package`, exactly or
+with `-skill` added), and validated against the schema. A file that is
+not JSON always exits 1; a schema violation exits 1 unless `--baseline`
+lists it for that component (`{"known_violations": [{"repo": "qc-skill",
+"pointer": "/dependencies", "reason": "..."}]}`, a pointer covering
+everything below it); an entry that matches nothing is reported as stale. A component with no saved contract is listed, not
+failed. The report says whether the bundled schema copy still matches the
+one given (ADR-017). `si diagnose --field --contracts` reads the same kind
+of directory.
+
+```bash
+si contract-check ecosystem.json --contracts ./contracts \
+  --contract-schema registry/capability_contract.schema.json --baseline known.json
+```
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`
 declaring capabilities the target requires by name (`{"capabilities":

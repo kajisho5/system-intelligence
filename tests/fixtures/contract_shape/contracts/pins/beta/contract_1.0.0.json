@@ -1,0 +1,7 @@
+{
+  "skill_id": "beta",
+  "skill": "beta",
+  "version": "1.0.0",
+  "provides": [{"id": "beta.measure", "lifecycle": "EXPERIMENTAL", "tool_id": "beta/measure"}],
+  "dependencies": [{"id": "ffmpeg-skill", "kind": "skill", "version_range": ">=2.0"}]
+}
