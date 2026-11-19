@@ -91,7 +91,7 @@ LIFECYCLE_ORDER = ("PROPOSED", "EXPERIMENTAL", "STABLE", "DEPRECATED", "RETIRED"
 # Field names that identify an entry of an array of objects, in order of preference.
 ENTRY_KEYS = ("id", "tool_id", "skill_id", "code", "name", "key", "artifact_id", "kind")
 
-_VERSION = re.compile(r"^\s*v?(\d+)\.(\d+)(?:\.(\d+))?")
+_VERSION = re.compile(r"^\s*v?(\d+)\.(\d+)(?:\.(\d+))?\s*$")
 _SHOWN = 160
 _MISSING: Any = object()
 
@@ -176,8 +176,46 @@ def _kind(value: Any) -> str:
     return "object"
 
 
+def _numbers(value: Any) -> Any:
+    """`1.0` as `1`, at any depth, so equal numbers compare equal; booleans stay booleans."""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, Mapping):
+        return {key: _numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_numbers(item) for item in value]
+    return value
+
+
 def _canonical(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(_numbers(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+# Mappings whose keys are names a caller chose (fields, definitions), not contract keywords.
+NAME_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions"})
+
+
+def _is_prose(value: Any) -> bool:
+    if isinstance(value, str) or value is _MISSING:
+        return True
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_documentation(parent: str | None, key: str, old: Any, new: Any) -> bool:
+    """A documentation key holding prose, not a field that happens to be named `title`."""
+    return (
+        key in INFORMATIONAL_KEYS and parent not in NAME_MAPS and _is_prose(old) and _is_prose(new)
+    )
+
+
+def _requires(definition: Any) -> bool:
+    """Whether a newly added definition says a caller must give it."""
+    if not isinstance(definition, Mapping):
+        return False
+    return any(
+        flag in definition and definition[flag] is not loose
+        for flag, loose in REQUIREMENT_FLAGS.items()
+    )
 
 
 def _entry_key(old: list[Any], new: list[Any]) -> str | None:
@@ -241,16 +279,22 @@ class _Differ:
             )
             return
         if isinstance(old, Mapping):
-            self.mapping(pointer, old, new)
+            self.mapping(pointer, old, new, key)
         elif isinstance(old, list):
             self.array(pointer, key, old, new)
         else:
             self.scalar(pointer, key, old, new)
 
-    def mapping(self, pointer: str, old: Mapping[str, Any], new: Mapping[str, Any]) -> None:
+    def mapping(
+        self,
+        pointer: str,
+        old: Mapping[str, Any],
+        new: Mapping[str, Any],
+        parent: str | None = None,
+    ) -> None:
         for key in sorted(set(old) | set(new)):
             here = _join(pointer, key)
-            info = key in INFORMATIONAL_KEYS
+            info = _is_documentation(parent, key, old.get(key, _MISSING), new.get(key, _MISSING))
             if key not in new:
                 if info:
                     self.add(here, "info", "documentation", "documentation removed", old[key])
@@ -283,6 +327,14 @@ class _Differ:
                         "breaking",
                         "required-flag",
                         f"{key!r} set to {_shown(new[key])}",
+                        new=new[key],
+                    )
+                elif _requires(new[key]):
+                    self.add(
+                        here,
+                        "breaking",
+                        "required-flag",
+                        f"{key!r} added and required",
                         new=new[key],
                     )
                 else:

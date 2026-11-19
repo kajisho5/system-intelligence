@@ -217,7 +217,7 @@ def test_lifecycle_promotion_is_info_and_regression_or_retirement_breaking() -> 
 def test_documentation_is_info_whatever_changes_inside_it() -> None:
     report = _diff(
         lambda d: d.update(
-            {"description": {"text": "now an object"}, "not_provided": ["editing", "repair"]}
+            {"description": "Measures more things.", "not_provided": ["editing", "repair"]}
         )
     )
     added = _diff(lambda d: d["inputs"]["properties"]["path"].update({"description": "a path"}))
@@ -474,3 +474,53 @@ def test_objects_without_a_unique_identity_are_compared_whole() -> None:
 def test_contracts_that_are_not_objects_are_compared_as_values() -> None:
     assert _rules(diff_contracts([1], [1, 2])) == [("additive", "item-added", "/1")]
     assert diff_contracts([1], {"a": 1}).classification == "breaking"
+
+
+def test_a_field_named_like_documentation_is_still_a_field() -> None:
+    def title_field(d: dict[str, Any]) -> None:
+        d["inputs"]["properties"]["title"] = {"type": "string"}
+
+    old = copy.deepcopy(BASE)
+    title_field(old)
+    new = copy.deepcopy(old)
+    new["inputs"]["properties"]["title"]["type"] = "integer"
+    removed = copy.deepcopy(old)
+    del removed["inputs"]["properties"]["title"]
+
+    assert _rules(diff_contracts(old, new)) == [
+        ("breaking", "value-changed", "/inputs/properties/title/type")
+    ]
+    assert _rules(diff_contracts(old, removed)) == [
+        ("breaking", "key-removed", "/inputs/properties/title")
+    ]
+    assert _diff(lambda d: d.update({"description": {"text": "x"}})).classification == "breaking"
+
+
+def test_a_new_definition_that_is_required_is_breaking() -> None:
+    required = _diff(lambda d: d["rules"].update({"limit": {"type": "integer", "required": True}}))
+    optional = _diff(lambda d: d["rules"].update({"limit": {"type": "integer", "required": False}}))
+    not_optional = _diff(lambda d: d["rules"].update({"limit": {"optional": False}}))
+
+    assert _rules(required) == [("breaking", "required-flag", "/rules/limit")]
+    assert _rules(optional) == [("additive", "key-added", "/rules/limit")]
+    assert not_optional.classification == "breaking"
+
+
+def test_equal_numbers_in_sets_and_whole_entries_are_equal() -> None:
+    old = {"version": "0.1.0", "enum": [1, 2], "rows": [{"n": 1}]}
+    new = {"version": "0.1.0", "enum": [1.0, 2], "rows": [{"n": 1.0}]}
+
+    assert diff_contracts(old, new).changes == []
+    assert diff_contracts({"a": [True]}, {"a": [1]}).classification == "breaking"
+
+
+def test_a_version_with_trailing_text_is_not_a_version() -> None:
+    old = copy.deepcopy(BASE)
+    old["version"] = "0.4.invalid"
+    new = copy.deepcopy(old)
+    new["operations"].append("validate")
+
+    report = diff_contracts(old, new)
+
+    assert report.recommended_bump == "minor" and report.next_version is None
+    assert any("is not N.N[.N]" in note for note in report.notes)

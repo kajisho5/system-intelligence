@@ -1371,6 +1371,7 @@ def contract_diff(
             if not repo.is_dir():
                 typer.echo(f"error: --repo {repo} is not a directory", err=True)
                 raise typer.Exit(code=1)
+            path = path.lstrip("/")  # repository-relative, as read_contract_at_ref reads it
             old_doc = read_contract_at_ref(repo, base_ref, path)
             old_label = f"{base_ref}:{path}"
             if head_ref is not None:

@@ -3420,3 +3420,18 @@ def test_contract_diff_runs_under_read_only(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, _output(result)
     assert result.stdout.startswith("Contract diff: none; recommended bump: none")
+
+
+def test_contract_diff_reads_a_leading_slash_path_from_the_repository(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["contract-diff", "--repo", str(repo), "--base-ref", "head"]
+        + ["--path", "/contract/contract.json", "--json"],
+    )
+
+    assert result.exit_code == 0, _output(result)
+    report = json.loads(result.stdout)
+    assert report["classification"] == "additive"
+    assert report["new_source"] == "working tree:contract/contract.json"
