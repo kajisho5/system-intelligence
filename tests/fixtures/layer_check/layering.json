@@ -1,0 +1,8 @@
+{
+  "$comment": "Fixture layering: lowest first.",
+  "layers": ["engine", "skill", "orchestrator"],
+  "exceptions": [
+    {"from": "alpha-skill", "to": "beta-skill", "reason": "alpha's variants are checked by beta"},
+    {"from": "gamma-skill", "to": "alpha-skill", "reason": "no such call any more"}
+  ]
+}

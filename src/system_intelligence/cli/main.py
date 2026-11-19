@@ -61,6 +61,13 @@ from system_intelligence.analysis.field_readiness import (
     format_readiness_table,
 )
 from system_intelligence.analysis.json_schema import UnsupportedSchemaError, check_supported
+from system_intelligence.analysis.layer_check import (
+    LayeringError,
+    check_layers,
+    component_layers,
+    format_layer_table,
+    parse_layering,
+)
 from system_intelligence.analysis.roadmap_drift import check_roadmap_drift, format_drift_table
 from system_intelligence.analysis.trust import infer_trust_levels
 from system_intelligence.analysis.update_intelligence import check_dependency_updates
@@ -1211,6 +1218,81 @@ def contract_check(
     if out is not None and not as_json:
         typer.echo(f"\nReport written to {out}")
     if not report.passed:
+        raise typer.Exit(code=1)
+
+
+_LAYERING_OPTION = typer.Option(
+    ...,
+    "--layering",
+    help="The layering: {'layers': [lowest, ..., highest], 'exceptions': [{'from': caller, "
+    "'to': callee, 'reason': ...}]}, e.g. registry/layering.json in a Velisa checkout. An "
+    "exception that excuses nothing is reported as stale.",
+)
+_LAYER_REPORT_ONLY_OPTION = typer.Option(
+    False,
+    "--report-only",
+    help="Print and write the report, but exit 0 even when a call goes against the layering.",
+)
+
+
+@app.command(name="layer-check")
+def layer_check(
+    ecosystem: Path = _ECOSYSTEM_ARGUMENT,
+    contracts: Path = _SHAPE_CONTRACTS_OPTION,
+    layering: Path = _LAYERING_OPTION,
+    report_only: bool = _LAYER_REPORT_ONLY_OPTION,
+    as_json: bool = _JSON_REPORT_OPTION,
+    out: Path | None = _SHAPE_OUT_OPTION,
+) -> None:
+    """Dependency direction: every call a contract declares must go to a lower layer.
+
+    Each component's `layer` comes from the ownership map; the layer order
+    and the allowed exceptions from `--layering`. Every `dependencies[]`
+    entry of a saved contract under `--contracts` that names another
+    component (attributed as `si contract-check` does) is a call. Exit
+    status 1 when a call goes to the same or a higher layer and is not an
+    exception, or a component has no known layer; 0 with `--report-only`.
+    Read only: the one file written is the `--out` report (ADR-018).
+    """
+    if not contracts.is_dir():
+        typer.echo(f"error: --contracts {contracts} is not a directory", err=True)
+        raise typer.Exit(code=1)
+    resolved = contracts.resolve()
+    if out is not None and (out.resolve() == resolved or resolved in out.resolve().parents):
+        typer.echo(
+            f"error: --out {out} is inside --contracts {contracts}; the check never writes there",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if out is not None and any(out.resolve() == path.resolve() for path in (ecosystem, layering)):
+        typer.echo(
+            f"error: --out {out} is one of the check's inputs; it is never written", err=True
+        )
+        raise typer.Exit(code=1)
+    repositories, problems, _org = _read_ecosystem(ecosystem)
+    layers_by_repo = component_layers(read_ownership_map(ecosystem).document)
+    try:
+        parsed = parse_layering(_read_json_file("--layering", layering))
+    except LayeringError as exc:
+        typer.echo(f"error: --layering {layering}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    report = check_layers(
+        repositories,
+        layers_by_repo,
+        read_saved_contract_directory(contracts),
+        parsed,
+        suffixes=COMPONENT_NAME_SUFFIXES,
+        report_only=report_only,
+        problems=problems,
+    )
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report.to_json(), encoding="utf-8", newline="\n")
+    typer.echo(report.to_json() if as_json else format_layer_table(report), nl=False)
+    if out is not None and not as_json:
+        typer.echo(f"\nReport written to {out}")
+    if not report.passed and not report_only:
         raise typer.Exit(code=1)
 
 

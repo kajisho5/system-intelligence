@@ -3191,3 +3191,102 @@ def test_contract_check_never_overwrites_an_input(tmp_path: Path, which: str) ->
     assert result.exit_code == 1
     assert "is one of the check's inputs" in _output(result)
     assert inputs[which].read_bytes() == before
+
+
+_LAYER_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "layer_check"
+
+
+def _layer_args(*extra: str) -> list[str]:
+    return [
+        "layer-check",
+        str(_LAYER_FIXTURE / "ecosystem.json"),
+        "--contracts",
+        str(_LAYER_FIXTURE / "contracts"),
+        "--layering",
+        str(_LAYER_FIXTURE / "layering.json"),
+        *extra,
+    ]
+
+
+def test_layer_check_fails_on_an_upward_or_same_layer_call() -> None:
+    result = runner.invoke(app, _layer_args())
+
+    assert result.exit_code == 1
+    assert result.stdout.startswith("Layer check FAILED: 5 declared calls")
+    assert "| beta-skill (skill) | gamma-skill (skill) | same | violation |" in result.stdout
+
+
+def test_layer_check_report_only_exits_zero_and_still_says_failed(tmp_path: Path) -> None:
+    out = tmp_path / "report" / "layers.json"
+
+    printed = runner.invoke(app, _layer_args("--report-only", "--json", "--out", str(out)))
+    table = runner.invoke(app, _layer_args("--report-only", "--out", str(out)))
+
+    assert printed.exit_code == 0, _output(printed)
+    report = json.loads(printed.stdout)
+    assert report["passed"] is False and report["report_only"] is True
+    assert out.read_bytes() == printed.stdout.encode("utf-8")
+    assert "(report only: does not fail the run)" in table.stdout
+    assert f"Report written to {out}" in table.stdout
+
+
+def test_layer_check_passes_when_every_call_goes_down(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    shutil.copy(_LAYER_FIXTURE / "contracts" / "alpha-skill.json", contracts)
+    ecosystem = json.loads((_LAYER_FIXTURE / "ecosystem.json").read_text(encoding="utf-8"))
+    ecosystem["components"][4]["layer"] = "skill"
+    eco = tmp_path / "ecosystem.json"
+    eco.write_text(json.dumps(ecosystem), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["layer-check", str(eco), "--contracts", str(contracts)]
+        + ["--layering", str(_LAYER_FIXTURE / "layering.json")],
+    )
+
+    assert result.exit_code == 0, _output(result)
+    assert result.stdout.startswith("Layer check passed: 2 declared calls, 1 downward, 1 excepted")
+
+
+def test_layer_check_runs_under_read_only() -> None:
+    result = runner.invoke(app, ["--read-only", *_layer_args()])
+
+    assert "Layer check FAILED" in result.stdout
+
+
+def test_layer_check_refuses_a_bad_layering(tmp_path: Path) -> None:
+    layering = tmp_path / "layering.json"
+    layering.write_text('{"layers": ["a"], "exceptions": [{"from": "a"}]}', encoding="utf-8")
+    missing = runner.invoke(app, [*_layer_args()[:4], "--layering", "missing.json"])
+
+    result = runner.invoke(app, [*_layer_args()[:4], "--layering", str(layering)])
+
+    assert result.exit_code == 1
+    assert "/exceptions/0/to: Field required" in _output(result)
+    assert missing.exit_code == 1
+    assert "--layering missing.json" in _output(missing)
+
+
+def test_layer_check_never_writes_into_its_inputs(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    shutil.copytree(_LAYER_FIXTURE / "contracts", contracts)
+    layering = tmp_path / "layering.json"
+    shutil.copy(_LAYER_FIXTURE / "layering.json", layering)
+    base = ["layer-check", str(_LAYER_FIXTURE / "ecosystem.json"), "--contracts", str(contracts)]
+
+    inside = runner.invoke(
+        app, [*base, "--layering", str(layering), "--out", str(contracts / "r.json")]
+    )
+    onto = runner.invoke(app, [*base, "--layering", str(layering), "--out", str(layering)])
+    no_dir = runner.invoke(
+        app,
+        ["layer-check", str(_LAYER_FIXTURE / "ecosystem.json"), "--contracts", str(tmp_path / "x")]
+        + ["--layering", str(layering)],
+    )
+
+    assert inside.exit_code == 1 and "the check never writes there" in _output(inside)
+    assert not (contracts / "r.json").exists()
+    assert onto.exit_code == 1 and "one of the check's inputs" in _output(onto)
+    assert layering.read_bytes() == (_LAYER_FIXTURE / "layering.json").read_bytes()
+    assert no_dir.exit_code == 1 and "is not a directory" in _output(no_dir)

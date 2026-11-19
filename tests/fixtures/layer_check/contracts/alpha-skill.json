@@ -1,0 +1,6 @@
+{"skill_id": "alpha-skill", "dependencies": [
+  {"skill_id": "engine", "version_range": ">=1"},
+  {"skill_id": "beta", "version_range": ">=1"},
+  {"id": "numpy", "kind": "python-package"},
+  {"skill_id": "alpha-skill", "version_range": ">=1"}
+]}

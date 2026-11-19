@@ -1,0 +1,6 @@
+{"skill_id": "beta", "dependencies": [
+  {"id": "gamma", "kind": "skill", "version_range": ">=1"},
+  {"id": "conductor", "version_range": ">=1"},
+  {"id": "ffmpeg", "kind": "binary"},
+  {"id": "ghost", "kind": "skill"}
+]}
