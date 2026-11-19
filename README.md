@@ -78,6 +78,7 @@ read-only into a temp directory first):
 | `si watch <target>` | Drift since the last `si watch` run for this target, via a self-managed `--state-dir` history (no daemon — repeat it yourself, or from cron/CI) |
 | `si roadmap-drift <ecosystem.json>` | Every repository's `ECOSYSTEM_ROADMAP.md` steps against its merged pull requests, from local checkouts (`--checkouts`, `--pulls`) or `--github` (network); a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si contract-check <ecosystem.json>` | Every component's saved Capability Contract (`--contracts DIR`) against the OS contract schema (`--contract-schema`, e.g. Velisa's `registry/` copy); exit 1 when one breaks it, minus `--baseline` known violations; a table, or a deterministic JSON report (`--json`, `--out`) |
+| `si layer-check <ecosystem.json>` | Dependency direction: every call a saved contract declares (`--contracts DIR`, its `dependencies[]` naming another component) against the components' `layer` and the layer order and exceptions of `--layering FILE`; exit 1 on a same-layer or upward call that is not an exception, or a component with no known layer (`--report-only`: exit 0); a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si doctor`, `si version` | Environment check, installed version |
 
 `si --read-only <command>` (or `SI_READ_ONLY=1`) is audit mode: discovery,
@@ -177,6 +178,26 @@ of directory.
 ```bash
 si contract-check ecosystem.json --contracts ./contracts \
   --contract-schema registry/capability_contract.schema.json --baseline known.json
+```
+
+`si layer-check` is the OS dependency-direction check that Velisa CI runs
+(ADR-018). Each component of `ecosystem.json` has a `layer`; the layering
+file gives the layers from the lowest and the calls allowed against them,
+each with its reason. A `dependencies[]` entry that names another component
+(by `skill_id` or `id`, of kind `skill`, `app` or none; matched as
+`si contract-check` matches a file) is a call. A call to a lower layer
+passes; one within the same layer or upward fails unless it is listed; an
+exception that excuses nothing is reported as stale. Packages, binaries,
+model weights and `schema` entries (data contracts) are not calls.
+
+```bash
+si layer-check ecosystem.json --contracts ./contracts --layering registry/layering.json \
+  --report-only
+```
+
+```json
+{"layers": ["engine", "skill", "app", "orchestrator", "governance"],
+ "exceptions": [{"from": "thumbnail-skill", "to": "qc-skill", "reason": "..."}]}
 ```
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`

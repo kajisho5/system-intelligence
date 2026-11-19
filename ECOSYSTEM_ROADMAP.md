@@ -13,11 +13,11 @@ v0.5.0, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates
 
 | Owned job | Status | Note |
 |---|---|---|
-| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016); OS contract-shape check `si contract-check`, run by Velisa CI (#135, ADR-017) |
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016); OS contract-shape check `si contract-check`, run by Velisa CI (#135, ADR-017); dependency-direction check `si layer-check` (#137, ADR-018) |
 
 ## Wiring
 
-Used by the OS workflows, not by the agent: ecosystem-audit (`si watch`, `si roadmap-drift`, `si diagnose --field`), contract-shape (`si contract-check`) and dashboard (`si diagnose .`).
+Used by the OS workflows, not by the agent: ecosystem-audit (`si watch`, `si roadmap-drift`, `si diagnose --field`), contract-shape (`si contract-check`), layering (`si layer-check`) and dashboard (`si diagnose .`).
 
 ## Steps
 
@@ -43,6 +43,10 @@ Used by the OS workflows, not by the agent: ecosystem-audit (`si watch`, `si roa
 - [x] **8. Implemented commands no workflow runs yet** — `si roadmap-drift` (step 6) and `si diagnose --field --ownership-map` (step 5) work, but no Velisa workflow calls them. Both are candidates for the Velisa workflow (the weekly ecosystem audit or the dashboard), read-only ([#135](https://github.com/kajisho5/system-intelligence/pull/135); Velisa [#163](https://github.com/kajisho5/Velisa/pull/163))
   - Done when: the Velisa workflow runs both, or a decision there says why not
   - Done: Velisa's weekly `ecosystem-audit.yml` runs `si roadmap-drift ecosystem.json --github` and `si diagnose --field --ownership-map ecosystem.json --checkouts .si-repos --contracts <agent pins>`, read-only, report-only (job summary and artifact). `--field --contracts` now also reads pinned files by their identity (#135). First run (dispatched on the PR branch): 32 of 33 roadmaps read, 69 drift findings; 33 field rows, 21 with a contract
+- [x] **9. Dependency direction against the ecosystem's layers** — every call a component's contract declares goes to a lower layer, or is a listed exception with its reason; same-layer and upward calls are reported. Velisa CI calls it, report-only until its exception list is reviewed (Velisa ADR-019, decision D33) ([#137](https://github.com/kajisho5/system-intelligence/pull/137), ADR-018)
+  - なぜ要るか：スキル同士が横や上に呼び合う依存が、気づかないうちに増えるのを止められる
+  - Done when: a fixture with a downward, a same-layer, an upward and an excepted call gives one result each, and Velisa CI runs the check over the agent's pinned contracts
+  - Done (ADR-018): `si layer-check <ecosystem.json> --contracts DIR --layering FILE [--report-only]`. Each component's `layer` from `ecosystem.json`, the layer order and the exceptions from the layering file; every `dependencies[]` entry naming another component (`skill_id` or `id`, kind `skill`/`app`/none) is a call; `violation` / `excepted` / `unclassified`, stale exceptions listed; packages, binaries, weights and `schema` entries are not calls. Velisa's `layering.yml` runs it with `--report-only` over the agent's pinned contracts and `registry/layering.json`
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).

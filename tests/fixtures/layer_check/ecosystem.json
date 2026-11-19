@@ -1,0 +1,12 @@
+{
+  "$comment": "Layer-check fixture. Layers from lowest: engine < skill < orchestrator. alpha-skill (skill) calls engine (down) and beta-skill (same layer, an exception); beta-skill's pinned copy calls itself 'beta' and calls gamma-skill (same layer, no exception) and the orchestrator (up); gamma-skill declares no dependencies; delta-skill has no layer; numpy and ffmpeg are not components; 'ghost' says it is a skill but names none.",
+  "org": "example",
+  "components": [
+    {"repo": "engine", "status": "active", "layer": "engine"},
+    {"repo": "alpha-skill", "status": "active", "layer": "skill"},
+    {"repo": "beta-skill", "status": "active", "layer": "skill"},
+    {"repo": "gamma-skill", "status": "active", "layer": "skill"},
+    {"repo": "delta-skill", "status": "active"},
+    {"repo": "conductor", "status": "active", "layer": "orchestrator"}
+  ]
+}
