@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0 (2026-11-19)
+
+- feat(layers): dependency-direction check against the ecosystem's layers (roadmap step 9) (#137) (bebd580)
+
 ## v0.5.1 (2026-11-13)
 
 - docs(roadmap): tick steps 7 and 8 (contract shape; Velisa runs drift and field) (#136) (36e7c61)
