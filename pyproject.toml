@@ -38,7 +38,7 @@ dev = [
   "ruff>=0.6",
   "mypy>=2.4.1",
   "bandit[toml]>=1.7",
-  "pip-audit>=2.7",
+  "pip-audit>=2.10.1",
   "types-defusedxml>=0.7",
 ]
 
