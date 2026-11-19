@@ -20,7 +20,8 @@ component is listed as unresolved, not failed.
 A call to a lower layer is fine. A call within the same layer, or to a
 higher one, fails the check unless the layering lists that caller and
 callee as an exception. A component whose layer is missing or is not one
-of the layering's names fails the check too: the model is incomplete. An
+of the layering's names fails the check too: the model is incomplete. So
+does a contract file that cannot be read, since its calls are unknown. An
 exception that excused nothing is reported as stale, so the list is seen
 to shrink. Data contracts (shared specs, sidecar files) are not declared
 as dependencies and are not calls; this check does not see them.
@@ -98,7 +99,7 @@ def parse_layering(document: Any) -> Layering:
 
 
 def component_layers(document: Any) -> dict[str, str | None]:
-    """Each component's `layer` as the map writes it (None when absent or not a string)."""
+    """Each component's `layer` (None when absent or not a string), keyed by its stripped name."""
     layers: dict[str, str | None] = {}
     components = document.get("components") if isinstance(document, Mapping) else None
     if not isinstance(components, list):
@@ -107,8 +108,9 @@ def component_layers(document: Any) -> dict[str, str | None]:
         if not isinstance(component, Mapping):
             continue
         name = component.get("repo", component.get("name"))
-        if not isinstance(name, str) or not name.strip() or name in layers:
+        if not isinstance(name, str) or not name.strip() or name.strip() in layers:
             continue
+        name = name.strip()
         layer = component.get("layer")
         layers[name] = layer if isinstance(layer, str) and layer.strip() else None
     return layers
@@ -159,6 +161,9 @@ class LayerCheckReport(BaseModel):
     calls: list[LayerCall]
     unresolved: list[UnresolvedDependency] = Field(default_factory=list)
     unattributed: list[str] = Field(default_factory=list)
+    unreadable: list[str] = Field(
+        default_factory=list, description="Contract files that could not be read: a failure."
+    )
     stale_exceptions: list[LayerException] = Field(default_factory=list)
     problems: list[str] = Field(default_factory=list)
 
@@ -228,13 +233,19 @@ def check_layers(
     calls: list[LayerCall] = []
     unresolved: list[UnresolvedDependency] = []
     unattributed: list[str] = []
+    unreadable: list[str] = []
     for observation, attribution in attribute_contracts(observations, repositories, suffixes):
-        if observation.error is not None or not isinstance(observation.document, Mapping):
+        if observation.error is not None:
+            unreadable.append(observation.label)
             continue
+        if not isinstance(observation.document, Mapping):
+            continue
+        caller = attribution.repo
+        if caller is None:
+            unattributed.append(observation.label)
         dependencies = observation.document.get("dependencies")
         if not isinstance(dependencies, list):
             continue
-        caller = attribution.repo
         for index, entry in enumerate(dependencies):
             name, says_skill = dependency_name(entry)
             if name is None:
@@ -250,8 +261,6 @@ def check_layers(
                     )
                 continue
             if caller is None:
-                if observation.label not in unattributed:
-                    unattributed.append(observation.label)
                 continue
             if callee == caller:
                 continue
@@ -294,7 +303,11 @@ def check_layers(
         value: sum(1 for c in calls if c.result == value) for value in CALL_RESULTS
     }
     summary["unlayered_components"] = sum(1 for row in components if row.problem is not None)
-    failed = summary["violation"] or summary["unclassified"] or summary["unlayered_components"]
+    summary["unreadable_contracts"] = len(unreadable)
+    failed = any(
+        summary[key]
+        for key in ("violation", "unclassified", "unlayered_components", "unreadable_contracts")
+    )
     return LayerCheckReport(
         layers=list(layering.layers),
         passed=not failed,
@@ -304,6 +317,7 @@ def check_layers(
         calls=calls,
         unresolved=unresolved,
         unattributed=sorted(unattributed),
+        unreadable=sorted(unreadable),
         stale_exceptions=stale,
         problems=list(problems),
     )
@@ -347,6 +361,7 @@ def format_layer_table(report: LayerCheckReport) -> str:
     notes += [
         f"- {label}: unattributed, its calls are not checked" for label in report.unattributed
     ]
+    notes += [f"- {label}: unreadable, so its calls are unknown" for label in report.unreadable]
     notes += [
         f"- exception {item.caller} -> {item.callee} excused nothing (stale)"
         for item in report.stale_exceptions

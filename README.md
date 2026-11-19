@@ -186,8 +186,9 @@ file gives the layers from the lowest and the calls allowed against them,
 each with its reason. A `dependencies[]` entry that names another component
 (by `skill_id` or `id`, of kind `skill`, `app` or none; matched as
 `si contract-check` matches a file) is a call. A call to a lower layer
-passes; one within the same layer or upward fails unless it is listed; an
-exception that excuses nothing is reported as stale. Packages, binaries,
+passes; one within the same layer or upward fails unless it is listed, and
+so does a contract file that cannot be read; an exception that excuses
+nothing is reported as stale. Packages, binaries,
 model weights and `schema` entries (data contracts) are not calls.
 
 ```bash

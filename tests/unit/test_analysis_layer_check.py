@@ -199,16 +199,58 @@ def test_parse_layering_refuses_a_bad_document(document: Any, message: str) -> N
         parse_layering(document)
 
 
+def test_an_unreadable_contract_fails_the_check(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    (contracts / "alpha-skill.json").write_text("not json", encoding="utf-8")
+    document = _load("ecosystem.json")
+    document["components"][4]["layer"] = "skill"
+    repositories, _ = ecosystem_repositories(document)
+
+    report = check_layers(
+        repositories,
+        component_layers(document),
+        read_saved_contract_directory(contracts),
+        parse_layering(_load("layering.json")),
+    )
+
+    assert report.unreadable == ["alpha-skill.json"]
+    assert report.summary["unreadable_contracts"] == 1
+    assert not report.passed
+    assert "alpha-skill.json: unreadable, so its calls are unknown" in format_layer_table(report)
+
+
+def test_a_contract_naming_no_component_is_unattributed_even_without_calls(
+    tmp_path: Path,
+) -> None:
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    (contracts / "x.json").write_text('{"skill_id": "outside", "dependencies": []}', "utf-8")
+    (contracts / "y.json").write_text("[]", "utf-8")
+    document = _load("ecosystem.json")
+    repositories, _ = ecosystem_repositories(document)
+
+    report = check_layers(
+        repositories,
+        component_layers(document),
+        read_saved_contract_directory(contracts),
+        parse_layering(_load("layering.json")),
+    )
+
+    assert report.unattributed == ["x.json"]
+
+
 def test_component_layers_reads_strings_only() -> None:
     document = {
         "components": [
             {"repo": "a", "layer": "skill"},
             {"repo": "b", "layer": 3},
             {"repo": "c"},
-            {"repo": "a", "layer": "engine"},
+            {"repo": " a ", "layer": "engine"},
+            {"repo": " d ", "layer": "app"},
             "not an object",
         ]
     }
 
-    assert component_layers(document) == {"a": "skill", "b": None, "c": None}
+    assert component_layers(document) == {"a": "skill", "b": None, "c": None, "d": "app"}
     assert component_layers([]) == {}
