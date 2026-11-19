@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.0 (2026-11-19)
+
+- feat(contracts): contract diff, additive or breaking, and the bump it needs (roadmap step 10) (#138) (872b4f5)
+
 ## v0.6.0 (2026-11-19)
 
 - feat(layers): dependency-direction check against the ecosystem's layers (roadmap step 9) (#137) (bebd580)

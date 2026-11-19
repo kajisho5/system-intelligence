@@ -23,4 +23,4 @@ mirrors docs/design/docs/03-architecture.md's architectural layers:
 - cli             command-line interface
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
