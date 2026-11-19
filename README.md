@@ -79,6 +79,7 @@ read-only into a temp directory first):
 | `si roadmap-drift <ecosystem.json>` | Every repository's `ECOSYSTEM_ROADMAP.md` steps against its merged pull requests, from local checkouts (`--checkouts`, `--pulls`) or `--github` (network); a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si contract-check <ecosystem.json>` | Every component's saved Capability Contract (`--contracts DIR`) against the OS contract schema (`--contract-schema`, e.g. Velisa's `registry/` copy); exit 1 when one breaks it, minus `--baseline` known violations; a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si layer-check <ecosystem.json>` | Dependency direction: every call a saved contract declares (`--contracts DIR`, its `dependencies[]` naming another component) against the components' `layer` and the layer order and exceptions of `--layering FILE`; exit 1 on a same-layer or upward call that is not an exception, or a component with no known layer (`--report-only`: exit 0); a table, or a deterministic JSON report (`--json`, `--out`) |
+| `si contract-diff OLD NEW` | Contract diff: every difference between two contracts of one component (or `--base-ref REF [--head-ref REF] --path contract/contract.json` in a git repository) as `breaking`, `additive` or `info`, the whole as `none` / `additive` / `breaking`, and the release bump it needs (before 1.0: minor / patch; from 1.0: major / minor); exit 0 (`--fail-on-breaking`: 1 on breaking); a table, or a deterministic JSON report (`--json`, `--out`) |
 | `si doctor`, `si version` | Environment check, installed version |
 
 `si --read-only <command>` (or `SI_READ_ONLY=1`) is audit mode: discovery,
@@ -199,6 +200,20 @@ si layer-check ecosystem.json --contracts ./contracts --layering registry/layeri
 ```json
 {"layers": ["engine", "skill", "app", "orchestrator", "governance"],
  "exceptions": [{"from": "thumbnail-skill", "to": "qc-skill", "reason": "..."}]}
+```
+
+`si contract-diff` says whether a change to a component's contract is safe
+for the components that rely on it (ADR-019). A key, operation, enum value
+or entry added, a field no longer required, or a guarantee strengthened is
+additive; anything removed, a type or value changed, a field newly required,
+an ordered argument list changed or a guarantee weakened is breaking;
+descriptions, the release version and lifecycle promotion are information.
+The bump follows the old release version: before 1.0, breaking is minor and
+additive patch; from 1.0, breaking is major and additive minor. Velisa runs
+it on pull requests, report-only.
+
+```bash
+si contract-diff --base-ref origin/main --path contract/contract.json --json
 ```
 
 `si diagnose`/`si report`/`si dashboard` also check for a `.si/requirements.json`

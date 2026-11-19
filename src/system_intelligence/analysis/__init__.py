@@ -28,7 +28,9 @@ checkbox roadmaps with its merged pull requests (ADR-015), and
 contract and CI config (ADR-016), and `contract_shape.py` checks every
 component's saved contract against one schema (ADR-017), and
 `layer_check.py` checks every declared call between components against
-the ecosystem's layers (ADR-018).
+the ecosystem's layers (ADR-018), and `contract_diff.py` classifies a
+change between two contracts of one component as none, additive or
+breaking, with the release bump it needs (ADR-019).
 
 Not yet implemented: semantic architecture heuristics beyond import
 cycles, and documentation *content* quality (only presence/absence is

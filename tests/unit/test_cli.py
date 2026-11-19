@@ -3290,3 +3290,133 @@ def test_layer_check_never_writes_into_its_inputs(tmp_path: Path) -> None:
     assert onto.exit_code == 1 and "one of the check's inputs" in _output(onto)
     assert layering.read_bytes() == (_LAYER_FIXTURE / "layering.json").read_bytes()
     assert no_dir.exit_code == 1 and "is not a directory" in _output(no_dir)
+
+
+def _contract_files(tmp_path: Path, change: dict[str, object]) -> tuple[Path, Path]:
+    base = {"skill_id": "alpha", "version": "0.3.0", "operations": ["inspect", "check"]}
+    old, new = tmp_path / "old.json", tmp_path / "new.json"
+    old.write_text(json.dumps(base), encoding="utf-8")
+    new.write_text(json.dumps({**base, **change}), encoding="utf-8")
+    return old, new
+
+
+def test_contract_diff_of_two_files_prints_the_verdict_and_the_bump(tmp_path: Path) -> None:
+    old, new = _contract_files(tmp_path, {"operations": ["inspect", "check", "validate"]})
+
+    result = runner.invoke(app, ["contract-diff", str(old), str(new)])
+
+    assert result.exit_code == 0, _output(result)
+    assert result.stdout.startswith(
+        "Contract diff: additive; recommended bump: patch (0.3.0 -> 0.3.1)"
+    )
+    assert "| additive | `/operations/2` |" in result.stdout
+
+
+def test_contract_diff_exits_zero_on_breaking_unless_asked(tmp_path: Path) -> None:
+    old, new = _contract_files(tmp_path, {"operations": ["inspect"]})
+    out = tmp_path / "report" / "diff.json"
+
+    plain = runner.invoke(app, ["contract-diff", str(old), str(new), "--json", "--out", str(out)])
+    failing = runner.invoke(app, ["contract-diff", str(old), str(new), "--fail-on-breaking"])
+
+    assert plain.exit_code == 0, _output(plain)
+    report = json.loads(plain.stdout)
+    assert report["classification"] == "breaking" and report["recommended_bump"] == "minor"
+    assert out.read_bytes() == plain.stdout.encode("utf-8")
+    assert failing.exit_code == 1
+    assert "Contract diff: breaking" in failing.stdout
+
+
+def test_contract_diff_refuses_bad_arguments(tmp_path: Path) -> None:
+    old, new = _contract_files(tmp_path, {})
+    bad = tmp_path / "bad.json"
+    bad.write_text("{", encoding="utf-8")
+
+    one = runner.invoke(app, ["contract-diff", str(old)])
+    both = runner.invoke(app, ["contract-diff", str(old), str(new), "--base-ref", "main"])
+    head_only = runner.invoke(app, ["contract-diff", str(old), str(new), "--head-ref", "main"])
+    not_json = runner.invoke(app, ["contract-diff", str(old), str(bad)])
+    missing = runner.invoke(app, ["contract-diff", str(old), str(tmp_path / "none.json")])
+    onto_input = runner.invoke(app, ["contract-diff", str(old), str(new), "--out", str(new)])
+    no_repo = runner.invoke(
+        app, ["contract-diff", "--base-ref", "main", "--repo", str(tmp_path / "nope")]
+    )
+
+    for result in (one, both, head_only, not_json, missing, onto_input, no_repo):
+        assert result.exit_code == 1
+    assert "give OLD NEW, or --base-ref" in _output(one)
+    assert "not both" in _output(both)
+    assert "--head-ref needs --base-ref" in _output(head_only)
+    assert "not JSON" in _output(not_json)
+    assert "is one of the inputs" in _output(onto_input)
+    assert "is not a directory" in _output(no_repo)
+    assert json.loads(new.read_text(encoding="utf-8"))["skill_id"] == "alpha"
+
+
+def _git_repo(tmp_path: Path) -> Path:
+    if shutil.which("git") is None:  # pragma: no cover
+        pytest.skip("git is not installed")
+    repo = tmp_path / "repo"
+    (repo / "contract").mkdir(parents=True)
+    contract = repo / "contract" / "contract.json"
+    contract.write_text(json.dumps({"version": "1.2.0", "ops": ["a", "b"]}), encoding="utf-8")
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q", "-b", "main")
+    git("add", ".")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "head")
+    contract.write_text(json.dumps({"version": "1.2.0", "ops": ["a"]}), encoding="utf-8")
+    git("commit", "-q", "-am", "remove b")
+    contract.write_text(json.dumps({"version": "1.2.0", "ops": ["a", "c"]}), encoding="utf-8")
+    return repo
+
+
+def test_contract_diff_between_two_refs_and_against_the_working_tree(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+
+    refs = runner.invoke(
+        app,
+        ["contract-diff", "--repo", str(repo), "--base-ref", "main", "--head-ref", "head"]
+        + ["--json"],
+    )
+    working = runner.invoke(app, ["contract-diff", "--repo", str(repo), "--base-ref", "head"])
+
+    assert refs.exit_code == 0, _output(refs)
+    report = json.loads(refs.stdout)
+    assert report["classification"] == "breaking" and report["recommended_bump"] == "major"
+    assert report["old_source"] == "main:contract/contract.json"
+    assert report["new_source"] == "head:contract/contract.json"
+    assert working.exit_code == 0, _output(working)
+    assert working.stdout.startswith("Contract diff: additive; recommended bump: minor")
+
+
+def test_contract_diff_with_no_contract_on_either_side_is_an_error(tmp_path: Path) -> None:
+    repo = _git_repo(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["contract-diff", "--repo", str(repo), "--base-ref", "main", "--path", "other.json"]
+        + ["--head-ref", "head"],
+    )
+    bad_ref = runner.invoke(app, ["contract-diff", "--repo", str(repo), "--base-ref", "nope"])
+
+    assert result.exit_code == 1
+    assert "neither side has a contract" in _output(result)
+    assert bad_ref.exit_code == 1 and "is not a commit" in _output(bad_ref)
+
+
+def test_contract_diff_runs_under_read_only(tmp_path: Path) -> None:
+    old, new = _contract_files(tmp_path, {})
+
+    result = runner.invoke(app, ["--read-only", "contract-diff", str(old), str(new)])
+
+    assert result.exit_code == 0, _output(result)
+    assert result.stdout.startswith("Contract diff: none; recommended bump: none")
