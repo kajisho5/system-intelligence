@@ -13,7 +13,7 @@ v0.5.0, Python 3.11+. inspect, diagnose, report, watch, dashboard, check-updates
 
 | Owned job | Status | Note |
 |---|---|---|
-| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016); OS contract-shape check `si contract-check`, run by Velisa CI (#135, ADR-017); dependency-direction check `si layer-check` (#137, ADR-018) |
+| エコシステム監査 | partial | general-purpose auditor; reads capability contracts (#121) and ecosystem.json ownership (#122); `--read-only` audit mode (ADR-013); roadmap drift check (#129, ADR-015); field-readiness audit (#130, ADR-016); OS contract-shape check `si contract-check`, run by Velisa CI (#135, ADR-017); dependency-direction check `si layer-check` (#137, ADR-018); contract diff `si contract-diff` (#138, ADR-019) |
 
 ## Wiring
 
@@ -47,6 +47,10 @@ Used by the OS workflows, not by the agent: ecosystem-audit (`si watch`, `si roa
   - なぜ要るか：スキル同士が横や上に呼び合う依存が、気づかないうちに増えるのを止められる
   - Done when: a fixture with a downward, a same-layer, an upward and an excepted call gives one result each, and Velisa CI runs the check over the agent's pinned contracts
   - Done (ADR-018): `si layer-check <ecosystem.json> --contracts DIR --layering FILE [--report-only]`. Each component's `layer` from `ecosystem.json`, the layer order and the exceptions from the layering file; every `dependencies[]` entry naming another component (`skill_id` or `id`, kind `skill`/`app`/none) is a call; `violation` / `excepted` / `unclassified`, stale exceptions listed; packages, binaries, weights and `schema` entries are not calls. Velisa's `layering.yml` runs it with `--report-only` over the agent's pinned contracts and `registry/layering.json`
+- [x] **10. Contract diff: additive or breaking, and the bump it needs** — a change to a component's `contract/contract.json` is classified mechanically as `none`, `additive` or `breaking`, with the recommended release bump, so a pull request shows whether dependents can float across it. Velisa runs it on pull requests through a reusable workflow, report-only ([#138](https://github.com/kajisho5/system-intelligence/pull/138), ADR-019)
+  - なぜ要るか：契約の変更が互換を壊すかどうかを、人の目ではなく機械で判定し、版上げの種類を決められる
+  - Done when: a fixture pair for each rule (key, enum value, entry, `required`, type, default, ordered list, guarantee, lifecycle, documentation, release version) gives its effect, and `--base-ref` compares two points of a git repository
+  - Done (ADR-019): `si contract-diff OLD NEW` or `--base-ref REF [--head-ref REF] [--path contract/contract.json] [--repo DIR]`; every change with its JSON Pointer, effect and rule; the whole `none` / `additive` / `breaking`; before 1.0 breaking is a minor bump and additive a patch, from 1.0 breaking is major and additive minor; `--json` / `--out` give a deterministic `system-intelligence/contract-diff@1` report; exit 0 (`--fail-on-breaking`: 1 on breaking). Over the 13 skill repositories' committed contract histories every release-only change reads `none`
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).

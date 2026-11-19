@@ -46,6 +46,13 @@ from pydantic import BaseModel
 
 from system_intelligence import __version__
 from system_intelligence.analysis import AnalysisResult, analyze_local_repository
+from system_intelligence.analysis.contract_diff import (
+    ContractReadError,
+    diff_contracts,
+    format_diff_table,
+    read_contract_at_ref,
+    read_contract_json,
+)
 from system_intelligence.analysis.contract_shape import (
     BaselineError,
     attribute_contracts,
@@ -1293,6 +1300,112 @@ def layer_check(
     if out is not None and not as_json:
         typer.echo(f"\nReport written to {out}")
     if not report.passed and not report_only:
+        raise typer.Exit(code=1)
+
+
+_DIFF_OLD_ARGUMENT = typer.Argument(
+    None, help="The contract a dependent may rely on now (a JSON file). Not with --base-ref."
+)
+_DIFF_NEW_ARGUMENT = typer.Argument(
+    None, help="The proposed contract (a JSON file). Not with --base-ref."
+)
+_DIFF_BASE_REF_OPTION = typer.Option(
+    None,
+    "--base-ref",
+    help="Compare two points of a git repository instead of two files: the old contract is "
+    "--path at this commit (absent there: the contract is new).",
+)
+_DIFF_HEAD_REF_OPTION = typer.Option(
+    None,
+    "--head-ref",
+    help="With --base-ref: the new contract is --path at this commit (absent there: removed). "
+    "Default: the file in the working tree.",
+)
+_DIFF_PATH_OPTION = typer.Option(
+    "contract/contract.json",
+    "--path",
+    help="With --base-ref: the contract's path in the repository.",
+)
+_DIFF_REPO_OPTION = typer.Option(
+    Path("."),
+    "--repo",
+    help="With --base-ref: the git repository (default: the current directory).",
+)
+_DIFF_FAIL_OPTION = typer.Option(
+    False, "--fail-on-breaking", help="Exit 1 when the diff is breaking (default: always 0)."
+)
+_DIFF_OUT_OPTION = typer.Option(
+    None, "--out", help="Also write the JSON report to this file. Refused onto an input."
+)
+
+
+@app.command(name="contract-diff")
+def contract_diff(
+    old: Path | None = _DIFF_OLD_ARGUMENT,
+    new: Path | None = _DIFF_NEW_ARGUMENT,
+    base_ref: str | None = _DIFF_BASE_REF_OPTION,
+    head_ref: str | None = _DIFF_HEAD_REF_OPTION,
+    path: str = _DIFF_PATH_OPTION,
+    repo: Path = _DIFF_REPO_OPTION,
+    fail_on_breaking: bool = _DIFF_FAIL_OPTION,
+    as_json: bool = _JSON_REPORT_OPTION,
+    out: Path | None = _DIFF_OUT_OPTION,
+) -> None:
+    """Contract diff: is a change to a capability contract none, additive or breaking?
+
+    Compares two saved contracts of one component, `OLD NEW`, or the
+    contract at `--path` between `--base-ref` and `--head-ref` (default: the
+    working tree) of `--repo`. Every difference is listed with its effect
+    and rule; the whole is `breaking` if any change is, else `additive`
+    if any is, else `none`, with the release bump that needs: before 1.0
+    breaking is minor and additive patch, from 1.0 breaking is major and
+    additive minor. Exit status 0, or 1 with `--fail-on-breaking` on a
+    breaking diff, or 1 when a contract cannot be read. Read only: the
+    one file written is the `--out` report (ADR-019).
+    """
+    try:
+        if base_ref is not None:
+            if old is not None or new is not None:
+                typer.echo("error: give OLD NEW or --base-ref, not both", err=True)
+                raise typer.Exit(code=1)
+            if not repo.is_dir():
+                typer.echo(f"error: --repo {repo} is not a directory", err=True)
+                raise typer.Exit(code=1)
+            path = path.lstrip("/")  # repository-relative, as read_contract_at_ref reads it
+            old_doc = read_contract_at_ref(repo, base_ref, path)
+            old_label = f"{base_ref}:{path}"
+            if head_ref is not None:
+                new_doc = read_contract_at_ref(repo, head_ref, path)
+                new_label = f"{head_ref}:{path}"
+            else:
+                working = repo / path
+                new_doc = read_contract_json(working) if working.exists() else None
+                new_label = f"working tree:{path}"
+            inputs = [repo / path]
+        else:
+            if head_ref is not None:
+                typer.echo("error: --head-ref needs --base-ref", err=True)
+                raise typer.Exit(code=1)
+            if old is None or new is None:
+                typer.echo("error: give OLD NEW, or --base-ref", err=True)
+                raise typer.Exit(code=1)
+            old_doc, new_doc = read_contract_json(old), read_contract_json(new)
+            old_label, new_label = str(old), str(new)
+            inputs = [old, new]
+        if out is not None and any(out.resolve() == item.resolve() for item in inputs):
+            typer.echo(f"error: --out {out} is one of the inputs; it is never written", err=True)
+            raise typer.Exit(code=1)
+        report = diff_contracts(old_doc, new_doc, old_source=old_label, new_source=new_label)
+    except ContractReadError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report.to_json(), encoding="utf-8", newline="\n")
+    typer.echo(report.to_json() if as_json else format_diff_table(report), nl=False)
+    if out is not None and not as_json:
+        typer.echo(f"\nReport written to {out}")
+    if fail_on_breaking and report.classification == "breaking":
         raise typer.Exit(code=1)
 
 
